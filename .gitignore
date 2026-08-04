@@ -1,0 +1,5 @@
+.env
+aincrad.db
+venv/
+__pycache__/
+*.pyc
