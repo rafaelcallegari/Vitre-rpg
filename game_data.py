@@ -11,19 +11,37 @@ ITENS = {
     "pocao_m": {"nome": "Poção Média", "emoji": "⚗️", "tipo": "consumivel", "preco": 220, "cura": 200, "andar_min": 3},
     "pocao_g": {"nome": "Poção Grande", "emoji": "🍶", "tipo": "consumivel", "preco": 700, "cura": 600, "andar_min": 6},
 
-    # ---------------- armas ----------------
-    "espada_ferro": {"nome": "Espada de Ferro", "emoji": "🗡️", "tipo": "arma", "preco": 280, "atk": 8, "andar_min": 1},
-    "espada_aco": {"nome": "Espada de Aço", "emoji": "⚔️", "tipo": "arma", "preco": 1100, "atk": 20, "andar_min": 3},
-    "lamina_gelo": {"nome": "«Lâmina de Gelo»", "emoji": "❄️", "tipo": "arma", "preco": 3200, "atk": 36, "andar_min": 5},
-    "espada_brasa": {"nome": "«Espada de Brasas»", "emoji": "🔥", "tipo": "arma", "preco": 7500, "atk": 55, "andar_min": 7},
-    "lamina_selo": {"nome": "«Lâmina do Selo»", "emoji": "🌑", "tipo": "arma", "preco": 16000, "atk": 82, "andar_min": 9},
+    # ---------------- armas de Força (dano alto, crítico de 10%) ----------------
+    "espada_ferro": {"nome": "Espada de Ferro", "emoji": "🗡️", "tipo": "arma", "atributo": "forca", "preco": 280, "atk": 8, "andar_min": 1},
+    "espada_aco": {"nome": "Espada de Aço", "emoji": "⚔️", "tipo": "arma", "atributo": "forca", "preco": 1100, "atk": 20, "andar_min": 3},
+    "lamina_gelo": {"nome": "«Lâmina de Gelo»", "emoji": "❄️", "tipo": "arma", "atributo": "forca", "preco": 3200, "atk": 36, "andar_min": 5},
+    "espada_brasa": {"nome": "«Espada de Brasas»", "emoji": "🔥", "tipo": "arma", "atributo": "forca", "preco": 7500, "atk": 55, "andar_min": 7},
+    "lamina_selo": {"loja": False, "nome": "«Lâmina do Selo»", "emoji": "🌑", "tipo": "arma", "atributo": "forca", "preco": 16000, "atk": 82, "andar_min": 9},
+
+    # ---------------- armas de Destreza (75% do dano, crítico de 18%) ----------------
+    "adaga": {"nome": "Adaga", "emoji": "🔪", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 260, "atk": 6, "andar_min": 1},
+    "arco_curto": {"nome": "Arco Curto", "emoji": "🏹", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 1000, "atk": 15, "andar_min": 3},
+    "foice_bruma": {"nome": "«Foice de Bruma»", "emoji": "🌫️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 2900, "atk": 27, "andar_min": 5},
+    "arco_cinzas": {"nome": "«Arco de Cinzas»", "emoji": "🎯", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 6800, "atk": 41, "andar_min": 7},
+    "adaga_selo": {"loja": False, "nome": "«Adaga do Selo»", "emoji": "🌒", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 14500, "atk": 61, "andar_min": 9},
 
     # ---------------- armaduras ----------------
     "couro": {"nome": "Armadura de Couro", "emoji": "🥋", "tipo": "armadura", "preco": 220, "def": 5, "andar_min": 1},
     "cota_malha": {"nome": "Cota de Malha", "emoji": "🛡️", "tipo": "armadura", "preco": 900, "def": 12, "andar_min": 3},
     "placas": {"nome": "Armadura de Placas", "emoji": "🪖", "tipo": "armadura", "preco": 2800, "def": 22, "andar_min": 5},
     "obsidiana": {"nome": "«Placa de Obsidiana»", "emoji": "🌋", "tipo": "armadura", "preco": 6800, "def": 36, "andar_min": 7},
-    "manto_selo": {"nome": "«Manto do Selo»", "emoji": "🧿", "tipo": "armadura", "preco": 15000, "def": 54, "andar_min": 9},
+    "manto_selo": {"loja": False, "nome": "«Manto do Selo»", "emoji": "🧿", "tipo": "armadura", "preco": 15000, "def": 54, "andar_min": 9},
+
+    # ---------------- forjados (só craft, não aparecem em loja) ----------------
+    "couro_batido": {"loja": False, "nome": "«Couro Batido»", "emoji": "🥾", "tipo": "armadura", "preco": 700, "def": 8, "andar_min": 1},
+    "malha_reforcada": {"loja": False, "nome": "«Malha Reforçada»", "emoji": "⛓️", "tipo": "armadura", "preco": 2400, "def": 17, "andar_min": 3},
+    "placas_polidas": {"loja": False, "nome": "«Placas Polidas»", "emoji": "🔩", "tipo": "armadura", "preco": 5200, "def": 29, "andar_min": 5},
+    "couraca_cinzas": {"loja": False, "nome": "«Couraça de Cinzas»", "emoji": "🜃", "tipo": "armadura", "preco": 11000, "def": 45, "andar_min": 7},
+
+    # ---------------- alquimia (só craft) ----------------
+    "elixir_ervas": {"loja": False, "nome": "«Elixir de Ervas»", "emoji": "🌿", "tipo": "consumivel", "preco": 200, "cura_pct": 0.25, "andar_min": 1},
+    "elixir_vermelho": {"loja": False, "nome": "«Elixir Vermelho»", "emoji": "🍷", "tipo": "consumivel", "preco": 900, "cura_pct": 0.50, "andar_min": 4},
+    "nectar_torre": {"loja": False, "nome": "«Néctar da Torre»", "emoji": "🍯", "tipo": "consumivel", "preco": 2600, "cura_pct": 1.00, "andar_min": 7},
 
     # ---------------- materiais (só pra vender) ----------------
     "presa_javali": {"nome": "Presa de Javali", "emoji": "🦷", "tipo": "material", "preco": 12},
@@ -36,7 +54,7 @@ ITENS = {
     "fragmento_sino": {"nome": "Fragmento de Sino", "emoji": "🔔", "tipo": "material", "preco": 265},
     "pena_do_trovao": {"nome": "Pena do Trovão", "emoji": "⚡", "tipo": "material", "preco": 330},
     "eco_cristalizado": {"nome": "Eco Cristalizado", "emoji": "💠", "tipo": "material", "preco": 400},
-    "fragmento_selo": {"nome": "Fragmento do Selo", "emoji": "🔷", "tipo": "material", "preco": 500},
+    "fragmento_selo": {"vendavel": False, "nome": "Fragmento do Selo", "emoji": "🔷", "tipo": "material", "preco": 500},
 }
 
 
@@ -158,4 +176,5 @@ ANDAR_MAXIMO = max(ANDARES)
 
 def itens_da_loja(andar: int):
     return {k: v for k, v in ITENS.items()
-            if v["tipo"] != "material" and v.get("andar_min", 1) <= andar}
+            if v["tipo"] != "material" and v.get("loja", True)
+            and v.get("andar_min", 1) <= andar}

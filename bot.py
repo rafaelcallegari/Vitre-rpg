@@ -1,6 +1,7 @@
 # bot.py
 import os
 import random
+import time
 import unicodedata
 
 import discord
@@ -16,20 +17,20 @@ from npcs import (
     consumiveis_disponiveis, equipamentos_do_andar,
     npcs_do_andar, ferreiro_do_andar, encontrar_npc,
 )
-import logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-logging.getLogger("discord.gateway").setLevel(logging.DEBUG)
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 PREFIXOS = ("rpg ", "rpg")
 
 COOLDOWN_CACAR = 60
-COOLDOWN_EXPLORAR = 300
+COOLDOWN_EXPLORAR = 180
 COOLDOWN_BOSS = 900
 
 ICONES_NPC = {"mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬"}
+
+# categoria onde `rpg priv` cria as salas. Se não existir, o bot cria.
+CATEGORIA_SALAS = "Torre — Salas"
 
 
 def obter_prefixo(bot, message):
@@ -67,6 +68,33 @@ def encontrar_item(texto, chaves_validas=None):
     return None
 
 
+def a_venda(itens):
+    """Tira do balcão tudo que é exclusivo de craft."""
+    return {k: v for k, v in itens.items() if v.get("loja", True)}
+
+
+def descricao_cura(dado):
+    """Consumível pode curar valor fixo ou porcentagem do HP máximo."""
+    if "cura_pct" in dado:
+        return f"cura {int(dado['cura_pct'] * 100)}% da vida"
+    return f"cura {dado.get('cura', 0)}"
+
+
+def cura_do_item(dado, hp_max):
+    if "cura_pct" in dado:
+        return max(1, int(hp_max * dado["cura_pct"]))
+    return dado.get("cura", 0)
+
+
+def nome_de_canal(membro):
+    """Nome valido de canal a partir do apelido: minusculo, sem acento, sem espaco."""
+    base = normalizar(membro.display_name)
+    limpo = "".join(c if c.isalnum() else "-" for c in base).strip("-")
+    while "--" in limpo:
+        limpo = limpo.replace("--", "-")
+    return f"torre-{limpo[:80]}" if limpo else f"torre-{membro.id}"
+
+
 def separar_quantidade(texto):
     partes = texto.strip().rsplit(" ", 1)
     if len(partes) == 2 and partes[1].isdigit():
@@ -78,7 +106,7 @@ def stats(j):
     arma = ITENS.get(j["arma"], {})
     armadura = ITENS.get(j["armadura"], {})
     atribs = at.extrair(j)
-    s = at.ficha(j["nivel"], atribs, arma.get("atk", 0), armadura.get("def", 0))
+    s = at.ficha(j["nivel"], atribs, arma, armadura)
     s["atribs"] = atribs
     return s
 
@@ -108,9 +136,9 @@ def barra_hp(atual, maximo, tamanho=12):
     return "█" * cheio + "░" * (tamanho - cheio)
 
 
-def calcular_dano(atk, defesa):
+def calcular_dano(atk, defesa, critico=at.CRITICO_BASE):
     bruto = atk * random.uniform(0.85, 1.15)
-    if random.random() < at.CRITICO_BASE:
+    if random.random() < critico:
         bruto *= at.MULTIPLICADOR_CRITICO
     return at.aplicar_defesa(bruto, defesa)
 
@@ -129,7 +157,7 @@ def simular_combate(s, hp, mob, andar_num):
             return hp, False, log[-4:]
 
     for _ in range(60):
-        d = calcular_dano(s["atk"], mob["def"])
+        d = calcular_dano(s["atk"], mob["def"], s["critico"])
         hp_mob -= d
         if hp_mob <= 0:
             log.append(f"Você acerta **{d}** e derruba o alvo.")
@@ -163,11 +191,23 @@ def rolar_drops(mob):
     return [item for item, chance in mob.get("drops", []) if random.random() < chance]
 
 
+def aplicar_regeneracao(j):
+    """Devolve o jogador com o HP que ele recuperou parado. Só grava se mudou."""
+    s = stats(j)
+    novo = at.hp_regenerado(j["hp"], s["hp_max"], j["hp_em"], j["combate_em"], time.time())
+    if novo != j["hp"]:
+        db.atualizar_jogador(j["user_id"], hp=novo)
+        j["hp"] = novo
+        j["hp_em"] = time.time()
+    return j
+
+
 async def pegar_jogador(ctx):
     j = db.get_jogador(ctx.author.id)
     if not j:
         await ctx.send("Você ainda não entrou na torre. Manda `rpg comecar`.")
-    return j
+        return None
+    return aplicar_regeneracao(j)
 
 
 async def bloqueado_por_cooldown(ctx, comando, segundos):
@@ -176,6 +216,7 @@ async def bloqueado_por_cooldown(ctx, comando, segundos):
         await ctx.send(f"⏳ `rpg {comando}` volta em **{fmt_tempo(restante)}**.")
         return True
     db.set_cooldown(ctx.author.id, comando, segundos)
+    db.marcar_combate(ctx.author.id)  # entrou em combate: a regeneração pausa
     return False
 
 
@@ -236,7 +277,9 @@ async def comecar(ctx):
         ),
         inline=False,
     )
+    e.set_footer(text="A lista completa de comandos vem logo abaixo.")
     await ctx.send(embed=e)
+    await ctx.send(embed=embed_ajuda())
 
 
 @bot.command(name="perfil", aliases=["profile", "p", "eu"])
@@ -252,11 +295,16 @@ async def perfil(ctx, membro: discord.Member = None):
     e.add_field(name="Está em", value=f"**Andar {j['andar']}** — {andar['nome']}", inline=True)
     e.add_field(name="Nível", value=f"**{j['nivel']}**", inline=True)
     e.add_field(name="XP", value=f"{j['xp']}/{xp_necessario(j['nivel'])}", inline=True)
-    e.add_field(
-        name="HP",
-        value=f"{barra_hp(j['hp'], s['hp_max'])} {max(0, j['hp'])}/{s['hp_max']}",
-        inline=False,
-    )
+    hp_texto = f"{barra_hp(j['hp'], s['hp_max'])} {max(0, j['hp'])}/{s['hp_max']}"
+    if j["hp"] < int(s["hp_max"] * at.REGEN_TETO):
+        espera = at.segundos_para_regenerar(
+            j["hp"], s["hp_max"], j["hp_em"], j["combate_em"], time.time()
+        )
+        hp_texto += (
+            "\n*regenerando enquanto você não luta*" if espera == 0
+            else f"\n*volta a regenerar em {fmt_tempo(espera)} de descanso*"
+        )
+    e.add_field(name="HP", value=hp_texto, inline=False)
     e.add_field(
         name="Mana",
         value=f"{max(0, j['mana'])}/{s['mana_max']}",
@@ -269,7 +317,12 @@ async def perfil(ctx, membro: discord.Member = None):
         ),
         inline=False,
     )
-    e.add_field(name="Ataque", value=str(s["atk"]), inline=True)
+    e.add_field(
+        name="Ataque",
+        value=f"{s['atk']} ({at.ATRIBUTOS[s['atributo_arma']]['sigla']}) · "
+              f"crít {s['critico'] * 100:.0f}%",
+        inline=True,
+    )
     e.add_field(name="Defesa", value=f"{s['def']} (-{s['reducao'] * 100:.0f}% dano)", inline=True)
     e.add_field(name="Moedas", value=f"🪙 {j['moedas']}", inline=True)
     arma = ITENS[j["arma"]]["nome"] if j["arma"] else "—"
@@ -670,20 +723,20 @@ async def loja(ctx):
     e = discord.Embed(title=f"Comércio do andar {j['andar']} — {a['nome']}", color=0xE9C46A)
 
     mercador = next((n for n in npcs_do_andar(j["andar"]) if n["tipo"] == "mercador"), None)
-    consumiveis = consumiveis_disponiveis(j["andar_max"])
+    consumiveis = a_venda(consumiveis_disponiveis(j["andar_max"]))
     if consumiveis:
         nome = f"{mercador['nome']} {mercador['titulo']}".strip() if mercador else "Mercador"
         e.add_field(
             name=f"🧺 {nome}",
             value="\n".join(
-                f"{v['emoji']} **{v['nome']}** — {v['preco']} 🪙 (cura {v['cura']})"
+                f"{v['emoji']} **{v['nome']}** — {v['preco']} 🪙 ({descricao_cura(v)})"
                 for v in consumiveis.values()
             ),
             inline=False,
         )
 
     ferreiro = ferreiro_do_andar(j["andar"])
-    equipamentos = equipamentos_do_andar(j["andar"])
+    equipamentos = a_venda(equipamentos_do_andar(j["andar"]))
     if ferreiro and equipamentos:
         nome = f"{ferreiro['nome']} {ferreiro['titulo']}".strip()
         e.add_field(
@@ -698,7 +751,7 @@ async def loja(ctx):
         )
     else:
         andares_com_forja = sorted({v["andar_min"] for v in ITENS.values()
-                                    if v["tipo"] in ("arma", "armadura")})
+                                    if v["tipo"] in ("arma", "armadura") and v.get("loja", True)})
         e.add_field(
             name="🔨 Sem ferreiro aqui",
             value="Equipamento só nos andares " + ", ".join(str(n) for n in andares_com_forja) + ".",
@@ -718,12 +771,18 @@ async def comprar(ctx, *, argumento: str = ""):
         await ctx.send("Uso: `rpg comprar <item> <quantidade>`. Ex: `rpg comprar pocao pequena 3`")
         return
     texto, qtd = separar_quantidade(argumento)
-    disponiveis = {**consumiveis_disponiveis(j["andar_max"]), **equipamentos_do_andar(j["andar"])}
+    disponiveis = a_venda({**consumiveis_disponiveis(j["andar_max"]),
+                           **equipamentos_do_andar(j["andar"])})
     item = encontrar_item(texto, disponiveis.keys())
 
     if not item:
         pista = encontrar_item(texto)
-        if pista and ITENS[pista]["tipo"] in ("arma", "armadura"):
+        if pista and not ITENS[pista].get("loja", True):
+            await ctx.send(
+                f"**{ITENS[pista]['nome']}** não se compra: é item de fabricação. "
+                f"Confere `rpg receitas`."
+            )
+        elif pista and ITENS[pista]["tipo"] in ("arma", "armadura"):
             n = ITENS[pista]["andar_min"]
             await ctx.send(
                 f"**{ITENS[pista]['nome']}** só é forjado no andar {n}. "
@@ -759,6 +818,12 @@ async def vender(ctx, *, argumento: str = ""):
         await ctx.send("Você não tem isso nessa quantidade.")
         return
     dado = ITENS[item]
+    if not dado.get("vendavel", True):
+        await ctx.send(
+            f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é "
+            f"material de fabricação. Guarda."
+        )
+        return
     unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
     total = unitario * qtd
     db.remove_item(j["user_id"], item, qtd)
@@ -771,18 +836,36 @@ async def usar(ctx, *, texto: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
         return
-    possuidos = [i["item"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS]
-    item = encontrar_item(texto, possuidos)
+    texto, pedidas = separar_quantidade(texto)
+    inventario = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
+    item = encontrar_item(texto, inventario.keys())
     if not item or ITENS[item]["tipo"] != "consumivel":
         await ctx.send("Você não tem esse consumível. Confere `rpg inventario`.")
         return
-    if not db.remove_item(j["user_id"], item, 1):
+
+    s = stats(j)
+    hp = max(0, j["hp"])
+    falta = s["hp_max"] - hp
+    if falta <= 0:
+        await ctx.send(f"Seu HP já está cheio ({hp}/{s['hp_max']}). Não gastei nada.")
+        return
+
+    cura = cura_do_item(ITENS[item], s["hp_max"])
+    bastam = -(-falta // cura)  # divisão pra cima: quantas realmente curam
+    usadas = min(pedidas, bastam, inventario[item])
+    if not db.remove_item(j["user_id"], item, usadas):
         await ctx.send("Você não tem esse item.")
         return
-    s = stats(j)
-    novo_hp = min(s["hp_max"], max(0, j["hp"]) + ITENS[item]["cura"])
+
+    novo_hp = min(s["hp_max"], hp + cura * usadas)
     db.atualizar_jogador(j["user_id"], hp=novo_hp)
-    await ctx.send(f"{ITENS[item]['emoji']} Usou **{ITENS[item]['nome']}** — HP: {novo_hp}/{s['hp_max']}")
+    msg = (f"{ITENS[item]['emoji']} Usou **{ITENS[item]['nome']}**"
+           + (f" x{usadas}" if usadas > 1 else "")
+           + f" — HP: {novo_hp}/{s['hp_max']}")
+    if usadas < pedidas:
+        motivo = "o resto passaria do seu HP máximo" if bastam < pedidas else "você não tinha mais"
+        msg += f"\nUsei {usadas} de {pedidas}: {motivo}."
+    await ctx.send(msg)
 
 
 @bot.command(name="equipar", aliases=["equip", "e"])
@@ -831,7 +914,9 @@ async def status(ctx):
         name="Resultado",
         value=(
             f"HP {max(0, j['hp'])}/{s['hp_max']} · Mana {max(0, j['mana'])}/{s['mana_max']}\n"
-            f"Ataque {s['atk']} · Defesa {s['def']} (apara {s['reducao'] * 100:.0f}% do dano)\n"
+            f"Ataque {s['atk']} — escala com "
+            f"**{at.ATRIBUTOS[s['atributo_arma']]['sigla']}** (sua arma)\n"
+            f"Defesa {s['def']} (apara {s['reducao'] * 100:.0f}% do dano)\n"
             f"Esquiva {s['esquiva'] * 100:.0f}% · Crítico {s['critico'] * 100:.0f}%"
         ),
         inline=False,
@@ -912,6 +997,68 @@ async def respec(ctx, confirmacao: str = ""):
     )
 
 
+# ==================== servidor ====================
+@bot.command(name="priv", aliases=["sala", "privado", "meucanal"])
+async def priv(ctx):
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if ctx.guild is None:
+        await ctx.send("Esse comando só funciona dentro de um servidor.")
+        return
+    if not ctx.guild.me.guild_permissions.manage_channels:
+        await ctx.send(
+            "Não tenho permissão de **Gerenciar Canais** neste servidor, "
+            "então não consigo criar sua sala. Fala com quem administra."
+        )
+        return
+
+    nome = nome_de_canal(ctx.author)
+    existente = discord.utils.get(ctx.guild.text_channels, name=nome)
+    if existente:
+        await ctx.send(f"Sua sala já existe: {existente.mention}")
+        return
+
+    categoria = discord.utils.get(ctx.guild.categories, name=CATEGORIA_SALAS)
+    overwrites = {
+        ctx.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        ctx.author: discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, read_message_history=True
+        ),
+        ctx.guild.me: discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, embed_links=True,
+            read_message_history=True, manage_channels=True,
+        ),
+    }
+
+    try:
+        if categoria is None:
+            categoria = await ctx.guild.create_category(CATEGORIA_SALAS)
+        canal = await ctx.guild.create_text_channel(
+            nome, category=categoria, overwrites=overwrites,
+            topic=f"Sala de {ctx.author.display_name} na torre. Só você e o bot enxergam.",
+        )
+    except discord.Forbidden:
+        await ctx.send("O Discord recusou: falta permissão pra criar canal ou categoria.")
+        return
+    except discord.HTTPException as erro:
+        await ctx.send(f"O Discord recusou a criação da sala ({erro.status}). Tenta de novo.")
+        return
+
+    e = discord.Embed(
+        title="Sua sala na torre",
+        description=(
+            f"Aqui é só seu, {ctx.author.display_name}. Pode grindar à vontade "
+            f"que ninguém mais vê.\n\n"
+            f"Seu personagem é o mesmo em qualquer canal — muda só o barulho."
+        ),
+        color=ANDARES[j["andar"]]["cor"],
+    )
+    e.set_footer(text="rpg cacar · rpg perfil · rpg ajuda")
+    await canal.send(embed=e)
+    await ctx.send(f"Pronto: {canal.mention}")
+
+
 @bot.command(name="ranking", aliases=["top", "leaderboard", "lb"])
 async def ranking(ctx):
     lista = db.ranking(10)
@@ -927,16 +1074,16 @@ async def ranking(ctx):
     await ctx.send(embed=e)
 
 
-@bot.command(name="ajuda", aliases=["help", "comandos"])
-async def ajuda(ctx):
+def embed_ajuda():
     e = discord.Embed(title="Comandos — prefixo `rpg`", color=0x457B9D)
     e.add_field(
         name="Progressão",
         value=(
             "`rpg comecar` — cria seu personagem\n"
             "`rpg cacar` (`h`) — combate rápido, 1 min\n"
-            "`rpg explorar` (`adv`) — 3 inimigos, 5 min\n"
-            "`rpg boss` — chefe do andar, 15 min"
+            "`rpg explorar` (`adv`) — 3 inimigos, 3 min\n"
+            "`rpg boss` — chefe do andar, 15 min\n"
+            "`rpg party` — abre uma sala pra encarar o chefe junto"
         ),
         inline=False,
     )
@@ -956,7 +1103,16 @@ async def ajuda(ctx):
             "`rpg perfil` (`p`) · `rpg inventario` (`inv`)\n"
             "`rpg status` — atributos e pontos livres\n"
             "`rpg upar <atributo> <qtd>` · `rpg respec`\n"
-            "`rpg usar <item>` · `rpg equipar <item>`"
+            "`rpg usar <item> <qtd>` · `rpg equipar <item>`"
+        ),
+        inline=False,
+    )
+    e.add_field(
+        name="Ofício",
+        value=(
+            "`rpg profissao` — escolhe entre Forja e Alquimia\n"
+            "`rpg receitas` — o que você consegue fabricar\n"
+            "`rpg craftar <item> <qtd>` — fabrica na bancada do NPC"
         ),
         inline=False,
     )
@@ -965,14 +1121,30 @@ async def ajuda(ctx):
         value="`rpg loja` · `rpg comprar <item> <qtd>` · `rpg vender <item> <qtd>` · `rpg ranking`",
         inline=False,
     )
-    await ctx.send(embed=e)
+    e.add_field(
+        name="Sua sala",
+        value="`rpg priv` — cria um canal só seu, pra não poluir o geral",
+        inline=False,
+    )
+    return e
+
+
+@bot.command(name="ajuda", aliases=["help", "comandos"])
+async def ajuda(ctx):
+    await ctx.send(embed=embed_ajuda())
 
 
 # turnos do chefe — precisa vir depois dos helpers e dos comandos acima
 import combate
 
 combate.instalar(bot, globals())
-@bot.event
-async def on_interaction(interaction):
-    print(">>> INTERACAO RECEBIDA:", interaction.type, interaction.data)
+
+# profissões — o módulo ainda pode não existir; quando existir, é só soltar na pasta
+try:
+    import profissoes
+
+    profissoes.instalar(bot, globals())
+except ModuleNotFoundError:
+    print("profissoes.py ainda não está na pasta — craft desligado.")
+
 bot.run(TOKEN)

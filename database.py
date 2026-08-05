@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS jogadores (
     inteligencia INTEGER DEFAULT 5,
     pontos       INTEGER DEFAULT 0,
     mortes       INTEGER DEFAULT 0,
+    profissao    TEXT,
+    prof_nivel   INTEGER DEFAULT 1,
+    prof_xp      INTEGER DEFAULT 0,
+    hp_em        REAL DEFAULT 0,
+    combate_em   REAL DEFAULT 0,
     criado_em    REAL
 );
 CREATE TABLE IF NOT EXISTS inventario (
@@ -49,6 +54,17 @@ COLUNAS_ATRIBUTO = {
     "constituicao": f"INTEGER DEFAULT {at.BASE}",
     "inteligencia": f"INTEGER DEFAULT {at.BASE}",
     "pontos": "INTEGER DEFAULT 0",
+}
+
+COLUNAS_TEMPO = {
+    "hp_em": "REAL DEFAULT 0",
+    "combate_em": "REAL DEFAULT 0",
+}
+
+COLUNAS_PROFISSAO = {
+    "profissao": "TEXT",
+    "prof_nivel": "INTEGER DEFAULT 1",
+    "prof_xp": "INTEGER DEFAULT 0",
 }
 
 
@@ -81,8 +97,6 @@ def init_db():
                 conn.execute(
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ATRIBUTO[coluna]}"
                 )
-            # personagens antigos comecam com o valor base em tudo e recebem
-            # todos os pontos do nivel atual para distribuir do zero
             conn.execute(
                 """UPDATE jogadores SET
                        forca = ?, destreza = ?, constituicao = ?, inteligencia = ?,
@@ -98,6 +112,27 @@ def init_db():
                 )
             print("Banco migrado: atributos criados. Todo mundo tem pontos para distribuir.")
 
+        # migração 3: relógios da regeneração
+        novas_tempo = [c for c in COLUNAS_TEMPO if c not in colunas]
+        if novas_tempo:
+            agora = time.time()
+            for coluna in novas_tempo:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_TEMPO[coluna]}"
+                )
+            conn.execute("UPDATE jogadores SET hp_em = ?, combate_em = ?", (agora, agora))
+            print("Banco migrado: regeneração ligada (começa a contar de agora).")
+
+        # migração 4: profissões
+        novas_prof = [c for c in COLUNAS_PROFISSAO if c not in colunas]
+        if novas_prof:
+            for coluna in novas_prof:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_PROFISSAO[coluna]}"
+                )
+            conn.execute("UPDATE jogadores SET prof_nivel = 1, prof_xp = 0")
+            print("Banco migrado: profissões criadas (ninguém escolheu ainda).")
+
 
 # ---------------- jogadores ----------------
 def get_jogador(user_id):
@@ -110,28 +145,39 @@ def criar_jogador(user_id, nome):
     atribs = at.distribuicao_inicial()
     hp = at.hp_maximo(1, atribs["constituicao"])
     mana = at.mana_maxima(1, atribs["inteligencia"])
+    agora = time.time()
     with conectar() as conn:
         conn.execute(
             """INSERT OR IGNORE INTO jogadores
                (user_id, nome, hp, mana, forca, destreza, constituicao, inteligencia,
-                pontos, criado_em)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                pontos, hp_em, combate_em, criado_em)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
             (
                 user_id, nome, hp, mana,
                 atribs["forca"], atribs["destreza"],
                 atribs["constituicao"], atribs["inteligencia"],
-                time.time(),
+                agora, agora, agora,
             ),
         )
 
 
 def atualizar_jogador(user_id, **campos):
+    """Sempre que o HP muda, carimba hp_em — a regeneração depende disso."""
     if not campos:
         return
+    if "hp" in campos and "hp_em" not in campos:
+        campos["hp_em"] = time.time()
     sets = ", ".join(f"{k} = ?" for k in campos)
     valores = list(campos.values()) + [user_id]
     with conectar() as conn:
         conn.execute(f"UPDATE jogadores SET {sets} WHERE user_id = ?", valores)
+
+
+def marcar_combate(user_id):
+    """Zera o relógio da regeneração: acabou de lutar, tem que esperar de novo."""
+    with conectar() as conn:
+        conn.execute("UPDATE jogadores SET combate_em = ? WHERE user_id = ?",
+                     (time.time(), user_id))
 
 
 def ranking(limite=10):

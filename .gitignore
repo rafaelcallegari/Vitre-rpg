@@ -1,5 +1,6 @@
 .env
 aincrad.db
+*.db-journal
 venv/
 __pycache__/
 *.pyc

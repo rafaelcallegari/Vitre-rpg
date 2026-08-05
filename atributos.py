@@ -1,6 +1,6 @@
 # atributos.py
 # Sistema de atributos do Vitre bot.
-# Concentra todas as formulas derivadas de nivel e atributos.
+# Concentra todas as formulas derivadas de nivel, atributos e equipamento.
 # Nao toca no banco nem no discord — e' so' matematica.
 
 import unicodedata
@@ -18,20 +18,27 @@ HP_POR_NIVEL = 10         # HP ganho automaticamente a cada nivel
 MANA_BASE = 20
 MANA_POR_INT = 5
 
-CRITICO_BASE = 0.10
+CRITICO_BASE = 0.10       # critico de quem esta desarmado ou com arma de forca
 MULTIPLICADOR_CRITICO = 1.8
 K_DEFESA = 50             # constante da curva de reducao de dano
 TETO_REDUCAO = 0.60       # reducao maxima que a defesa pode dar
 TETO_ESQUIVA = 0.25
 
+# regeneracao fora de combate
+REGEN_POR_MINUTO = 0.05   # fracao do HP maximo recuperada por minuto parado
+REGEN_TETO = 0.70         # ela nunca passa disso — o resto e' pocao
+REGEN_PAUSA_SEG = 180     # tempo sem lutar antes de comecar a regenerar
+
+ATRIBUTO_PADRAO_ARMA = "forca"   # arma sem atributo declarado (e maos vazias)
+
 ATRIBUTOS = {
     "forca": {
         "nome": "Forca", "sigla": "FOR", "emoji": "💪",
-        "desc": "Aumenta o dano dos seus ataques.",
+        "desc": "Dano de espadas, machados e martelos.",
     },
     "destreza": {
         "nome": "Destreza", "sigla": "DES", "emoji": "🎯",
-        "desc": "Iniciativa, esquiva e chance de fuga.",
+        "desc": "Dano de adagas, arcos e foices. Iniciativa, esquiva e fuga.",
     },
     "constituicao": {
         "nome": "Constituicao", "sigla": "CON", "emoji": "🛡️",
@@ -92,6 +99,18 @@ def custo_respec(nivel):
     return 50 * nivel
 
 
+# -------------------------------------------------------------------- armas
+
+def atributo_da_arma(arma):
+    """Qual atributo escala o dano desta arma. Maos vazias = forca."""
+    return (arma or {}).get("atributo", ATRIBUTO_PADRAO_ARMA)
+
+
+def critico_da_arma(arma):
+    """Armas de destreza batem menos e critam mais."""
+    return (arma or {}).get("critico", CRITICO_BASE)
+
+
 # -------------------------------------------------------- atributos -> stats
 
 def hp_maximo(nivel, constituicao):
@@ -102,8 +121,8 @@ def mana_maxima(nivel, inteligencia):
     return MANA_BASE + MANA_POR_INT * inteligencia
 
 
-def ataque(forca, bonus_arma=0):
-    return 5 + 2 * forca + bonus_arma
+def ataque(valor_atributo, bonus_arma=0):
+    return 5 + 2 * valor_atributo + bonus_arma
 
 
 def defesa(constituicao, bonus_armadura=0):
@@ -148,19 +167,51 @@ def chance_fuga(destreza, destreza_alvo, eh_chefe=False):
     return _limitar(base, 0.10, 0.85)
 
 
+# ---------------------------------------------------------------- regeneracao
+
+def hp_regenerado(hp_atual, hp_max, hp_em, combate_em, agora):
+    """HP depois de ficar parado. So conta tempo sem lutar, e para no teto.
+
+    hp_em: quando o HP mudou pela ultima vez.
+    combate_em: quando o jogador lutou pela ultima vez.
+    """
+    hp_atual = max(0, hp_atual)
+    teto = int(hp_max * REGEN_TETO)
+    if hp_atual >= teto:
+        return hp_atual
+    inicio = max(hp_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
+    minutos = (agora - inicio) / 60
+    if minutos <= 0:
+        return hp_atual
+    ganho = int(hp_max * REGEN_POR_MINUTO * minutos)
+    return min(teto, hp_atual + ganho)
+
+
+def segundos_para_regenerar(hp_atual, hp_max, hp_em, combate_em, agora):
+    """Quanto falta para a regeneracao comecar. 0 = ja esta regenerando."""
+    if max(0, hp_atual) >= int(hp_max * REGEN_TETO):
+        return 0
+    inicio = max(hp_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
+    return max(0, int(inicio - agora))
+
+
 # ------------------------------------------------------------------- resumo
 
-def ficha(nivel, atribs, bonus_arma=0, bonus_armadura=0):
+def ficha(nivel, atribs, arma=None, armadura=None):
     """Todos os derivados de uma vez — usado nos embeds de perfil e status."""
+    arma = arma or {}
+    armadura = armadura or {}
     con = atribs["constituicao"]
     des = atribs["destreza"]
-    val_def = defesa(con, bonus_armadura)
+    chave = atributo_da_arma(arma)
+    val_def = defesa(con, armadura.get("def", 0))
     return {
         "hp_max": hp_maximo(nivel, con),
         "mana_max": mana_maxima(nivel, atribs["inteligencia"]),
-        "atk": ataque(atribs["forca"], bonus_arma),
+        "atk": ataque(atribs[chave], arma.get("atk", 0)),
         "def": val_def,
         "reducao": reducao_dano(val_def),
         "esquiva": chance_esquiva(des, des),
-        "critico": CRITICO_BASE,
+        "critico": critico_da_arma(arma),
+        "atributo_arma": chave,
     }
