@@ -250,6 +250,7 @@ def conheceu_bramm(j):
 @bot.event
 async def on_ready():
     db.init_db()
+    agenda.iniciar()
     print(f"Online como {bot.user} — prefixo: rpg")
 
 
@@ -646,7 +647,7 @@ async def carroca(ctx):
         )
         return
 
-    horarios = " · ".join(f"{h:02d}:00" for h in HORARIOS_CARROCA)
+    horarios = " · ".join(f"{h:02d}:{m:02d}" for h, m in HORARIOS_CARROCA)
     ativa, parte_em = carroca_ativa()
     e = discord.Embed(title="🐎 Bramm, o Carroceiro", color=0xB08968)
     if ativa:
@@ -1225,5 +1226,10 @@ try:
     profissoes.instalar(bot, globals())
 except ModuleNotFoundError:
     print("profissoes.py ainda não está na pasta — craft desligado.")
+
+# agenda — aviso automático da carroça do Bramm
+import agenda
+
+agenda.instalar(bot)
 
 bot.run(TOKEN)

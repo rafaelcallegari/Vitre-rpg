@@ -204,6 +204,7 @@ rebalanceamento pendente.
 - `custo_viagem(origem, destino) = |destino-origem| * (80 + 40 * max(origem, destino))`.
  Viajar pro andar mais alto já visitado é sempre mais caro por degrau do que
  descer, porque o custo por distância usa o **maior** dos dois andares.
-- A carroça do Bramm (andar 3+) é **grátis**, mas só roda 3 vezes por dia
- (9h, 15h, 21h, horário de Brasília) e fica parada só 20 min por horário —
- é a alternativa à viagem paga, não a substitui.
+- A carroça do Bramm (andar 3+) é **grátis**, mas só roda 4 vezes por dia
+ (9h, 12h40, 15h, 21h, horário de Brasília) e fica parada só 30 min por
+ horário — é a alternativa à viagem paga, não a substitui. `agenda.py`
+ avisa automaticamente no canal configurado quando cada janela abre.

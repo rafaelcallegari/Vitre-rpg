@@ -173,10 +173,15 @@ tem `andar_min` igual ao andar onde o ferreiro dela mora.
 
 ### Carroça do Bramm (viagem grátis)
 
-Passa 3x por dia, horário de Brasília: **9h, 15h, 21h**, fica parada
-**20 minutos** em cada horário. Só existe a partir de quem já destrancou o
+Passa 4x por dia, horário de Brasília: **9h, 12h40, 15h, 21h**, fica parada
+**30 minutos** em cada horário. Só existe a partir de quem já destrancou o
 andar 3. Fora da janela da carroça, viajar custa moedas (ver `custo_viagem`
 em `balanceamento.md`).
+
+`agenda.py` avisa sozinho no canal configurado (`CANAL_TORRE_ID` no `.env`)
+assim que cada janela abre, marcando `@everyone` — precisa da permissão
+**Mencionar @everyone** liberada pro bot naquele canal, senão o aviso falha
+silenciosamente (só loga no console, não derruba o resto do bot).
 
 ## Profissões (`rpg profissao`)
 

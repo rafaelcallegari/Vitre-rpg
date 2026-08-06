@@ -8,8 +8,8 @@ from game_data import ITENS
 FUSO = ZoneInfo("America/Sao_Paulo")
 
 # ---------------- carroça do Bramm ----------------
-HORARIOS_CARROCA = (9, 15, 21)        # horas cheias, horário de Brasília
-JANELA_CARROCA_MIN = 20               # quanto tempo ele fica parado
+HORARIOS_CARROCA = ((9, 0), (12, 40), (15, 0), (21, 0))   # (hora, minuto), horário de Brasília
+JANELA_CARROCA_MIN = 30               # quanto tempo ele fica parado, em todos os horários
 ANDAR_DESBLOQUEIA_CARROCA = 3         # onde você o encontra pela primeira vez
 
 # ---------------- custo de viagem paga ----------------
@@ -31,8 +31,8 @@ def custo_viagem(origem, destino):
 def carroca_ativa(momento=None):
     """Retorna (esta_ativa, horario_em_que_parte)."""
     m = momento or agora()
-    for h in HORARIOS_CARROCA:
-        inicio = m.replace(hour=h, minute=0, second=0, microsecond=0)
+    for h, minuto in HORARIOS_CARROCA:
+        inicio = m.replace(hour=h, minute=minuto, second=0, microsecond=0)
         fim = inicio + timedelta(minutes=JANELA_CARROCA_MIN)
         if inicio <= m < fim:
             return True, fim
@@ -43,9 +43,9 @@ def proxima_carroca(momento=None):
     m = momento or agora()
     candidatos = []
     for dia in (0, 1):
-        base = (m + timedelta(days=dia)).replace(minute=0, second=0, microsecond=0)
-        for h in HORARIOS_CARROCA:
-            candidatos.append(base.replace(hour=h))
+        base = (m + timedelta(days=dia)).replace(second=0, microsecond=0)
+        for h, minuto in HORARIOS_CARROCA:
+            candidatos.append(base.replace(hour=h, minute=minuto))
     for c in sorted(candidatos):
         if c > m:
             return c
