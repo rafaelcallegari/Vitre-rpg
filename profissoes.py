@@ -46,11 +46,17 @@ RECEITAS = {
                    "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
     "manto_selo": {"profissao": "forja", "nivel": 9, "moedas": 7500, "xp": 900,
                    "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
+    "cajado_selo": {"profissao": "forja", "nivel": 9, "moedas": 8000, "xp": 900,
+                    "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
+    "manoplas_selo": {"profissao": "forja", "nivel": 9, "moedas": 7000, "xp": 900,
+                      "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
     # ---- Alquimia
     "elixir_ervas": {"profissao": "alquimia", "nivel": 1, "moedas": 200, "xp": 20,
                      "materiais": {"seda_sussurrante": 3}},
     "elixir_vermelho": {"profissao": "alquimia", "nivel": 4, "moedas": 900, "xp": 90,
                         "materiais": {"cristal_de_sal": 3}},
+    "elixir_mana": {"profissao": "alquimia", "nivel": 4, "moedas": 900, "xp": 90,
+                    "materiais": {"cristal_de_sal": 3}},
     "nectar_torre": {"profissao": "alquimia", "nivel": 7, "moedas": 2600, "xp": 300,
                      "materiais": {"fragmento_sino": 3}},
 }
@@ -245,7 +251,8 @@ def instalar(bot, contexto):
                 marca = "✅ pode fazer"
             ganho = (f"+{item['def']} DEF" if "def" in item
                      else f"+{item['atk']} ATK" if "atk" in item
-                     else f"cura {int(item.get('cura_pct', 0) * 100)}%")
+                     else f"cura {int(item['cura_pct'] * 100)}%" if "cura_pct" in item
+                     else f"restaura {int(item['mana_pct'] * 100)}% de mana")
             e.add_field(
                 name=f"{item['emoji']} {item['nome']} — {marca}",
                 value=f"{ganho}\n{texto_materiais(receita)} + {receita['moedas']} 🪙",

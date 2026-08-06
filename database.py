@@ -76,6 +76,12 @@ COLUNAS_TITULO = {
     "titulos_possuidos": "TEXT DEFAULT ''",
 }
 
+COLUNAS_HABILIDADES = {
+    "classe": "TEXT",                        # None = sem classe, escolhe com rpg classe
+    "habilidades_extras": "TEXT DEFAULT ''",  # skills destravadas por sidequest, não por atributo
+    "mana_em": "REAL DEFAULT 0",              # último instante em que a mana mudou
+}
+
 # grant histórico e único — não é reconcedido em migrações futuras
 HANZO_USER_ID = 330816605963681792
 
@@ -171,6 +177,16 @@ def init_db():
             print("Banco migrado: títulos criados — Beta Tester para todo mundo, "
                   "Primeiro do Décimo Andar para o Hanzo.")
 
+        # migração 7: infraestrutura de classes e habilidades (sem skills ainda)
+        novas_hab = [c for c in COLUNAS_HABILIDADES if c not in colunas]
+        if novas_hab:
+            for coluna in novas_hab:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_HABILIDADES[coluna]}"
+                )
+            print("Banco migrado: classes criadas — ninguém escolheu ainda, "
+                  "`rpg classe` para os jogadores existentes.")
+
 
 # ---------------- jogadores ----------------
 def get_jogador(user_id):
@@ -205,6 +221,8 @@ def atualizar_jogador(user_id, **campos):
         return
     if "hp" in campos and "hp_em" not in campos:
         campos["hp_em"] = time.time()
+    if "mana" in campos and "mana_em" not in campos:
+        campos["mana_em"] = time.time()
     sets = ", ".join(f"{k} = ?" for k in campos)
     valores = list(campos.values()) + [user_id]
     with conectar() as conn:

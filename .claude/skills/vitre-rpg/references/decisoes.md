@@ -68,47 +68,77 @@ de admin:
  primeiro" no código (o banco não guarda histórico de quando cada jogador
  destrancou cada andar, então não dava pra calcular).
 
-## Classes e habilidades — pendente, prioridade atual
+## Classes e habilidades — infraestrutura feita, catálogo pendente
 
-- **Habilidade só na luta de chefe.** Caçada continua instantânea. Consequência
- aceita: o chefe é o gate de progressão, então INT vira o atributo de avançar e
- FOR/CON os de farmar.
-- **INT dá mana para todo mundo**; o dano da habilidade escala com o atributo da
- classe (Guerreiro FOR, Ladino DES, Mago e Orador INT). Assim nenhuma build
- pode zerar INT.
-- **Classe é escolha travada**, igual à profissão.
-- **Lançar as 4 bases; os 3 ramos de cada uma são os ascendentes**, liberados por
- nível. 12 habilidades no lançamento em vez de 36.
+Este commit deixou tudo pronto pra receber skills, mas **nenhuma skill existe
+ainda** — `game_data.HABILIDADES = {}`. É de propósito: calibrar dano, mana e
+duração de condição sem ter uma skill de verdade pra testar é achismo. O
+próximo passo é lançar a primeira e ajustar o motor em cima dela, não inventar
+os 12 números de uma vez.
 
-| Base | Ramos (ascendentes) |
-|---|---|
-| Mago | Mago de Gelo, Mago de Fogo, Mago de Raio |
-| Guerreiro | Soldado, Mercenário, Espadachim |
-| Ladino | Assassino, Batedor de Carteira, Arqueiro |
-| Orador | Monge, Clérigo, Paladino |
+O que já está no ar:
+- **Habilidade só na luta de chefe.** Caçada e exploração continuam
+ instantâneas — o botão "Habilidade" só existe no painel do `rpg boss`.
+- **Mana**: `mana_maxima = 20 + 5*INT` (já existia). Regenera **1 por minuto**
+ fora de combate, mais devagar que o cooldown de 15 min do chefe de propósito
+ — se enchesse mais rápido, a poção de mana (`pocao_mana`, loja, todo andar) e
+ o elixir melhor (`elixir_mana`, Alquimia nível 4, 50% da mana) nasceriam
+ mortos. HP e mana agora usam o mesmo núcleo de regeneração
+ (`atributos._regenerado`), só muda o teto e a taxa.
+- **Classe é escolha travada**: coluna `classe`, comando `rpg classe`, sem
+ troca (nem por moeda) — mais rígido que profissão de propósito, porque
+ profissão junta com craft (menos crítico) e classe vai virar identidade de
+ combate. Migração deixa jogadores existentes sem classe; escolhem quando
+ quiserem.
+- **4 bases cadastradas em `game_data.CLASSES`**: Mago (INT), Guerreiro (FOR),
+ Ladino (DES), Orador (INT no dano de habilidade, mas DES na arma — um
+ caster que briga com as próprias mãos). Os 12 ramos estão em
+ `game_data.ASCENSOES`, só como texto pro comando `rpg ascencao` — nenhum
+ jogador pode escolher um ramo ainda, isso é fase depois desta.
+- **Requisito de atributo por skill**: `("inteligencia", 15)` etc. Skill sem
+ requisito é conhecida assim que a classe é escolhida. Uma trava extra,
+ `"sidequest": True`, marca a skill que só entra via `habilidades_extras`
+ (CSV na tabela `jogadores`) — a sidequest do NPC que concede isso **não
+ existe ainda**, só a coluna que vai guardar o resultado dela.
+- **Afinidade de arma**: `habilidades.fator_afinidade(classe, arma)` — 1.0 na
+ arma certa, `0.5` fora dela (placeholder, calibrar quando a primeira skill
+ usar isso de verdade). Nada é proibido, só rende menos.
+- **Desarmado escala com DES agora**, não mais FOR (`ATRIBUTO_PADRAO_ARMA`).
+ Orador brigando sem arma (ou de manopla) recebe metade do escalonamento —
+ `ESCALONAMENTO_DESARMADO_ORADOR = 0.5` — até a ascensão pra Monge, que não
+ existe ainda, mas já herda o valor cheio por não estar na exceção.
+- **Equipamento novo**, 5 peças cada, um por ferreiro ímpar (1/3/5/7/9): 5
+ cajados (INT, curva idêntica às espadas de Força) e 5 manoplas/faixas (DES,
+ curva idêntica às adagas de Destreza, crítico 18%). A versão do andar 9 de
+ cada uma é só craft, receita de Forja nível 9, mesmo padrão das outras
+ peças de selo.
+- **Condições de combate**: módulo novo `condicoes.py`. Estado por luta
+ (não persiste no banco), com `alvo` (`"chefe"` ou um user_id), `tipo`
+ (`dano_por_rodada`, `cura_por_rodada`, `pula_turno`, `redireciona`),
+ `duracao` em rodadas e `valor` (fixo ou fração do HP máximo). O tick roda
+ uma vez no início de cada rodada (`registrar_acao` e `on_timeout`, os dois
+ lugares onde uma rodada resolve) e sempre loga no texto da luta — inclusive
+ a aplicação inicial, pra quem levou a condição ver que pegou. Cobre os
+ pedidos de sangramento/confusão/elemento genericamente: **decidi não
+ pré-cadastrar fogo/gelo/raio/divino/sombrio/ar como entradas fixas do
+ catálogo**, porque duração e potência de cada elemento são decisão de
+ balanceamento de uma skill real, não do motor. Regeneração com alvo (item 5
+ do pedido original, ~8%/rodada por ~2 rodadas) e Provocar (redireciona o
+ alvo do chefe, sem efeito em luta solo porque só existe 1 alvo possível) já
+ rodam nos testes manuais — só falta uma skill que chame `condicoes.aplicar`.
 
-Elementos: fogo, gelo, ar, raio, divino, sombrio.
-- Elemento é **efeito de status**, não tabela de resistência: fogo queima, gelo
- tira turno, raio atordoa, sombrio drena, divino cura/blinda, ar dá iniciativa.
-- Como habilidade só existe contra chefe, **só os 10 chefes** precisam de tag
- elemental.
-- Em aberto: o Ar não tem classe dona. Guerreiro não tem elemento — a ideia é ele
- ser a classe de efeito físico puro (sangramento, quebra de armadura, provocar).
-- Em aberto: o Batedor de Carteira rouba de quem? Roubo entre jogadores em
- servidor de amigos é risco social, não só de balanceamento.
-
-Mana:
-- Volta por **tempo e por poção**.
-- A regeneração precisa ser **mais lenta que o cooldown de 15 min do chefe**
- (referência: 1 de mana por minuto). Se encher mais rápido, a poção de mana
- nasce morta — e ela é o produto do Alquimista.
-- Mana máxima parece ser `20 + 5 * INT` (perfil com INT 6 mostrava 50). Confirmar
- no código.
-- Custo de 12 a 18 por habilidade dá ~3 usos por luta. Com luta de ~15 rodadas,
- a habilidade precisa valer ~3 ataques normais para INT competir com FOR — e
- por isso não pode ser só dano: tem que fazer o que FOR não faz (anular
- penetração de armadura por um turno, curar sem gastar poção, dobrar o crítico
- da rodada seguinte).
+Em aberto pra quando a primeira leva de skills entrar:
+- O Ar não tem classe dona (decisão antiga, ver ideia original abaixo).
+ Guerreiro não tem elemento — vira a classe de efeito físico puro
+ (sangramento, quebra de armadura, o próprio Provocar).
+- O Batedor de Carteira (ramo do Ladino) rouba de quem? Roubo entre
+ jogadores em servidor de amigos é risco social, não só de balanceamento.
+- Custo de mana por skill (referência antiga: 12 a 18, ~3 usos por luta de
+ ~15 rodadas) e o que cada uma faz além de dano — segue valendo, não foi
+ decidido ainda porque nenhuma skill existe pra testar contra os chefes de
+ verdade.
+- Tag elemental nos 10 chefes — só vale a pena cadastrar quando souber quais
+ elementos as primeiras skills realmente usam.
 
 ## Profissões e craft — em andamento, bloqueado
 
@@ -136,7 +166,8 @@ moeda e funcionando só no andar onde a taverna está.
 
 ## Ordem de trabalho acordada
 
-1. Skills/classes/mana (dá função ao INT e conteúdo aos veteranos)
+1. Skills/classes/mana (dá função ao INT e conteúdo aos veteranos) — a
+   infraestrutura já está no ar; falta a primeira leva de skills de verdade
 2. Slots de anel e colar (o Joalheiro precisa fabricar alguma coisa)
 3. Terminar craft + trade
 4. Taverna, quebrada em cartões separados

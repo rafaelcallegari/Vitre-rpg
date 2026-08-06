@@ -10,6 +10,7 @@ ITENS = {
     "pocao_p": {"nome": "Poção Pequena", "emoji": "🧪", "tipo": "consumivel", "preco": 60, "cura": 60, "andar_min": 1},
     "pocao_m": {"nome": "Poção Média", "emoji": "⚗️", "tipo": "consumivel", "preco": 220, "cura": 200, "andar_min": 3},
     "pocao_g": {"nome": "Poção Grande", "emoji": "🍶", "tipo": "consumivel", "preco": 700, "cura": 600, "andar_min": 6},
+    "pocao_mana": {"nome": "Poção de Mana", "emoji": "🔵", "tipo": "consumivel", "preco": 150, "mana": 25, "andar_min": 1},
 
     # ---------------- armas de Força (dano alto, crítico de 10%) ----------------
     "espada_ferro": {"nome": "Espada de Ferro", "emoji": "🗡️", "tipo": "arma", "atributo": "forca", "preco": 280, "atk": 8, "andar_min": 1},
@@ -24,6 +25,20 @@ ITENS = {
     "foice_bruma": {"nome": "«Foice de Bruma»", "emoji": "🌫️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 2900, "atk": 27, "andar_min": 5},
     "arco_cinzas": {"nome": "«Arco de Cinzas»", "emoji": "🎯", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 6800, "atk": 41, "andar_min": 7},
     "adaga_selo": {"loja": False, "nome": "«Adaga do Selo»", "emoji": "🌒", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 14500, "atk": 61, "andar_min": 9},
+
+    # ---------------- armas de Inteligência (cajados — Mago, crítico de 10%) ----------------
+    "cajado_carvalho": {"nome": "Cajado de Carvalho", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "preco": 280, "atk": 8, "andar_min": 1},
+    "cajado_cristal": {"nome": "Cajado de Cristal", "emoji": "🔮", "tipo": "arma", "atributo": "inteligencia", "preco": 1100, "atk": 20, "andar_min": 3},
+    "cajado_aurora": {"nome": "«Cajado da Aurora»", "emoji": "✨", "tipo": "arma", "atributo": "inteligencia", "preco": 3200, "atk": 36, "andar_min": 5},
+    "cajado_cinzas": {"nome": "«Cajado de Cinzas»", "emoji": "🔥", "tipo": "arma", "atributo": "inteligencia", "preco": 7500, "atk": 55, "andar_min": 7},
+    "cajado_selo": {"loja": False, "nome": "«Cajado do Selo»", "emoji": "🌑", "tipo": "arma", "atributo": "inteligencia", "preco": 16000, "atk": 82, "andar_min": 9},
+
+    # ---------------- manoplas e faixas (Orador — mesma escala de Destreza do desarmado, crítico de 18%) ----------------
+    "manoplas_couro": {"nome": "Manoplas de Couro", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 260, "atk": 6, "andar_min": 1},
+    "faixas_trancadas": {"nome": "Faixas Trançadas", "emoji": "🎗️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 1000, "atk": 15, "andar_min": 3},
+    "manoplas_geladas": {"nome": "«Manoplas Geladas»", "emoji": "❄️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 2900, "atk": 27, "andar_min": 5},
+    "faixas_brasa": {"nome": "«Faixas de Brasa»", "emoji": "🔥", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 6800, "atk": 41, "andar_min": 7},
+    "manoplas_selo": {"loja": False, "nome": "«Manoplas do Selo»", "emoji": "🌒", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "preco": 14500, "atk": 61, "andar_min": 9},
 
     # ---------------- armaduras ----------------
     "couro": {"nome": "Armadura de Couro", "emoji": "🥋", "tipo": "armadura", "preco": 220, "def": 5, "andar_min": 1},
@@ -42,6 +57,7 @@ ITENS = {
     "elixir_ervas": {"loja": False, "nome": "«Elixir de Ervas»", "emoji": "🌿", "tipo": "consumivel", "preco": 200, "cura_pct": 0.25, "andar_min": 1},
     "elixir_vermelho": {"loja": False, "nome": "«Elixir Vermelho»", "emoji": "🍷", "tipo": "consumivel", "preco": 900, "cura_pct": 0.50, "andar_min": 4},
     "nectar_torre": {"loja": False, "nome": "«Néctar da Torre»", "emoji": "🍯", "tipo": "consumivel", "preco": 2600, "cura_pct": 1.00, "andar_min": 7},
+    "elixir_mana": {"loja": False, "nome": "«Elixir de Mana»", "emoji": "🟣", "tipo": "consumivel", "preco": 900, "mana_pct": 0.50, "andar_min": 4},
 
     # ---------------- materiais (só pra vender) ----------------
     "presa_javali": {"nome": "Presa de Javali", "emoji": "🦷", "tipo": "material", "preco": 12},
@@ -171,6 +187,62 @@ ANDARES = {
         "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
     },
 }
+
+# Fase 2: as 4 bases. Os 12 ramos (ascensões) entram depois.
+CLASSES = {
+    "mago": {
+        "nome": "Mago", "emoji": "🔮",
+        "atributo_habilidade": "inteligencia",   # dano de habilidade escala com isso
+        "afinidade_arma": "inteligencia",        # rende cheio com cajado
+        "desc": "Dano de habilidade em INT. Rende cheio com cajado na mão.",
+    },
+    "guerreiro": {
+        "nome": "Guerreiro", "emoji": "🗡️",
+        "atributo_habilidade": "forca",
+        "afinidade_arma": "forca",
+        "desc": "Dano de habilidade em FOR. Rende cheio com espada, machado ou martelo.",
+    },
+    "ladino": {
+        "nome": "Ladino", "emoji": "🏹",
+        "atributo_habilidade": "destreza",
+        "afinidade_arma": "destreza",
+        "desc": "Dano de habilidade em DES. Rende cheio com adaga, arco ou foice.",
+    },
+    "orador": {
+        "nome": "Orador", "emoji": "🙏",
+        "atributo_habilidade": "inteligencia",   # dano de habilidade em INT, apesar da arma ser de DES
+        "afinidade_arma": "destreza",            # rende cheio desarmado ou de manopla/faixa
+        "desc": "Dano de habilidade em INT, mas briga desarmado ou de manopla — escala em DES.",
+    },
+}
+
+# Ramos liberados por nível dentro de cada base. Vêm depois da fase 2 —
+# por enquanto só existem pra `rpg ascencao` explicar o caminho.
+ASCENSOES = {
+    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo"},
+    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo"},
+    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio"},
+    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None},
+    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None},
+    "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None},
+    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None},
+    "batedor_de_carteira": {"nome": "Batedor de Carteira", "base": "ladino", "elemento": None},
+    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None},
+    "monge": {"nome": "Monge", "base": "orador", "elemento": None},
+    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino"},
+    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino"},
+}
+
+# Catálogo de habilidades — vazio de propósito nesta fase. Só a infraestrutura
+# (mana, botão de habilidade, requisito, condição, afinidade de arma) existe
+# ainda. Quando a primeira skill entrar, a chave segue este formato:
+#   "chave": {
+#       "nome": str, "emoji": str, "classe": uma chave de CLASSES,
+#       "custo_mana": int, "desc": str,
+#       "requisito": (atributo, valor_minimo) ou omitido,
+#       "sidequest": True ou omitido — destravada por NPC, não por atributo,
+#   }
+HABILIDADES = {}
 
 TITULOS = {
     "beta_tester": {

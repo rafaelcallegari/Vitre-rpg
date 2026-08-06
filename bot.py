@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 import atributos as at
 import database as db
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, xp_necessario
+from game_data import ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
     agora, carroca_ativa, proxima_carroca, custo_viagem,
@@ -68,6 +68,19 @@ def encontrar_item(texto, chaves_validas=None):
     return None
 
 
+def encontrar_classe(texto):
+    alvo = normalizar(texto)
+    if not alvo:
+        return None
+    for k, dados in CLASSES.items():
+        if normalizar(k) == alvo or normalizar(dados["nome"]) == alvo:
+            return k
+    for k, dados in CLASSES.items():
+        if alvo in normalizar(dados["nome"]):
+            return k
+    return None
+
+
 def encontrar_titulo(texto, chaves_validas):
     alvo = normalizar(texto)
     if not alvo:
@@ -87,16 +100,14 @@ def a_venda(itens):
 
 
 def descricao_cura(dado):
-    """Consumível pode curar valor fixo ou porcentagem do HP máximo."""
+    """Consumível pode curar HP ou restaurar mana, cada um fixo ou por porcentagem."""
     if "cura_pct" in dado:
         return f"cura {int(dado['cura_pct'] * 100)}% da vida"
-    return f"cura {dado.get('cura', 0)}"
-
-
-def cura_do_item(dado, hp_max):
-    if "cura_pct" in dado:
-        return max(1, int(hp_max * dado["cura_pct"]))
-    return dado.get("cura", 0)
+    if "cura" in dado:
+        return f"cura {dado['cura']}"
+    if "mana_pct" in dado:
+        return f"restaura {int(dado['mana_pct'] * 100)}% da mana"
+    return f"restaura {dado.get('mana', 0)} de mana"
 
 
 def nome_de_canal(membro):
@@ -119,7 +130,7 @@ def stats(j):
     arma = ITENS.get(j["arma"], {})
     armadura = ITENS.get(j["armadura"], {})
     atribs = at.extrair(j)
-    s = at.ficha(j["nivel"], atribs, arma, armadura)
+    s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"])
     s["atribs"] = atribs
     return s
 
@@ -205,13 +216,22 @@ def rolar_drops(mob):
 
 
 def aplicar_regeneracao(j):
-    """Devolve o jogador com o HP que ele recuperou parado. Só grava se mudou."""
+    """Devolve o jogador com o HP e a mana que recuperou parado. Só grava o que mudou."""
     s = stats(j)
-    novo = at.hp_regenerado(j["hp"], s["hp_max"], j["hp_em"], j["combate_em"], time.time())
-    if novo != j["hp"]:
-        db.atualizar_jogador(j["user_id"], hp=novo)
-        j["hp"] = novo
-        j["hp_em"] = time.time()
+    agora_ts = time.time()
+    campos = {}
+    novo_hp = at.hp_regenerado(j["hp"], s["hp_max"], j["hp_em"], j["combate_em"], agora_ts)
+    if novo_hp != j["hp"]:
+        campos["hp"] = novo_hp
+        j["hp"] = novo_hp
+        j["hp_em"] = agora_ts
+    nova_mana = at.mana_regenerada(j["mana"], s["mana_max"], j["mana_em"], j["combate_em"], agora_ts)
+    if nova_mana != j["mana"]:
+        campos["mana"] = nova_mana
+        j["mana"] = nova_mana
+        j["mana_em"] = agora_ts
+    if campos:
+        db.atualizar_jogador(j["user_id"], **campos)
     return j
 
 
@@ -324,10 +344,22 @@ async def perfil(ctx, membro: discord.Member = None):
             else f"\n*volta a regenerar em {fmt_tempo(espera)} de descanso*"
         )
     e.add_field(name="HP", value=hp_texto, inline=False)
+    mana_texto = f"{max(0, j['mana'])}/{s['mana_max']}"
+    if j["mana"] < s["mana_max"]:
+        espera_mana = at.segundos_para_regenerar_mana(
+            j["mana"], s["mana_max"], j["mana_em"], j["combate_em"], time.time()
+        )
+        mana_texto += (
+            "\n*regenerando enquanto você não luta*" if espera_mana == 0
+            else f"\n*volta a regenerar em {fmt_tempo(espera_mana)} de descanso*"
+        )
+    e.add_field(name="Mana", value=mana_texto, inline=False)
+    classe_dados = CLASSES.get(j["classe"])
     e.add_field(
-        name="Mana",
-        value=f"{max(0, j['mana'])}/{s['mana_max']}",
-        inline=False,
+        name="Classe",
+        value=f"{classe_dados['emoji']} {classe_dados['nome']}" if classe_dados
+              else "— `rpg classe` para escolher",
+        inline=True,
     )
     e.add_field(
         name="Atributos",
@@ -863,26 +895,27 @@ async def usar(ctx, *, texto: str = ""):
         return
 
     s = stats(j)
-    hp = max(0, j["hp"])
-    falta = s["hp_max"] - hp
+    campo, restauro = at.restauracao_do_item(ITENS[item], s["hp_max"], s["mana_max"])
+    rotulo, teto = ("HP", s["hp_max"]) if campo == "hp" else ("Mana", s["mana_max"])
+    atual = max(0, j[campo])
+    falta = teto - atual
     if falta <= 0:
-        await ctx.send(f"Seu HP já está cheio ({hp}/{s['hp_max']}). Não gastei nada.")
+        await ctx.send(f"Seu {rotulo} já está cheio ({atual}/{teto}). Não gastei nada.")
         return
 
-    cura = cura_do_item(ITENS[item], s["hp_max"])
-    bastam = -(-falta // cura)  # divisão pra cima: quantas realmente curam
+    bastam = -(-falta // restauro)  # divisão pra cima: quantas realmente enchem
     usadas = min(pedidas, bastam, inventario[item])
     if not db.remove_item(j["user_id"], item, usadas):
         await ctx.send("Você não tem esse item.")
         return
 
-    novo_hp = min(s["hp_max"], hp + cura * usadas)
-    db.atualizar_jogador(j["user_id"], hp=novo_hp)
+    novo = min(teto, atual + restauro * usadas)
+    db.atualizar_jogador(j["user_id"], **{campo: novo})
     msg = (f"{ITENS[item]['emoji']} Usou **{ITENS[item]['nome']}**"
            + (f" x{usadas}" if usadas > 1 else "")
-           + f" — HP: {novo_hp}/{s['hp_max']}")
+           + f" — {rotulo}: {novo}/{teto}")
     if usadas < pedidas:
-        motivo = "o resto passaria do seu HP máximo" if bastam < pedidas else "você não tinha mais"
+        motivo = f"o resto passaria do seu {rotulo} máximo" if bastam < pedidas else "você não tinha mais"
         msg += f"\nUsei {usadas} de {pedidas}: {motivo}."
     await ctx.send(msg)
 
@@ -1076,6 +1109,69 @@ async def titulo(ctx, *, argumento: str = ""):
     await ctx.send(embed=e)
 
 
+@bot.command(name="classe", aliases=["class", "vocacao", "vocação"])
+async def classe_cmd(ctx, *, argumento: str = ""):
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+
+    if j["classe"]:
+        dados = CLASSES[j["classe"]]
+        await ctx.send(
+            f"Você já é **{dados['emoji']} {dados['nome']}**. Escolha travada, não dá pra trocar."
+        )
+        return
+
+    if not argumento:
+        e = discord.Embed(
+            title="Escolha uma classe",
+            description=(
+                "Travada assim que escolher — não tem troca. `rpg ascencao` mostra "
+                "no que cada uma vira mais pra frente."
+            ),
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        for chave, dados in CLASSES.items():
+            e.add_field(
+                name=f"{dados['emoji']} {dados['nome']}",
+                value=f"{dados['desc']}\n`rpg classe {chave}`",
+                inline=False,
+            )
+        await ctx.send(embed=e)
+        return
+
+    escolhida = encontrar_classe(argumento)
+    if not escolhida:
+        await ctx.send("Não conheço essa classe. `rpg classe` mostra as opções.")
+        return
+    db.atualizar_jogador(j["user_id"], classe=escolhida)
+    dados = CLASSES[escolhida]
+    await ctx.send(
+        f"{dados['emoji']} Você agora é **{dados['nome']}**. Escolha travada.\n"
+        f"`rpg ascencao` mostra o caminho lá na frente."
+    )
+
+
+@bot.command(name="ascencao", aliases=["ascensao", "ascensão", "ascenção"])
+async def ascencao(ctx):
+    e = discord.Embed(
+        title="As 4 bases e as 12 ascensões",
+        description=(
+            "Habilidades ainda não existem — isso é o mapa do que vem por aí. "
+            "A ascensão liberada por nível troca a base por um dos 3 ramos."
+        ),
+        color=0x6A4C93,
+    )
+    for chave, dados in CLASSES.items():
+        ramos = ", ".join(a["nome"] for a in ASCENSOES.values() if a["base"] == chave)
+        e.add_field(
+            name=f"{dados['emoji']} {dados['nome']}",
+            value=f"{dados['desc']}\nAscensões: {ramos}",
+            inline=False,
+        )
+    await ctx.send(embed=e)
+
+
 # ==================== servidor ====================
 @bot.command(name="priv", aliases=["sala", "privado", "meucanal"])
 async def priv(ctx):
@@ -1183,7 +1279,9 @@ def embed_ajuda():
             "`rpg status` — atributos e pontos livres\n"
             "`rpg upar <atributo> <qtd>` · `rpg respec`\n"
             "`rpg usar <item> <qtd>` · `rpg equipar <item>`\n"
-            "`rpg titulo` — títulos conquistados e como equipar"
+            "`rpg titulo` — títulos conquistados e como equipar\n"
+            "`rpg classe` · `rpg ascencao` — escolha travada, mapa das 12 ascensões\n"
+            "`rpg habilidades` — o que você já destravou (só se lança contra chefe)"
         ),
         inline=False,
     )
@@ -1218,6 +1316,12 @@ async def ajuda(ctx):
 import combate
 
 combate.instalar(bot, globals())
+
+# habilidades — infraestrutura de classes/skills; combate.py já importa o
+# módulo, isso aqui só liga o comando `rpg habilidades`
+import habilidades
+
+habilidades.instalar(bot, globals())
 
 # profissões — o módulo ainda pode não existir; quando existir, é só soltar na pasta
 try:

@@ -17,6 +17,7 @@ HP_POR_NIVEL = 10         # HP ganho automaticamente a cada nivel
 
 MANA_BASE = 20
 MANA_POR_INT = 5
+MANA_POR_MINUTO_REGEN = 1   # fixo, nao percentual — mais lento que o cooldown de chefe (15 min)
 
 CRITICO_BASE = 0.10       # critico de quem esta desarmado ou com arma de forca
 MULTIPLICADOR_CRITICO = 1.8
@@ -24,12 +25,13 @@ K_DEFESA = 50             # constante da curva de reducao de dano
 TETO_REDUCAO = 0.60       # reducao maxima que a defesa pode dar
 TETO_ESQUIVA = 0.25
 
-# regeneracao fora de combate
+# regeneracao fora de combate — HP e mana usam a mesma pausa pos-combate
 REGEN_POR_MINUTO = 0.05   # fracao do HP maximo recuperada por minuto parado
 REGEN_TETO = 0.70         # ela nunca passa disso — o resto e' pocao
 REGEN_PAUSA_SEG = 180     # tempo sem lutar antes de comecar a regenerar
 
-ATRIBUTO_PADRAO_ARMA = "forca"   # arma sem atributo declarado (e maos vazias)
+ATRIBUTO_PADRAO_ARMA = "destreza"   # maos vazias e arma sem atributo declarado
+ESCALONAMENTO_DESARMADO_ORADOR = 0.5   # Orador base briga puxado; cheio vem so' na ascensao pra Monge
 
 ATRIBUTOS = {
     "forca": {
@@ -46,7 +48,7 @@ ATRIBUTOS = {
     },
     "inteligencia": {
         "nome": "Inteligencia", "sigla": "INT", "emoji": "🔮",
-        "desc": "Mana maxima e dano de habilidade (habilidades ainda nao existem).",
+        "desc": "Mana maxima — quantos lancamentos cabem numa luta de chefe.",
     },
 }
 
@@ -121,8 +123,8 @@ def mana_maxima(nivel, inteligencia):
     return MANA_BASE + MANA_POR_INT * inteligencia
 
 
-def ataque(valor_atributo, bonus_arma=0):
-    return 5 + 2 * valor_atributo + bonus_arma
+def ataque(valor_atributo, bonus_arma=0, escala=1.0):
+    return 5 + int(2 * valor_atributo * escala) + bonus_arma
 
 
 def defesa(bonus_armadura=0):
@@ -170,49 +172,88 @@ def chance_fuga(destreza, destreza_alvo, eh_chefe=False):
 
 # ---------------------------------------------------------------- regeneracao
 
-def hp_regenerado(hp_atual, hp_max, hp_em, combate_em, agora):
-    """HP depois de ficar parado. So conta tempo sem lutar, e para no teto.
+def _regenerado(atual, teto, valor_em, combate_em, agora, ganho_por_minuto):
+    """Nucleo comum da regeneracao fora de combate — usado por HP e mana.
 
-    hp_em: quando o HP mudou pela ultima vez.
-    combate_em: quando o jogador lutou pela ultima vez.
+    valor_em: quando o recurso mudou pela ultima vez.
+    combate_em: quando o jogador lutou pela ultima vez (pausa a regen por
+    REGEN_PAUSA_SEG depois disso).
     """
-    hp_atual = max(0, hp_atual)
-    teto = int(hp_max * REGEN_TETO)
-    if hp_atual >= teto:
-        return hp_atual
-    inicio = max(hp_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
+    atual = max(0, atual)
+    if atual >= teto:
+        return atual
+    inicio = max(valor_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
     minutos = (agora - inicio) / 60
     if minutos <= 0:
-        return hp_atual
-    ganho = int(hp_max * REGEN_POR_MINUTO * minutos)
-    return min(teto, hp_atual + ganho)
+        return atual
+    return min(teto, atual + int(ganho_por_minuto * minutos))
+
+
+def _segundos_para_regenerar(atual, teto, valor_em, combate_em, agora):
+    if max(0, atual) >= teto:
+        return 0
+    inicio = max(valor_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
+    return max(0, int(inicio - agora))
+
+
+def hp_regenerado(hp_atual, hp_max, hp_em, combate_em, agora):
+    """HP depois de ficar parado. So conta tempo sem lutar, e para em 70% — o
+    resto e' pocao."""
+    return _regenerado(
+        hp_atual, int(hp_max * REGEN_TETO), hp_em, combate_em, agora,
+        hp_max * REGEN_POR_MINUTO,
+    )
 
 
 def segundos_para_regenerar(hp_atual, hp_max, hp_em, combate_em, agora):
-    """Quanto falta para a regeneracao comecar. 0 = ja esta regenerando."""
-    if max(0, hp_atual) >= int(hp_max * REGEN_TETO):
-        return 0
-    inicio = max(hp_em or 0, (combate_em or 0) + REGEN_PAUSA_SEG)
-    return max(0, int(inicio - agora))
+    """Quanto falta para a regeneracao de HP comecar. 0 = ja esta regenerando."""
+    return _segundos_para_regenerar(hp_atual, int(hp_max * REGEN_TETO), hp_em, combate_em, agora)
+
+
+def mana_regenerada(mana_atual, mana_max, mana_em, combate_em, agora):
+    """Mana depois de ficar parado. 1 por minuto, sem teto reduzido — vai ate' o maximo."""
+    return _regenerado(mana_atual, mana_max, mana_em, combate_em, agora, MANA_POR_MINUTO_REGEN)
+
+
+def segundos_para_regenerar_mana(mana_atual, mana_max, mana_em, combate_em, agora):
+    return _segundos_para_regenerar(mana_atual, mana_max, mana_em, combate_em, agora)
 
 
 # ------------------------------------------------------------------- resumo
 
-def ficha(nivel, atribs, arma=None, armadura=None):
+def ficha(nivel, atribs, arma=None, armadura=None, classe=None):
     """Todos os derivados de uma vez — usado nos embeds de perfil e status."""
     arma = arma or {}
     armadura = armadura or {}
     con = atribs["constituicao"]
     des = atribs["destreza"]
     chave = atributo_da_arma(arma)
+    escala = ESCALONAMENTO_DESARMADO_ORADOR if (not arma and classe == "orador") else 1.0
     val_def = defesa(armadura.get("def", 0))
     return {
         "hp_max": hp_maximo(nivel, con),
         "mana_max": mana_maxima(nivel, atribs["inteligencia"]),
-        "atk": ataque(atribs[chave], arma.get("atk", 0)),
+        "atk": ataque(atribs[chave], arma.get("atk", 0), escala),
         "def": val_def,
         "reducao": reducao_dano(val_def),
         "esquiva": chance_esquiva(des, des),
         "critico": critico_da_arma(arma),
         "atributo_arma": chave,
     }
+
+
+# ------------------------------------------------------------- consumiveis
+
+def restauracao_do_item(dado, hp_max, mana_max):
+    """('hp', valor) ou ('mana', valor) — quanto o consumivel recupera.
+
+    Cura fixa ("cura") ou por porcentagem ("cura_pct") mexe em HP; "mana" ou
+    "mana_pct" mexe em mana. Cada item so' declara um dos quatro campos.
+    """
+    if "cura_pct" in dado:
+        return "hp", max(1, int(hp_max * dado["cura_pct"]))
+    if "cura" in dado:
+        return "hp", dado["cura"]
+    if "mana_pct" in dado:
+        return "mana", max(1, int(mana_max * dado["mana_pct"]))
+    return "mana", dado.get("mana", 0)

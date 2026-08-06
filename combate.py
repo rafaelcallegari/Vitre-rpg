@@ -7,8 +7,10 @@ import random
 import discord
 
 import atributos as at
+import condicoes
 import database as db
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO
+import habilidades as hab
+from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
 
 # helpers emprestados do bot.py, preenchidos por instalar()
@@ -75,15 +77,10 @@ async def responder(interaction, embed, view):
     await interaction.edit_original_response(embed=embed, view=view)
 
 
-def cura_do_item(dado, hp_max):
-    if "cura_pct" in dado:
-        return max(1, int(hp_max * dado["cura_pct"]))
-    return dado.get("cura", 0)
-
-
 def eh_elixir(chave):
-    """Poção comum cura valor fixo; elixir de Alquimia cura por porcentagem."""
-    return "cura_pct" in ITENS[chave]
+    """Poção/mana comum tem valor fixo; a versão de Alquimia é por porcentagem."""
+    dado = ITENS[chave]
+    return "cura_pct" in dado or "mana_pct" in dado
 
 
 def pode_usar(combatente, chave):
@@ -103,6 +100,7 @@ class Combatente:
         self.jogador = jogador
         self.s = s
         self.hp = max(0, jogador["hp"])
+        self.mana = max(0, jogador["mana"])
         self.acao = None            # o que ele escolheu nesta rodada
         self.defendendo = False
         self.pocoes_usadas = 0
@@ -115,8 +113,8 @@ class Combatente:
     def ativo(self):
         return not (self.caiu or self.fugiu or self.saiu)
 
-    def salvar_hp(self):
-        db.atualizar_jogador(self.id, hp=max(0, self.hp))
+    def salvar_estado(self):
+        db.atualizar_jogador(self.id, hp=max(0, self.hp), mana=max(0, self.mana))
 
     def barra(self):
         estado = ""
@@ -128,8 +126,11 @@ class Combatente:
             estado = " — saiu da luta"
         elif self.acao:
             estado = " — pronto"
-        return (f"{H['barra_hp'](self.hp, self.s['hp_max'])} "
-                f"{max(0, self.hp)}/{self.s['hp_max']}{estado}")
+        linha = (f"{H['barra_hp'](self.hp, self.s['hp_max'])} "
+                 f"{max(0, self.hp)}/{self.s['hp_max']}{estado}")
+        if self.jogador["classe"]:
+            linha += f" · 🔷 {max(0, self.mana)}/{self.s['mana_max']}"
+        return linha
 
 
 # ------------------------------------------------------------ estado da luta
@@ -144,6 +145,7 @@ class Luta:
         self.rodada = 1
         self.carregando = False
         self.encerrada = False
+        self.condicoes = []   # ver condicoes.py — sangramento, confusão, elementos etc.
         self.log = []
 
     @property
@@ -217,7 +219,9 @@ class Luta:
         if not alvos:
             return
 
-        if self.carregando:
+        if not condicoes.pode_agir(self, "chefe"):
+            self.registrar(f"{self.chefe['nome']} está sob efeito e perde a rodada.")
+        elif self.carregando:
             self.carregando = False
             self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
             for c in alvos:
@@ -234,7 +238,7 @@ class Luta:
             self.carregando = True
             self.registrar(f"{self.chefe['nome']} recua e começa a se preparar.")
         else:
-            alvo = random.choice(alvos)
+            alvo = condicoes.alvo_forcado(self) or random.choice(alvos)
             des = alvo.s["atribs"]["destreza"]
             if random.random() < at.chance_esquiva(des, at.destreza_monstro(self.andar_num)):
                 self.registrar(f"{alvo.nome} esquivou do ataque.")
@@ -250,7 +254,7 @@ class Luta:
         for c in self.participantes:
             c.defendendo = False
             c.acao = None
-            c.salvar_hp()
+            c.salvar_estado()
         self.rodada += 1
 
 
@@ -389,16 +393,22 @@ class BotaoPocao(discord.ui.Button):
         if not db.remove_item(c.id, self.chave, 1):
             await responder(interaction, painel.luta.embed(), painel)
             return
-        cura = cura_do_item(ITENS[self.chave], c.s["hp_max"])
-        antes = max(0, c.hp)
-        c.hp = min(c.s["hp_max"], antes + cura)
+        dado = ITENS[self.chave]
+        campo, valor = at.restauracao_do_item(dado, c.s["hp_max"], c.s["mana_max"])
+        if campo == "mana":
+            antes = max(0, c.mana)
+            c.mana = min(c.s["mana_max"], antes + valor)
+            ganho, rotulo = c.mana - antes, "mana"
+        else:
+            antes = max(0, c.hp)
+            c.hp = min(c.s["hp_max"], antes + valor)
+            ganho, rotulo = c.hp - antes, "HP"
         if eh_elixir(self.chave):
             c.elixires_usados += 1
         else:
             c.pocoes_usadas += 1
         painel.luta.registrar(
-            f"{ITENS[self.chave]['emoji']} {c.nome} bebe "
-            f"**{ITENS[self.chave]['nome']}** — +{c.hp - antes} HP"
+            f"{dado['emoji']} {c.nome} bebe **{dado['nome']}** — +{ganho} {rotulo}"
         )
         await painel.registrar_acao(interaction, c, "pocao")
 
@@ -411,6 +421,44 @@ class BotaoVoltar(discord.ui.Button):
         await interaction.response.defer()
         painel = self.view.painel
         await responder(interaction, painel.luta.embed(), painel)
+
+
+class MenuHabilidades(discord.ui.View):
+    def __init__(self, painel, combatente):
+        super().__init__(timeout=TIMEOUT_RODADA)
+        self.painel = painel
+        self.combatente = combatente
+        for chave, dados in hab.lancaveis(combatente.jogador, combatente.mana).items():
+            self.add_item(BotaoHabilidade(chave, dados))
+        self.add_item(BotaoVoltar())
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.combatente.id:
+            await interaction.response.send_message("Essas não são suas habilidades.", ephemeral=True)
+            return False
+        return True
+
+
+class BotaoHabilidade(discord.ui.Button):
+    def __init__(self, chave, dados):
+        super().__init__(
+            label=f"{dados['nome']} ({dados['custo_mana']} mana)",
+            emoji=dados.get("emoji"),
+            style=discord.ButtonStyle.primary,
+        )
+        self.chave = chave
+
+    async def callback(self, interaction):
+        await interaction.response.defer()
+        painel = self.view.painel
+        c = self.view.combatente
+        dados = HABILIDADES[self.chave]
+        c.mana -= dados["custo_mana"]
+        # o efeito de verdade (dano, condição, cura, redirecionamento) entra
+        # junto com a primeira skill de cada tipo — aqui só gasta mana e
+        # consome o turno, igual a poção.
+        painel.luta.registrar(f"{dados.get('emoji', '✨')} {c.nome} lança **{dados['nome']}**.")
+        await painel.registrar_acao(interaction, c, "habilidade")
 
 
 class PainelLuta(discord.ui.View):
@@ -477,9 +525,16 @@ class PainelLuta(discord.ui.View):
             await responder(interaction, luta.embed(), self)
             return
 
-        # todos escolheram: ataques primeiro, depois o chefe
+        # começo da rodada: condições contínuas (sangramento, elementos etc.) primeiro
+        condicoes.tick(luta)
+        fim = await self.fim_da_luta()
+        if fim:
+            await self.encerrar(interaction, fim)
+            return
+
+        # depois, ataques, e por fim o chefe
         for c in luta.ativos:
-            if c.acao == "atacar":
+            if c.acao == "atacar" and condicoes.pode_agir(luta, c.id):
                 dano = H["calcular_dano"](c.s["atk"], luta.chefe["def"], c.s["critico"])
                 luta.hp_chefe -= dano
                 luta.registrar(f"{c.nome} acerta **{dano}**")
@@ -521,6 +576,23 @@ class PainelLuta(discord.ui.View):
             return
         await responder(interaction, self.luta.embed(), MenuPocoes(self, c))
 
+    @discord.ui.button(label="Habilidade", emoji="🔮", style=discord.ButtonStyle.primary)
+    async def habilidade(self, interaction, button):
+        c = self.combatente_de(interaction)
+        if not c.jogador["classe"]:
+            await interaction.response.send_message(
+                "Você não tem classe — `rpg classe` primeiro.", ephemeral=True
+            )
+            return
+        if not hab.lancaveis(c.jogador, c.mana):
+            await interaction.response.send_message(
+                "Nenhuma habilidade disponível agora — sem mana, sem nada destravado, "
+                "ou o catálogo ainda nem existe.",
+                ephemeral=True,
+            )
+            return
+        await responder(interaction, self.luta.embed(), MenuHabilidades(self, c))
+
     @discord.ui.button(label="Fugir", emoji="🏃", style=discord.ButtonStyle.secondary)
     async def fugir(self, interaction, button):
         await interaction.response.defer()
@@ -528,7 +600,7 @@ class PainelLuta(discord.ui.View):
         chance = self.luta.chance_de_fuga(c)
         if random.random() < chance:
             c.fugiu = True
-            c.salvar_hp()
+            c.salvar_estado()
             self.luta.registrar(f"🏃 {c.nome} escapou da sala.")
             fim = await self.fim_da_luta()
             if fim:
@@ -547,15 +619,17 @@ class PainelLuta(discord.ui.View):
         for c in luta.ativos:
             if c.acao is None:
                 c.saiu = True
-                c.salvar_hp()
+                c.salvar_estado()
                 luta.registrar(f"⏱️ {c.nome} sumiu e saiu da luta.")
 
         if luta.ativos:
-            for c in luta.ativos:
-                if c.acao == "atacar":
-                    dano = H["calcular_dano"](c.s["atk"], luta.chefe["def"], c.s["critico"])
-                    luta.hp_chefe -= dano
-                    luta.registrar(f"{c.nome} acerta **{dano}**")
+            condicoes.tick(luta)
+            if luta.hp_chefe > 0:
+                for c in luta.ativos:
+                    if c.acao == "atacar" and condicoes.pode_agir(luta, c.id):
+                        dano = H["calcular_dano"](c.s["atk"], luta.chefe["def"], c.s["critico"])
+                        luta.hp_chefe -= dano
+                        luta.registrar(f"{c.nome} acerta **{dano}**")
             if luta.hp_chefe > 0:
                 luta.turno_do_chefe()
 
@@ -721,7 +795,7 @@ async def iniciar_luta(destino, ids, andar_num, editar=False):
         luta.registrar(f"{chefe['nome']} foi mais rápido e acerta {alvo.nome} — **{dano}**")
         if alvo.hp <= 0:
             alvo.caiu = True
-        alvo.salvar_hp()
+        alvo.salvar_estado()
 
     painel = PainelLuta(luta)
     if not luta.ativos:
