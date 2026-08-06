@@ -19,7 +19,8 @@ H = {}
 TIMEOUT_RODADA = 60          # segundos sem clicar = saiu da luta
 TIMEOUT_SALA = 90            # janela da sala de espera
 MAX_PARTY = 4
-MAX_POCOES = 3               # por luta, por pessoa
+MAX_POCOES = 3                # poções por luta, por pessoa
+MAX_ELIXIRES = 1              # elixires de Alquimia por luta, por pessoa — contador à parte
 REDUCAO_DEFENDENDO = 0.50    # dano que sobra quando voce defende
 CHANCE_CARREGAR = 0.30       # por rodada
 MULTIPLICADOR_CARREGADO = 3.0
@@ -80,6 +81,17 @@ def cura_do_item(dado, hp_max):
     return dado.get("cura", 0)
 
 
+def eh_elixir(chave):
+    """Poção comum cura valor fixo; elixir de Alquimia cura por porcentagem."""
+    return "cura_pct" in ITENS[chave]
+
+
+def pode_usar(combatente, chave):
+    if eh_elixir(chave):
+        return combatente.elixires_usados < MAX_ELIXIRES
+    return combatente.pocoes_usadas < MAX_POCOES
+
+
 # ------------------------------------------------------------- combatente
 
 class Combatente:
@@ -94,6 +106,7 @@ class Combatente:
         self.acao = None            # o que ele escolheu nesta rodada
         self.defendendo = False
         self.pocoes_usadas = 0
+        self.elixires_usados = 0
         self.caiu = False
         self.fugiu = False
         self.saiu = False
@@ -349,7 +362,8 @@ class MenuPocoes(discord.ui.View):
         self.painel = painel
         self.combatente = combatente
         for linha in pocoes_na_mochila(combatente.id):
-            self.add_item(BotaoPocao(linha["item"], ITENS[linha["item"]], linha["qtd"]))
+            if pode_usar(combatente, linha["item"]):
+                self.add_item(BotaoPocao(linha["item"], ITENS[linha["item"]], linha["qtd"]))
         self.add_item(BotaoVoltar())
 
     async def interaction_check(self, interaction):
@@ -378,7 +392,10 @@ class BotaoPocao(discord.ui.Button):
         cura = cura_do_item(ITENS[self.chave], c.s["hp_max"])
         antes = max(0, c.hp)
         c.hp = min(c.s["hp_max"], antes + cura)
-        c.pocoes_usadas += 1
+        if eh_elixir(self.chave):
+            c.elixires_usados += 1
+        else:
+            c.pocoes_usadas += 1
         painel.luta.registrar(
             f"{ITENS[self.chave]['emoji']} {c.nome} bebe "
             f"**{ITENS[self.chave]['nome']}** — +{c.hp - antes} HP"
@@ -494,15 +511,12 @@ class PainelLuta(discord.ui.View):
     @discord.ui.button(label="Mochila", emoji="🎒", style=discord.ButtonStyle.success)
     async def mochila(self, interaction, button):
         c = self.combatente_de(interaction)
-        if c.pocoes_usadas >= MAX_POCOES:
+        disponiveis = [i for i in pocoes_na_mochila(c.id) if pode_usar(c, i["item"])]
+        if not disponiveis:
             await interaction.response.send_message(
-                f"Você já usou {MAX_POCOES} poções nesta luta. Agora é no talento.",
+                f"Você já usou o limite nesta luta ({MAX_POCOES} poções, "
+                f"{MAX_ELIXIRES} elixir). Agora é no talento.",
                 ephemeral=True,
-            )
-            return
-        if not pocoes_na_mochila(c.id):
-            await interaction.response.send_message(
-                "Sua mochila não tem consumível nenhum.", ephemeral=True
             )
             return
         await responder(interaction, self.luta.embed(), MenuPocoes(self, c))

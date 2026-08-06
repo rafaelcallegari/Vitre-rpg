@@ -8,8 +8,11 @@ Se este arquivo discordar do código, o código venceu — corrija aqui.
 - XP para sair do nível N: `xp_necessario(N) = int(40 * N**1.5)` (`game_data.py`).
 - Cada nível dá `PONTOS_POR_NIVEL = 3` pontos livres de atributo.
 - Todo personagem começa com `BASE = 5` em cada um dos quatro atributos.
-- Respec custa `50 * nível` moedas (`custo_respec`) — hoje sem uso no código,
- nenhum comando chama.
+- Respec (`rpg respec`) custa `50 * nível` moedas (`custo_respec`), exceto se
+ a coluna `respec_gratis` do jogador estiver ligada — nesse caso é de graça e
+ a flag desliga sozinha depois de usada. A migração do rebalanceamento de
+ defesa ligou a flag pra todo mundo que já jogava, porque tirar CON da
+ defesa muda o que vale a pena distribuir.
 - Subir de nível cura `CURA_LEVEL_UP = 50%` do HP máximo **novo**, somado ao
  crescimento de HP do(s) nível(is) ganho(s) (`hp_depois_do_nivel` em `bot.py`).
 
@@ -27,7 +30,10 @@ Se este arquivo discordar do código, o código venceu — corrija aqui.
  O atributo usado depende da arma: `atributo_da_arma()` olha o campo
  `"atributo"` do item, e cai para **força** com mãos vazias ou arma sem o
  campo (`ATRIBUTO_PADRAO_ARMA`).
-- `defesa(CON, bônus_armadura) = 2 + CON + bônus_armadura`.
+- `defesa(bônus_armadura) = 2 + bônus_armadura`. **CON não entra mais na
+ conta** — defesa vem só de equipamento, CON só dá HP (ver
+ `decisoes.md` § Rebalanceamento da defesa). Antes da migração de respec
+ grátis, essa fórmula tinha `+ CON`.
 - Crítico: `CRITICO_BASE = 10%` para armas de força (ou mãos vazias). Armas de
  destreza declaram `"critico": 0.18` no item — **18%**, fixo, não escala com
  atributo. Multiplicador de crítico: `MULTIPLICADOR_CRITICO = 1.8x`.
@@ -106,6 +112,11 @@ Todas com teto e piso (`_limitar`):
 
 ## Chefe (`combate.py`) — combate por turnos com botão
 
+- **ATK do chefe**: `13 + 13*(andar-1)` (`game_data.py`, valor fixo por
+ andar, não é uma função — atualizar à mão se o andar mudar). Andar 1 fica
+ em 13, andar 10 em 130. Antes do rebalanceamento de defesa era
+ `13 + 8*(andar-1)` (andar 10 = 85); subiu porque CON parou de dar defesa e
+ o chefe precisava continuar ameaçador.
 - **HP do chefe escala com o tamanho da party**: `hp_chefe = chefe["hp"] *
  nº de participantes`. Cada jogador recebe a recompensa **inteira** ao
  vencer (não dividida), então subir de tamanho de party não dilui — só
@@ -131,7 +142,11 @@ Todas com teto e piso (`_limitar`):
  correta ao golpe carregado — só avisa, então dá pra reagir.
 - Crítico do chefe usa as mesmas constantes do jogador: `CRITICO_BASE = 10%`,
  `x1.8`.
-- Até `MAX_POCOES = 3` poções por pessoa por luta. Sala de espera de party
+- Até `MAX_POCOES = 3` **poções** por pessoa por luta, e à parte,
+ `MAX_ELIXIRES = 1` **elixir de Alquimia** por pessoa por luta — contadores
+ independentes (dá pra usar os dois no mesmo combate). A diferença é o campo
+ do item: cura fixa (`"cura"`) conta como poção, cura por porcentagem
+ (`"cura_pct"`) conta como elixir. Sala de espera de party
  fecha em `TIMEOUT_SALA = 90s`; cada rodada dá `TIMEOUT_RODADA = 60s` pra
  agir, senão o jogador sai sozinho da luta (sem contar como fuga).
 - Cooldown de chefe: `COOLDOWN_BOSS = 900s` (15 min), gasto ao **entrar** na

@@ -58,6 +58,7 @@ ITENS = {
 }
 
 
+# atk do boss = 13 + 13 * (andar - 1)
 ANDARES = {
     1: {
         "nome": "Planície dos Iniciantes",
@@ -79,7 +80,7 @@ ANDARES = {
             {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "drops": [("seda_sussurrante", 0.50)]},
             {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "drops": [("seda_sussurrante", 0.45)]},
         ],
-        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 21, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0)]},
     },
     3: {
         "nome": "Ruínas Afundadas",
@@ -90,7 +91,7 @@ ANDARES = {
             {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "drops": [("osso_enferrujado", 0.50)]},
             {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "drops": [("osso_enferrujado", 0.45)]},
         ],
-        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 29, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0)]},
     },
     4: {
         "nome": "Deserto de Sal",
@@ -101,7 +102,7 @@ ANDARES = {
             {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "drops": [("cristal_de_sal", 0.45)]},
             {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "drops": [("cristal_de_sal", 0.50)]},
         ],
-        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 37, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0)]},
     },
     5: {
         "nome": "Lago Congelado",
@@ -112,7 +113,7 @@ ANDARES = {
             {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "drops": [("nucleo_gelado", 0.45)]},
             {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "drops": [("nucleo_gelado", 0.50)]},
         ],
-        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 45, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0)]},
     },
     6: {
         "nome": "Mina Abandonada",
@@ -123,7 +124,7 @@ ANDARES = {
             {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "drops": [("minerio_negro", 0.45)]},
             {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "drops": [("minerio_negro", 0.50)]},
         ],
-        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 53, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0)]},
     },
     7: {
         "nome": "Campos de Cinzas",
@@ -134,7 +135,7 @@ ANDARES = {
             {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "drops": [("brasa_eterna", 0.45)]},
             {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "drops": [("brasa_eterna", 0.50)]},
         ],
-        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 61, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0)]},
     },
     8: {
         "nome": "Catedral Quebrada",
@@ -145,7 +146,7 @@ ANDARES = {
             {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "drops": [("fragmento_sino", 0.45)]},
             {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "drops": [("fragmento_sino", 0.50)]},
         ],
-        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 69, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0)]},
     },
     9: {
         "nome": "Céu Partido",
@@ -156,7 +157,7 @@ ANDARES = {
             {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "drops": [("pena_do_trovao", 0.45)]},
             {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "drops": [("pena_do_trovao", 0.50)]},
         ],
-        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 77, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0)]},
     },
     10: {
         "nome": "Salão do Selo",
@@ -167,9 +168,21 @@ ANDARES = {
             {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "drops": [("eco_cristalizado", 0.45)]},
             {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "drops": [("eco_cristalizado", 0.50)]},
         ],
-        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 85, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
     },
 }
+
+TITULOS = {
+    "beta_tester": {
+        "nome": "Beta Tester", "emoji": "🧪",
+        "desc": "Jogou a torre antes dela ficar de pé.",
+    },
+    "primeiro_andar_10": {
+        "nome": "Primeiro do Décimo Andar", "emoji": "🏆",
+        "desc": "O primeiro a abrir a porta do Salão do Selo.",
+    },
+}
+
 
 ANDAR_MAXIMO = max(ANDARES)
 

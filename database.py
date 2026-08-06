@@ -67,6 +67,18 @@ COLUNAS_PROFISSAO = {
     "prof_xp": "INTEGER DEFAULT 0",
 }
 
+COLUNAS_RESPEC = {
+    "respec_gratis": "INTEGER DEFAULT 0",
+}
+
+COLUNAS_TITULO = {
+    "titulo": "TEXT",
+    "titulos_possuidos": "TEXT DEFAULT ''",
+}
+
+# grant histórico e único — não é reconcedido em migrações futuras
+HANZO_USER_ID = 330816605963681792
+
 
 @contextmanager
 def conectar():
@@ -132,6 +144,32 @@ def init_db():
                 )
             conn.execute("UPDATE jogadores SET prof_nivel = 1, prof_xp = 0")
             print("Banco migrado: profissões criadas (ninguém escolheu ainda).")
+
+        # migração 5: respec grátis por causa do rebalanceamento de defesa
+        # (CON parou de dar defesa — quem já tinha pontos em CON por isso
+        # merece redistribuir sem pagar)
+        if "respec_gratis" not in colunas:
+            conn.execute(
+                f"ALTER TABLE jogadores ADD COLUMN respec_gratis {COLUNAS_RESPEC['respec_gratis']}"
+            )
+            conn.execute("UPDATE jogadores SET respec_gratis = 1")
+            print("Banco migrado: respec grátis liberado para quem já jogava.")
+
+        # migração 6: títulos
+        novas_titulo = [c for c in COLUNAS_TITULO if c not in colunas]
+        if novas_titulo:
+            for coluna in novas_titulo:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_TITULO[coluna]}"
+                )
+            conn.execute("UPDATE jogadores SET titulos_possuidos = 'beta_tester'")
+            conn.execute(
+                """UPDATE jogadores SET titulos_possuidos = titulos_possuidos || ',primeiro_andar_10'
+                   WHERE user_id = ?""",
+                (HANZO_USER_ID,),
+            )
+            print("Banco migrado: títulos criados — Beta Tester para todo mundo, "
+                  "Primeiro do Décimo Andar para o Hanzo.")
 
 
 # ---------------- jogadores ----------------

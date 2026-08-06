@@ -125,8 +125,9 @@ def ataque(valor_atributo, bonus_arma=0):
     return 5 + 2 * valor_atributo + bonus_arma
 
 
-def defesa(constituicao, bonus_armadura=0):
-    return 2 + constituicao + bonus_armadura
+def defesa(bonus_armadura=0):
+    """Defesa vem só de equipamento — CON não participa mais (só dá HP)."""
+    return 2 + bonus_armadura
 
 
 # ------------------------------------------------------------ dano e chances
@@ -204,7 +205,7 @@ def ficha(nivel, atribs, arma=None, armadura=None):
     con = atribs["constituicao"]
     des = atribs["destreza"]
     chave = atributo_da_arma(arma)
-    val_def = defesa(con, armadura.get("def", 0))
+    val_def = defesa(armadura.get("def", 0))
     return {
         "hp_max": hp_maximo(nivel, con),
         "mana_max": mana_maxima(nivel, atribs["inteligencia"]),

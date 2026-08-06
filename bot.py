@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 import atributos as at
 import database as db
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO, xp_necessario
+from game_data import ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, xp_necessario
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
     agora, carroca_ativa, proxima_carroca, custo_viagem,
@@ -64,6 +64,19 @@ def encontrar_item(texto, chaves_validas=None):
             return k
     for k in fonte:
         if alvo in normalizar(k) or alvo in normalizar(ITENS[k]["nome"]):
+            return k
+    return None
+
+
+def encontrar_titulo(texto, chaves_validas):
+    alvo = normalizar(texto)
+    if not alvo:
+        return None
+    for k in chaves_validas:
+        if normalizar(k) == alvo or normalizar(TITULOS[k]["nome"]) == alvo:
+            return k
+    for k in chaves_validas:
+        if alvo in normalizar(TITULOS[k]["nome"]):
             return k
     return None
 
@@ -291,7 +304,12 @@ async def perfil(ctx, membro: discord.Member = None):
         return
     s = stats(j)
     andar = ANDARES[j["andar"]]
-    e = discord.Embed(title=f"{j['nome']}", color=andar["cor"])
+    titulo_dados = TITULOS.get(j["titulo"])
+    nome_exibido = (
+        f"{titulo_dados['emoji']} {titulo_dados['nome']} — {j['nome']}"
+        if titulo_dados else j["nome"]
+    )
+    e = discord.Embed(title=nome_exibido, color=andar["cor"])
     e.add_field(name="Está em", value=f"**Andar {j['andar']}** — {andar['nome']}", inline=True)
     e.add_field(name="Nível", value=f"**{j['nivel']}**", inline=True)
     e.add_field(name="XP", value=f"{j['xp']}/{xp_necessario(j['nivel'])}", inline=True)
@@ -921,7 +939,8 @@ async def status(ctx):
         ),
         inline=False,
     )
-    e.set_footer(text=f"rpg upar <atributo> <qtd> · rpg respec ({at.custo_respec(j['nivel'])} 🪙)")
+    custo_respec = "grátis" if j["respec_gratis"] else f"{at.custo_respec(j['nivel'])} 🪙"
+    e.set_footer(text=f"rpg upar <atributo> <qtd> · rpg respec ({custo_respec})")
     await ctx.send(embed=e)
 
 
@@ -971,30 +990,89 @@ async def respec(ctx, confirmacao: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
         return
-    custo = at.custo_respec(j["nivel"])
+    gratis = bool(j["respec_gratis"])
+    custo = 0 if gratis else at.custo_respec(j["nivel"])
     if confirmacao.lower() not in ("confirmar", "sim", "confirm"):
+        if gratis:
+            aviso = (
+                "Seu **respec é grátis** — sobrou do rebalanceamento de defesa "
+                "(CON não dá mais defesa, só HP)."
+            )
+        else:
+            aviso = f"Redistribuir todos os atributos custa **{custo}** 🪙."
         await ctx.send(
-            f"Redistribuir todos os atributos custa **{custo}** 🪙 e devolve "
-            f"**{at.pontos_ganhos(j['nivel'])}** ponto(s) do zero.\n"
+            f"{aviso} Devolve **{at.pontos_ganhos(j['nivel'])}** ponto(s) do zero.\n"
             f"Se for isso mesmo: `rpg respec confirmar`."
         )
         return
-    if j["moedas"] < custo:
+    if not gratis and j["moedas"] < custo:
         await ctx.send(f"Faltam **{custo - j['moedas']}** moedas para o respec.")
         return
 
     base = at.distribuicao_inicial()
     hp_max = at.hp_maximo(j["nivel"], base["constituicao"])
     mana_max = at.mana_maxima(j["nivel"], base["inteligencia"])
-    db.atualizar_jogador(
-        j["user_id"], moedas=j["moedas"] - custo, pontos=at.pontos_ganhos(j["nivel"]),
+    campos = dict(
+        moedas=j["moedas"] - custo, pontos=at.pontos_ganhos(j["nivel"]),
         hp=min(max(0, j["hp"]), hp_max), mana=min(max(0, j["mana"]), mana_max),
         **base,
     )
+    if gratis:
+        campos["respec_gratis"] = 0
+    db.atualizar_jogador(j["user_id"], **campos)
+    texto_custo = "de graça" if gratis else f"por {custo} 🪙"
     await ctx.send(
-        f"Atributos zerados por {custo} 🪙. Você tem **{at.pontos_ganhos(j['nivel'])}** "
+        f"Atributos zerados {texto_custo}. Você tem **{at.pontos_ganhos(j['nivel'])}** "
         f"ponto(s) livres — `rpg status` para conferir antes de gastar."
     )
+
+
+@bot.command(name="titulo", aliases=["titulos", "title"])
+async def titulo(ctx, *, argumento: str = ""):
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    possuidos = [t for t in (j["titulos_possuidos"] or "").split(",") if t]
+
+    partes = argumento.strip().split(None, 1)
+    acao = normalizar(partes[0]) if partes else ""
+    resto = partes[1] if len(partes) > 1 else ""
+
+    if acao in ("equipar", "usar", "vestir"):
+        if not resto:
+            await ctx.send("Equipar qual título? `rpg titulo equipar beta tester`.")
+            return
+        alvo = encontrar_titulo(resto, possuidos)
+        if not alvo:
+            await ctx.send(
+                "Você não tem esse título." if possuidos
+                else "Você ainda não conquistou nenhum título."
+            )
+            return
+        db.atualizar_jogador(j["user_id"], titulo=alvo)
+        await ctx.send(f"{TITULOS[alvo]['emoji']} Agora usando **{TITULOS[alvo]['nome']}**.")
+        return
+
+    if acao in ("remover", "tirar", "limpar"):
+        db.atualizar_jogador(j["user_id"], titulo=None)
+        await ctx.send("Título removido.")
+        return
+
+    e = discord.Embed(title=f"Títulos de {j['nome']}", color=ANDARES[j["andar"]]["cor"])
+    if not possuidos:
+        e.description = "Nenhum título conquistado ainda."
+    else:
+        for chave in possuidos:
+            dados = TITULOS.get(chave)
+            if not dados:
+                continue
+            marca = " — equipado" if chave == j["titulo"] else ""
+            e.add_field(
+                name=f"{dados['emoji']} {dados['nome']}{marca}",
+                value=dados["desc"], inline=False,
+            )
+        e.set_footer(text="rpg titulo equipar <nome> · rpg titulo remover")
+    await ctx.send(embed=e)
 
 
 # ==================== servidor ====================
@@ -1103,7 +1181,8 @@ def embed_ajuda():
             "`rpg perfil` (`p`) · `rpg inventario` (`inv`)\n"
             "`rpg status` — atributos e pontos livres\n"
             "`rpg upar <atributo> <qtd>` · `rpg respec`\n"
-            "`rpg usar <item> <qtd>` · `rpg equipar <item>`"
+            "`rpg usar <item> <qtd>` · `rpg equipar <item>`\n"
+            "`rpg titulo` — títulos conquistados e como equipar"
         ),
         inline=False,
     )

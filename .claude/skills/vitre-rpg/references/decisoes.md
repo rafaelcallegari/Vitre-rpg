@@ -3,28 +3,70 @@
 Registro do que já foi decidido, com o motivo. O que está em **pendente** foi
 decidido mas ainda não existe no código.
 
-## Rebalanceamento da defesa — pendente
+## Rebalanceamento da defesa — feito
 
 Contexto: dois jogadores terminaram o andar 10 sem usar as armas de selo e sem
-correr risco de morrer. O objetivo é a torre inteira ficar mais dura, do andar 1
-em diante. A penalidade de morte atual está boa — morrer deve **acontecer** mais,
-não **doer** mais.
+correr risco de morrer. O objetivo era a torre inteira ficar mais dura, do
+andar 1 em diante. A penalidade de morte já estava boa — morrer devia
+**acontecer** mais, não **doer** mais.
 
-Diagnóstico: CON dava HP e aparagem ao mesmo tempo, e a aparagem é multiplicativa
-e sem teto. Uma build de 29 CON tinha 540 de HP e 57% aparado — ~1.256 de HP
-efetivo. Subir o ataque dos monstros só tornaria CON mais obrigatório.
+Diagnóstico original: CON dava HP e aparagem ao mesmo tempo, e a aparagem era
+multiplicativa e sem teto por CON. Uma build de 29 CON tinha 540 de HP e 57%
+aparado — ~1.256 de HP efetivo. Subir o ataque dos monstros só tornaria CON
+mais obrigatório.
 
-Decisões:
-- **CON dá só HP.** Defesa passa a vir exclusivamente de equipamento.
-- **Aparagem relativa ao andar**, para armadura antiga envelhecer sozinha:
- `aparagem = def / (def + 50 + 15 * andar)`.
-- **Migração obrigatória**: devolver os pontos de atributo ou dar um respec
- grátis, senão o nerf é retroativo e silencioso.
-- Compensar CON com mais HP por ponto, e dar função real à DES (esquiva de
- verdade, com teto). Calibrar isso **junto com as classes**, não antes.
+O que foi implementado (mais simples do que o esboço original abaixo):
+- **CON dá só HP.** `defesa(bônus_armadura) = 2 + bônus_armadura` — o
+ parâmetro de constituição saiu da fórmula (`atributos.py`). A curva de
+ redução (`reducao_dano`, teto 60% em DEF~75) não mudou; só a fonte de DEF
+ mudou, de CON+armadura para só armadura.
+- **Em vez de fórmula de aparagem por andar**, o ajuste veio pelo lado do
+ ataque: o ATK do chefe passou de `13 + 8*(andar-1)` para
+ `13 + 13*(andar-1)` — anda 1 fica igual, andar 10 sai de 85 para 130. A
+ ideia de "aparagem relativa ao andar" (`def / (def + 50 + 15*andar)`) foi
+ descartada por enquanto — mais simples subir o ataque do que reescrever a
+ curva de redução duas vezes.
+- **Migração com respec grátis**: coluna `respec_gratis` em `jogadores`,
+ `1` para todo mundo que já existia no banco na hora da migração. O comando
+ `rpg respec` verifica a flag antes de cobrar — se estiver ligada, zera os
+ atributos de graça e desliga a flag.
+- CON **não** ganhou mais HP por ponto nesse commit — ficou pra depois, junto
+ com dar função real à DES. Ver "Verificar antes de implementar" abaixo,
+ que segue valendo pro próximo passo.
 
-Verificar antes de implementar: **o level up ainda cura 100%?** Se sim, ele é a
-causa provável de ninguém morrer, mais que a defesa.
+Ainda em aberto pro próximo passo: **o level up ainda cura 100%?** (Não —
+cura 50% do HP máximo novo, `CURA_LEVEL_UP` em `atributos.py`. Já era assim
+antes deste commit.) Falta calibrar HP-por-CON e esquiva de DES junto com as
+classes, como já estava planejado.
+
+## Consumíveis na luta de chefe — feito
+
+O limite de 3 poções por luta (`MAX_POCOES`) passou a valer só pra poção
+comum (`pocao_p/m/g`, cura fixa). Elixir de Alquimia (`elixir_ervas`,
+`elixir_vermelho`, `nectar_torre` — cura por porcentagem) ganhou contador
+próprio, `MAX_ELIXIRES = 1`, em `combate.py`. Os dois contadores são
+independentes: dá pra usar 3 poções **e** 1 elixir na mesma luta. Distinção é
+por `"cura_pct" in ITENS[chave]` (`eh_elixir`), não por lista de nomes —
+qualquer receita de Alquimia futura já cai automaticamente no contador de
+elixir.
+
+## Sistema de títulos — feito
+
+Cosmético por enquanto — nenhum título dá bônus de stat. Duas colunas em
+`jogadores`: `titulo` (o equipado) e `titulos_possuidos` (CSV das chaves que o
+jogador tem). Catálogo em `game_data.TITULOS`. `rpg titulo` lista os
+possuídos, `rpg titulo equipar <nome>` troca, `rpg titulo remover` tira; o
+equipado aparece no título do embed de `rpg perfil`.
+
+Dois títulos concedidos na migração, de uma vez só — não é um sistema geral
+de conquista automática ainda, cada novo título exige uma migração ou comando
+de admin:
+- `beta_tester` — todo `user_id` que já estava em `jogadores` na hora da
+ migração.
+- `primeiro_andar_10` — só o Hanzo (`user_id` hardcoded em `database.py` como
+ `HANZO_USER_ID`), por decisão direta do Rafael, sem lógica de "quem chegou
+ primeiro" no código (o banco não guarda histórico de quando cada jogador
+ destrancou cada andar, então não dava pra calcular).
 
 ## Classes e habilidades — pendente, prioridade atual
 
