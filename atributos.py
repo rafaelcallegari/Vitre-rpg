@@ -44,7 +44,7 @@ ATRIBUTOS = {
     },
     "constituicao": {
         "nome": "Constituicao", "sigla": "CON", "emoji": "🛡️",
-        "desc": f"+{HP_POR_CON} de HP maximo e mais defesa.",
+        "desc": f"+{HP_POR_CON} de HP maximo.",
     },
     "inteligencia": {
         "nome": "Inteligencia", "sigla": "INT", "emoji": "🔮",

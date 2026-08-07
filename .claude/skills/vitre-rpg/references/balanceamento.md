@@ -190,14 +190,36 @@ rebalanceamento pendente.
 
 ## Profissões e craft (`profissoes.py`)
 
-- XP de ofício: `xp_para_subir(nível) = int(50 * nível**1.4)`, nível máximo
- `10`.
+- XP de ofício: `xp_para_subir(nível) = 50 * nível`, nível máximo `10`.
+ Trocada de `int(50 * nível**1.4)` — mais rápida em todo tier, e mais ainda
+ nos altos porque a curva antiga era superlinear.
 - Trocar de profissão custa `CUSTO_TROCA = 1000` moedas e **zera o nível**
  de ofício — escolha é praticamente travada na prática.
 - Craft exige estar no andar certo (bancada do NPC do ofício) — não dá pra
  fabricar longe do ferreiro/mercador daquele tipo.
 - Preço em moedas + material por receita cresce junto com o tier do
  equipamento que ela produz (ver tabela em `conteudo.md`).
+- **Gates de nível caíram** (Placas Polidas 5→3, Couraça 7→5, armas do
+ Selo 9→7, Manto do Selo 9→8) e **material de andar caiu de x5 pra x3**
+ por craft — o ofício estava mais lento que a torre em si.
+
+### Melhoria (`rpg melhorar`) e desmanche (`rpg desmanchar`)
+
+- Nível de melhoria (+1 teto +2) fica na tabela `upgrades(user_id, item,
+ nivel)` — chaveado por (jogador, item), não pelo slot equipado. Sobrevive
+ a desequipar/reequipar; duas cópias do mesmo item compartilham o nível.
+- `+1`: material do andar x2 + 40% do preço, sucesso garantido. `+2`:
+ material x3 + 100% do preço, 70% de chance (85% Forjador). Falha consome
+ recurso mas nunca quebra/rebaixa a peça.
+- Forjador paga 25% a menos (material e moeda) nas duas tentativas.
+- Ganho: `+12%` do `atk`/`def` **base do item** por nível — aplicado em
+ `bot.py:stats()` antes de montar a ficha de combate, não no dano final.
+- XP de ofício do upgrade (25 no +1, 50 no +2) e do desmanche (40% do XP
+ de craft da peça) só é concedido a quem `profissao == "forja"` — pagar
+ pelo comando não exige ser Forjador, ganhar XP de Forja exige.
+- Desmanche devolve 50% do material da receita (mínimo 1) + 1 por nível de
+ melhoria que a peça tinha, e zera esse nível. Peça sem receita (comprada
+ em loja) usa o material do andar dela com base sintética de 3 unidades.
 
 ## Economia de viagem (`npcs.py`)
 

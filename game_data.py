@@ -59,6 +59,76 @@ ITENS = {
     "nectar_torre": {"loja": False, "nome": "«Néctar da Torre»", "emoji": "🍯", "tipo": "consumivel", "preco": 2600, "cura_pct": 1.00, "andar_min": 7},
     "elixir_mana": {"loja": False, "nome": "«Elixir de Mana»", "emoji": "🟣", "tipo": "consumivel", "preco": 900, "mana_pct": 0.50, "andar_min": 4},
 
+    # ---------------- acessórios (só cai da raide de guilda, ver decisoes.md) ----------------
+    # "atributo" + "bonus" somam direto no atributo base na hora de montar os
+    # stats (bot.stats()) — NÃO no requisito de skill, que lê a coluna crua.
+    # INT fica deliberadamente mais baixo que FOR/DES/CON: INT alimenta mana,
+    # mana alimenta lançamento de skill, e +6 INT de equipamento daria mais de
+    # um lançamento extra da skill mais barata (12 mana) se escalasse igual
+    # às outras. Com anel+colar de INT (2+2=4) e MANA_POR_INT=5, o teto são
+    # +20 de mana — no máximo +1 lançamento da skill de 12, nunca +2.
+    "anel_forca": {"loja": False, "nome": "«Anel do Punho Firme»", "emoji": "💍", "tipo": "anel", "atributo": "forca", "bonus": 4, "andar_min": 7},
+    "anel_destreza": {"loja": False, "nome": "«Anel do Passo Leve»", "emoji": "💍", "tipo": "anel", "atributo": "destreza", "bonus": 4, "andar_min": 7},
+    "anel_constituicao": {"loja": False, "nome": "«Anel do Coração de Pedra»", "emoji": "💍", "tipo": "anel", "atributo": "constituicao", "bonus": 4, "andar_min": 7},
+    "anel_inteligencia": {"loja": False, "nome": "«Anel da Centelha»", "emoji": "💍", "tipo": "anel", "atributo": "inteligencia", "bonus": 2, "andar_min": 7},
+    "colar_forca": {"loja": False, "nome": "«Colar do Touro»", "emoji": "📿", "tipo": "colar", "atributo": "forca", "bonus": 4, "andar_min": 7},
+    "colar_destreza": {"loja": False, "nome": "«Colar da Presa»", "emoji": "📿", "tipo": "colar", "atributo": "destreza", "bonus": 4, "andar_min": 7},
+    "colar_constituicao": {"loja": False, "nome": "«Colar da Muralha»", "emoji": "📿", "tipo": "colar", "atributo": "constituicao", "bonus": 4, "andar_min": 7},
+    "colar_inteligencia": {"loja": False, "nome": "«Colar do Eco Arcano»", "emoji": "📿", "tipo": "colar", "atributo": "inteligencia", "bonus": 2, "andar_min": 7},
+
+    # ---------------- armas elementais (craft de Forja, material de chefe 11-15) ----------------
+    # Mesmo padrão dos acessórios: "atributo" + "bonus" somam no atributo
+    # efetivo (bot.stats()), por cima do que a arma já faz normalmente (atk
+    # escalando em "atributo", crítico fixo pras de Destreza). Requisito de
+    # skill continua lendo a coluna crua — ver decisoes.md.
+    # Tipo de FOR/DES distribuído pra cada nome aparecer 2x nos 6 elementos:
+    # espada (ar, fogo) machado (raio, sombrio) martelo (gelo, divino)
+    # arco (ar, fogo) adaga (raio, sombrio) foice (gelo, divino)
+    "espada_vento": {"loja": False, "nome": "«Espada do Vento Preso»", "emoji": "🗡️", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "ar", "preco": 18000, "atk": 95, "andar_min": 11},
+    "arco_vento": {"loja": False, "nome": "«Arco da Corrente de Ar»", "emoji": "🏹", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "ar", "preco": 18000, "atk": 95, "andar_min": 11},
+    "cajado_vento": {"loja": False, "nome": "«Cajado do Sopro Contido»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "ar", "preco": 18000, "atk": 95, "andar_min": 11},
+    "manopla_vento": {"loja": False, "nome": "«Manoplas do Terraço»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "ar", "preco": 18000, "atk": 95, "andar_min": 11},
+
+    "machado_raio": {"loja": False, "nome": "«Machado da Tempestade Muda»", "emoji": "🪓", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "raio", "preco": 18000, "atk": 95, "andar_min": 12},
+    "adaga_raio": {"loja": False, "nome": "«Adaga da Faísca Presa»", "emoji": "🔪", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "raio", "preco": 18000, "atk": 95, "andar_min": 12},
+    "cajado_raio": {"loja": False, "nome": "«Cajado do Trovão Engolido»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "raio", "preco": 18000, "atk": 95, "andar_min": 12},
+    "manopla_raio": {"loja": False, "nome": "«Manoplas do Arco Elétrico»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "raio", "preco": 18000, "atk": 95, "andar_min": 12},
+
+    "martelo_gelo": {"loja": False, "nome": "«Martelo da Ala Branca»", "emoji": "🔨", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "gelo", "preco": 18000, "atk": 95, "andar_min": 13},
+    "foice_gelo": {"loja": False, "nome": "«Foice do Silêncio»", "emoji": "🌫️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "gelo", "preco": 18000, "atk": 95, "andar_min": 13},
+    "cajado_gelo": {"loja": False, "nome": "«Cajado do Eco Congelado»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "gelo", "preco": 18000, "atk": 95, "andar_min": 13},
+    "manopla_gelo": {"loja": False, "nome": "«Manoplas do Gelo Fino»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "gelo", "preco": 18000, "atk": 95, "andar_min": 13},
+
+    "espada_solario": {"loja": False, "nome": "«Espada do Fogo Sem Chama»", "emoji": "🗡️", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "fogo", "preco": 18000, "atk": 95, "andar_min": 14},
+    "arco_solario": {"loja": False, "nome": "«Arco da Brasa Contida»", "emoji": "🏹", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "fogo", "preco": 18000, "atk": 95, "andar_min": 14},
+    "cajado_solario": {"loja": False, "nome": "«Cajado do Calor Retido»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "fogo", "preco": 18000, "atk": 95, "andar_min": 14},
+    "manopla_solario": {"loja": False, "nome": "«Manoplas do Vidro Fundido»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "fogo", "preco": 18000, "atk": 95, "andar_min": 14},
+
+    "machado_sombrio": {"loja": False, "nome": "«Machado da Sombra Dobrada»", "emoji": "🪓", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "sombrio", "preco": 18000, "atk": 95, "andar_min": 15},
+    "adaga_sombria": {"loja": False, "nome": "«Adaga do Trono Vazio»", "emoji": "🔪", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "sombrio", "preco": 18000, "atk": 95, "andar_min": 15},
+    "cajado_sombrio": {"loja": False, "nome": "«Cajado da Ferida Sombria»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "sombrio", "preco": 18000, "atk": 95, "andar_min": 15},
+    "manopla_sombria": {"loja": False, "nome": "«Manoplas do Silêncio Ajoelhado»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "sombrio", "preco": 18000, "atk": 95, "andar_min": 15},
+
+    "martelo_divino": {"loja": False, "nome": "«Martelo do Prego de Luz»", "emoji": "🔨", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
+    "foice_divina": {"loja": False, "nome": "«Foice do Juízo Suspenso»", "emoji": "🌫️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
+    "cajado_divino": {"loja": False, "nome": "«Cajado do Desperto»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
+    "manopla_divina": {"loja": False, "nome": "«Manoplas da Marca»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
+
+    # ---------------- materiais dos andares 11-15 (monstro comum) ----------------
+    "pluma_eterea": {"nome": "Pluma Etérea", "emoji": "🪶", "tipo": "material", "preco": 480},
+    "farpa_eletrica": {"nome": "Farpa Elétrica", "emoji": "🔌", "tipo": "material", "preco": 560},
+    "estilhaco_gelido": {"nome": "Estilhaço Gélido", "emoji": "🧊", "tipo": "material", "preco": 640},
+    "cinza_quente": {"nome": "Cinza Quente", "emoji": "♨️", "tipo": "material", "preco": 720},
+    "po_de_estrela": {"nome": "Pó de Estrela", "emoji": "🌠", "tipo": "material", "preco": 800},
+
+    # ---------------- materiais de chefe dos andares 11-15 (craft de arma elemental) ----------------
+    "sopro_contido": {"nome": "Sopro Contido", "emoji": "🌬️", "tipo": "material", "preco": 1600},
+    "semente_de_trovao": {"nome": "Semente de Trovão", "emoji": "🌩️", "tipo": "material", "preco": 1900},
+    "lasca_de_silencio": {"nome": "Lasca de Silêncio", "emoji": "🔇", "tipo": "material", "preco": 2200},
+    "brasa_sem_fumaca": {"nome": "Brasa Sem Fumaça", "emoji": "🔥", "tipo": "material", "preco": 2500},
+    "sombra_dobrada": {"nome": "Sombra Dobrada", "emoji": "🌑", "tipo": "material", "preco": 2800},
+    "prego_de_luz": {"nome": "Prego de Luz", "emoji": "📌", "tipo": "material", "preco": 2800},
+
     # ---------------- materiais (só pra vender) ----------------
     "presa_javali": {"nome": "Presa de Javali", "emoji": "🦷", "tipo": "material", "preco": 12},
     "seda_sussurrante": {"nome": "Seda Sussurrante", "emoji": "🕸️", "tipo": "material", "preco": 30},
@@ -186,6 +256,106 @@ ANDARES = {
         ],
         "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
     },
+
+    # ---- acima do selo: sem paredes, sem loja, sem ferreiro, sem carroça ----
+    # (bot.py bloqueia comércio pra andar > 10; ver decisoes.md § Andares 11-15)
+    # "elemento" no chefe liga o telegraph de condição em combate.py — só
+    # chefes com essa chave rolam pra amarrar Queimadura/Congelamento/etc.
+    11: {
+        "nome": "Terraço Estrelado",
+        "cor": 0x8ECAE6,
+        "descricao": "O teto sumiu. A torre continua, mas agora é só as bordas de uma sala que o céu invadiu.",
+        "monstros": [
+            {"nome": "Grifo de Vidro", "hp": 330, "atk": 58, "def": 21, "xp": 156, "moedas": 222, "drops": [("pluma_eterea", 0.55)]},
+            {"nome": "Sentinela Suspensa", "hp": 355, "atk": 56, "def": 24, "xp": 158, "moedas": 226, "drops": [("pluma_eterea", 0.50)]},
+            {"nome": "Corrente de Vento", "hp": 375, "atk": 60, "def": 20, "xp": 154, "moedas": 220, "drops": [("pluma_eterea", 0.45)]},
+        ],
+        "boss": {
+            "nome": "«Guardiã do Terraço»", "hp": 1380, "atk": 156, "def": 35,
+            "xp": 1460, "moedas": 2450, "elemento": "ar",
+            "drops": [("sopro_contido", 1.0)],
+        },
+    },
+    12: {
+        "nome": "Pátio da Tempestade",
+        "cor": 0x6247AA,
+        "descricao": "Relâmpago sem trovão — a luz chega, o som não vem. Alguma coisa aqui em cima engole barulho.",
+        "monstros": [
+            {"nome": "Coluna Carregada", "hp": 365, "atk": 64, "def": 23, "xp": 168, "moedas": 237, "drops": [("farpa_eletrica", 0.55)]},
+            {"nome": "Arco Que Ainda Zune", "hp": 385, "atk": 66, "def": 25, "xp": 170, "moedas": 240, "drops": [("farpa_eletrica", 0.50)]},
+            {"nome": "Servo de Cobre", "hp": 400, "atk": 62, "def": 27, "xp": 166, "moedas": 235, "drops": [("farpa_eletrica", 0.45)]},
+        ],
+        "boss": {
+            "nome": "«Arauto do Pátio»", "hp": 1500, "atk": 182, "def": 41,
+            "xp": 1700, "moedas": 2850, "elemento": "raio",
+            "drops": [("semente_de_trovao", 1.0)],
+        },
+    },
+    13: {
+        "nome": "Ala Branca",
+        "cor": 0xCAF0F8,
+        "descricao": "Branco em toda direção, inclusive pra baixo. Os próprios passos somem depois do terceiro.",
+        "monstros": [
+            {"nome": "Estátua de Gelo Fino", "hp": 390, "atk": 70, "def": 26, "xp": 180, "moedas": 252, "drops": [("estilhaco_gelido", 0.55)]},
+            {"nome": "Eco Congelado", "hp": 410, "atk": 68, "def": 28, "xp": 182, "moedas": 255, "drops": [("estilhaco_gelido", 0.50)]},
+            {"nome": "Vigia Sem Rosto", "hp": 425, "atk": 74, "def": 24, "xp": 178, "moedas": 250, "drops": [("estilhaco_gelido", 0.45)]},
+        ],
+        "boss": {
+            "nome": "«Curadora da Ala Branca»", "hp": 1620, "atk": 208, "def": 47,
+            "xp": 1940, "moedas": 3250, "elemento": "gelo",
+            "drops": [("lasca_de_silencio", 1.0)],
+        },
+    },
+    14: {
+        "nome": "O Solário",
+        "cor": 0xF3722C,
+        "descricao": "Calor sem chama à vista. Se tem fogo aqui, ele decidiu não aparecer pra ninguém ver.",
+        "monstros": [
+            {"nome": "Vidro Fundido", "hp": 415, "atk": 78, "def": 28, "xp": 192, "moedas": 267, "drops": [("cinza_quente", 0.55)]},
+            {"nome": "Fôlego Retido", "hp": 435, "atk": 76, "def": 30, "xp": 194, "moedas": 270, "drops": [("cinza_quente", 0.50)]},
+            {"nome": "Estátua de Sal Requentado", "hp": 450, "atk": 82, "def": 26, "xp": 190, "moedas": 265, "drops": [("cinza_quente", 0.45)]},
+        ],
+        "boss": {
+            "nome": "«Guardião do Solário»", "hp": 1740, "atk": 234, "def": 53,
+            "xp": 2180, "moedas": 3650, "elemento": "fogo",
+            "drops": [("brasa_sem_fumaca", 1.0)],
+        },
+    },
+    15: {
+        "nome": "Trono Vazio",
+        "cor": 0x22223B,
+        "descricao": "Uma cadeira grande demais pra qualquer um. Ninguém se sentou nela ainda — e talvez seja melhor assim.",
+        "monstros": [
+            {"nome": "Guarda Sem Nome", "hp": 440, "atk": 84, "def": 30, "xp": 204, "moedas": 282, "drops": [("po_de_estrela", 0.55)]},
+            {"nome": "Sombra Que Ajoelha", "hp": 460, "atk": 82, "def": 32, "xp": 206, "moedas": 285, "drops": [("po_de_estrela", 0.50)]},
+            {"nome": "Retrato Vivo", "hp": 475, "atk": 88, "def": 28, "xp": 202, "moedas": 280, "drops": [("po_de_estrela", 0.45)]},
+        ],
+        # duas fases, ver decisoes.md § Andar 15 — combate.py troca pra
+        # "fase2" sozinho quando o hp cruza 50%, sem resetar nada da luta.
+        "boss": {
+            "nome": "«O Trono Vazio»", "hp": 1860, "atk": 260, "def": 59,
+            "xp": 2420, "moedas": 4050, "elemento": "sombrio",
+            "drops": [("sombra_dobrada", 1.0)],
+            "fase2": {
+                "nome": "«O Trono Vazio — Desperto»", "atk": 300, "def": 65,
+                "elemento": "divino", "drops": [("prego_de_luz", 1.0)],
+            },
+        },
+    },
+}
+
+# Condição que cada elemento amarra quando um chefe de andar 11+ telegrafa
+# (chefe precisa ter "elemento" no dict — bosses do andar 1-10 não têm essa
+# chave, então nunca entram nesse sistema). "duracao" já inclui o "+1" de
+# ajuste onde a consulta acontece depois do tick() da própria rodada — ver
+# decisoes.md § Condições no jogador pra qual valor pede ajuste e qual não.
+CONDICOES_ELEMENTO = {
+    "ar": {"tipo": "chance_erro", "nome": "Vendaval", "emoji": "🌪️", "duracao": 3, "valor": 0.35},
+    "raio": {"tipo": "bloqueia_skill", "nome": "Choque", "emoji": "⚡", "duracao": 2, "valor": 0},
+    "gelo": {"tipo": "pula_turno", "nome": "Congelamento", "emoji": "❄️", "duracao": 3, "valor": 0},
+    "fogo": {"tipo": "dano_por_rodada", "nome": "Queimadura", "emoji": "🔥", "duracao": 3, "valor": 0.06},
+    "sombrio": {"tipo": "reduz_cura", "nome": "Ferida Sombria", "emoji": "🌑", "duracao": 2, "valor": 0.50},
+    "divino": {"tipo": "vulneravel", "nome": "Marca", "emoji": "✨", "duracao": 4, "valor": 0.30},
 }
 
 # Fase 2: as 4 bases. Os 12 ramos (ascensões) entram depois.
@@ -194,24 +364,28 @@ CLASSES = {
         "nome": "Mago", "emoji": "🔮",
         "atributo_habilidade": "inteligencia",   # dano de habilidade escala com isso
         "afinidade_arma": "inteligencia",        # rende cheio com cajado
+        "recurso": "mana",
         "desc": "Dano de habilidade em INT. Rende cheio com cajado na mão.",
     },
     "guerreiro": {
         "nome": "Guerreiro", "emoji": "🗡️",
         "atributo_habilidade": "forca",
         "afinidade_arma": "forca",
+        "recurso": "furia",
         "desc": "Dano de habilidade em FOR. Rende cheio com espada, machado ou martelo.",
     },
     "ladino": {
         "nome": "Ladino", "emoji": "🏹",
         "atributo_habilidade": "destreza",
         "afinidade_arma": "destreza",
+        "recurso": "energia",
         "desc": "Dano de habilidade em DES. Rende cheio com adaga, arco ou foice.",
     },
     "orador": {
         "nome": "Orador", "emoji": "🙏",
         "atributo_habilidade": "inteligencia",   # dano de habilidade em INT, apesar da arma ser de DES
         "afinidade_arma": "destreza",            # rende cheio desarmado ou de manopla/faixa
+        "recurso": "mana",
         "desc": "Dano de habilidade em INT, mas briga desarmado ou de manopla — escala em DES.",
     },
 }
@@ -233,16 +407,64 @@ ASCENSOES = {
     "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino"},
 }
 
-# Catálogo de habilidades — vazio de propósito nesta fase. Só a infraestrutura
-# (mana, botão de habilidade, requisito, condição, afinidade de arma) existe
-# ainda. Quando a primeira skill entrar, a chave segue este formato:
+# Catálogo de habilidades. Cada chave segue este formato:
 #   "chave": {
 #       "nome": str, "emoji": str, "classe": uma chave de CLASSES,
-#       "custo_mana": int, "desc": str,
-#       "requisito": (atributo, valor_minimo) ou omitido,
+#       "recurso": "mana" | "furia" | "energia" — bate com CLASSES[classe]["recurso"],
+#       "custo": int — quanto do recurso a habilidade consome,
+#       "desc": str,
+#       "requisito": (atributo, valor_minimo) ou omitido — sem requisito = vem
+#           com a classe, disponível desde o nível 1,
 #       "sidequest": True ou omitido — destravada por NPC, não por atributo,
+#       "alvo": "aliado_escolhido" ou omitido — omitido = afeta quem lança,
+#           o chefe, ou a party inteira (a função de efeito em combate.py sabe
+#           qual); "aliado_escolhido" abre um seletor de alvo antes de lançar.
 #   }
-HABILIDADES = {}
+# Fúria e Energia são recursos por luta — zeram/enchem toda vez que uma luta
+# de chefe começa, não persistem no banco. Ver decisoes.md § Primeira leva
+# de skills.
+HABILIDADES = {
+    "dardo_arcano": {
+        "nome": "Dardo Arcano", "emoji": "🔹", "classe": "mago",
+        "recurso": "mana", "custo": 12,
+        "desc": "Dano em INT que ignora a defesa do chefe.",
+    },
+    "ruptura": {
+        "nome": "Ruptura", "emoji": "💠", "classe": "mago",
+        "recurso": "mana", "custo": 18, "requisito": ("inteligencia", 15),
+        "desc": "O chefe recebe +20% de dano por 3 rodadas — vale pra party inteira.",
+    },
+    "golpe_aberto": {
+        "nome": "Golpe Aberto", "emoji": "🩸", "classe": "guerreiro",
+        "recurso": "furia", "custo": 40,
+        "desc": "Dano em FOR + sangramento por rodada, empilha até 3 vezes.",
+    },
+    "pancada_atordoante": {
+        "nome": "Pancada Atordoante", "emoji": "💥", "classe": "guerreiro",
+        "recurso": "furia", "custo": 65, "requisito": ("forca", 15),
+        "desc": "Chance de o chefe perder a próxima ação — escala com FOR, teto 25%.",
+    },
+    "corte_rapido": {
+        "nome": "Corte Rápido", "emoji": "🗡️", "classe": "ladino",
+        "recurso": "energia", "custo": 30,
+        "desc": "Dois golpes em DES com chance de crítico maior.",
+    },
+    "ponto_cego": {
+        "nome": "Ponto Cego", "emoji": "🎯", "classe": "ladino",
+        "recurso": "energia", "custo": 50, "requisito": ("destreza", 15),
+        "desc": "3 rodadas com chance de crítico muito alta.",
+    },
+    "palavra_de_alento": {
+        "nome": "Palavra de Alento", "emoji": "🕊️", "classe": "orador",
+        "recurso": "mana", "custo": 12, "alvo": "aliado_escolhido",
+        "desc": "Regeneração num aliado escolhido ao longo de 2 rodadas — não é cura instantânea.",
+    },
+    "voto_de_ferro": {
+        "nome": "Voto de Ferro", "emoji": "🛡️", "classe": "orador",
+        "recurso": "mana", "custo": 18, "requisito": ("inteligencia", 15),
+        "desc": "Reduz o dano recebido por toda a party por 2 rodadas.",
+    },
+}
 
 TITULOS = {
     "beta_tester": {
@@ -257,6 +479,25 @@ TITULOS = {
 
 
 ANDAR_MAXIMO = max(ANDARES)
+
+# só o que "Sua Majestade do Andar Nenhum" derruba — ver raide.py
+ACESSORIOS_RAIDE = tuple(k for k, v in ITENS.items() if v.get("tipo") in ("anel", "colar"))
+
+# ---------------- raide de guilda ----------------
+# Fixa, fora da progressão da torre — não fica em ANDARES porque não
+# destranca andar nenhum. HP/ATK/DEF calibrados um pouco abaixo do chefe do
+# andar 7 (hp 890/atk 91/def 20) de propósito: com HP × participantes
+# (Luta já faz isso sozinha) e recompensa modesta, o risco tem que ficar
+# baixo pra um grupo de late game — ver decisoes.md § Raide.
+RAIDE_CHEFE = {
+    "nome": "«Sua Majestade do Andar Nenhum»",
+    "hp": 850, "atk": 82, "def": 18,
+}
+ANDAR_MINIMO_RAIDE = 7
+ANDAR_REFERENCIA_RAIDE = 7   # só pra fórmulas de penetração/destreza — não desbloqueia nada
+RECOMPENSA_MOEDAS_RAIDE = 800   # modesta de propósito: chefe fixo, sem risco pra late game
+QTD_ACESSORIOS_RAIDE = 2
+COOLDOWN_RAIDE_SEGUNDOS = 24 * 3600   # 1x por dia, por guilda (não por jogador)
 
 
 def itens_da_loja(andar: int):

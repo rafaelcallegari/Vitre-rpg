@@ -8,14 +8,18 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import andares_altos
 import atributos as at
 import database as db
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario
+import paginacao
+from game_data import (
+    ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario,
+)
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
     agora, carroca_ativa, proxima_carroca, custo_viagem,
     consumiveis_disponiveis, equipamentos_do_andar,
-    npcs_do_andar, ferreiro_do_andar, encontrar_npc,
+    npcs_do_andar, ferreiro_do_andar, taverneiro_do_andar, guia_do_andar, encontrar_npc,
 )
 
 load_dotenv()
@@ -26,8 +30,10 @@ PREFIXOS = ("rpg ", "rpg")
 COOLDOWN_CACAR = 60
 COOLDOWN_EXPLORAR = 180
 COOLDOWN_BOSS = 900
+COOLDOWN_DESCANSAR = 2 * 60 * 60
+CUSTO_DESCANSAR = 150
 
-ICONES_NPC = {"mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬"}
+ICONES_NPC = {"mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬", "taverneiro": "🍺", "guia": "🕯️"}
 
 # categoria onde `rpg priv` cria as salas. Se não existir, o bot cria.
 CATEGORIA_SALAS = "Torre — Salas"
@@ -43,6 +49,7 @@ def obter_prefixo(bot, message):
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True   # guildas precisam resolver membros/cargos — liga "Server Members Intent" no portal
 
 bot = commands.Bot(command_prefix=obter_prefixo, intents=intents, case_insensitive=True)
 bot.remove_command("help")
@@ -126,10 +133,38 @@ def separar_quantidade(texto):
     return texto.strip(), 1
 
 
+def com_bonus_upgrade(item_dado, item_chave, user_id, campo):
+    """Copia o item aplicando +12% no atk/def por nivel de melhoria (+1/+2)."""
+    if not item_chave or campo not in item_dado:
+        return item_dado
+    nivel = db.get_upgrade(user_id, item_chave)
+    if not nivel:
+        return item_dado
+    item_dado = dict(item_dado)
+    item_dado[campo] = int(item_dado[campo] * (1 + 0.12 * nivel))
+    return item_dado
+
+
+def bonus_atributo_equipamento(*pecas):
+    """Soma o bônus de atributo de qualquer peça equipada que declare
+    "atributo"+"bonus" — anel, colar, e agora as armas elementais dos
+    andares 11+ também. Não passa por com_bonus_upgrade de propósito:
+    `rpg melhorar` só mexe em atk/def, nunca nesse bônus."""
+    bonus = {}
+    for peca in pecas:
+        if peca and "atributo" in peca and "bonus" in peca:
+            bonus[peca["atributo"]] = bonus.get(peca["atributo"], 0) + peca["bonus"]
+    return bonus
+
+
 def stats(j):
-    arma = ITENS.get(j["arma"], {})
-    armadura = ITENS.get(j["armadura"], {})
-    atribs = at.extrair(j)
+    arma = com_bonus_upgrade(ITENS.get(j["arma"], {}), j["arma"], j["user_id"], "atk")
+    armadura = com_bonus_upgrade(ITENS.get(j["armadura"], {}), j["armadura"], j["user_id"], "def")
+    anel = ITENS.get(j["anel"], {})
+    colar = ITENS.get(j["colar"], {})
+    atribs_base = at.extrair(j)
+    bonus = bonus_atributo_equipamento(arma, anel, colar)
+    atribs = {k: atribs_base[k] + bonus.get(k, 0) for k in atribs_base}
     s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"])
     s["atribs"] = atribs
     return s
@@ -161,10 +196,12 @@ def barra_hp(atual, maximo, tamanho=12):
 
 
 def calcular_dano(atk, defesa, critico=at.CRITICO_BASE):
+    """Devolve (dano, foi_critico) — o booleano importa pra Fúria do Guerreiro."""
     bruto = atk * random.uniform(0.85, 1.15)
-    if random.random() < critico:
+    foi_critico = random.random() < critico
+    if foi_critico:
         bruto *= at.MULTIPLICADOR_CRITICO
-    return at.aplicar_defesa(bruto, defesa)
+    return at.aplicar_defesa(bruto, defesa), foi_critico
 
 
 def simular_combate(s, hp, mob, andar_num):
@@ -174,14 +211,14 @@ def simular_combate(s, hp, mob, andar_num):
     log = []
 
     if random.random() >= at.chance_iniciativa(des, des_mob):
-        dm = calcular_dano(mob["atk"], s["def"])
+        dm, _ = calcular_dano(mob["atk"], s["def"])
         hp -= dm
         log.append(f"O inimigo é mais rápido e abre com **{dm}**.")
         if hp <= 0:
             return hp, False, log[-4:]
 
     for _ in range(60):
-        d = calcular_dano(s["atk"], mob["def"], s["critico"])
+        d, _ = calcular_dano(s["atk"], mob["def"], s["critico"])
         hp_mob -= d
         if hp_mob <= 0:
             log.append(f"Você acerta **{d}** e derruba o alvo.")
@@ -189,7 +226,7 @@ def simular_combate(s, hp, mob, andar_num):
         if random.random() < at.chance_esquiva(des, des_mob):
             log.append(f"Você **{d}** ▸ esquivou do contra-ataque")
             continue
-        dm = calcular_dano(mob["atk"], s["def"])
+        dm, _ = calcular_dano(mob["atk"], s["def"])
         hp -= dm
         log.append(f"Você **{d}** ▸ inimigo **{dm}**")
         if hp <= 0:
@@ -254,11 +291,19 @@ async def bloqueado_por_cooldown(ctx, comando, segundos):
 
 
 def processar_morte(j, s):
+    """Penalidade normal (20% das moedas, volta com 30% do HP) + reconquista:
+    morrer acima do andar 10 zera andar_max pra 10 — o andar 11+ inteiro
+    precisa ser reconquistado do zero. Ver decisoes.md § Morte e reconquista."""
     perda = int(j["moedas"] * 0.20)
-    db.atualizar_jogador(
-        j["user_id"], hp=int(s["hp_max"] * 0.3),
-        moedas=j["moedas"] - perda, mortes=j["mortes"] + 1,
-    )
+    campos = {
+        "hp": int(s["hp_max"] * 0.3),
+        "moedas": j["moedas"] - perda,
+        "mortes": j["mortes"] + 1,
+    }
+    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+        campos["andar"] = andares_altos.ANDAR_ACIMA_DO_SELO
+        campos["andar_max"] = andares_altos.ANDAR_ACIMA_DO_SELO
+    db.atualizar_jogador(j["user_id"], **campos)
     return perda
 
 
@@ -378,7 +423,13 @@ async def perfil(ctx, membro: discord.Member = None):
     e.add_field(name="Moedas", value=f"🪙 {j['moedas']}", inline=True)
     arma = ITENS[j["arma"]]["nome"] if j["arma"] else "—"
     armadura = ITENS[j["armadura"]]["nome"] if j["armadura"] else "—"
-    e.add_field(name="Equipado", value=f"🗡️ {arma}\n🛡️ {armadura}", inline=False)
+    anel = ITENS[j["anel"]]["nome"] if j["anel"] else "—"
+    colar = ITENS[j["colar"]]["nome"] if j["colar"] else "—"
+    e.add_field(
+        name="Equipado",
+        value=f"🗡️ {arma}\n🛡️ {armadura}\n💍 {anel}\n📿 {colar}",
+        inline=False,
+    )
     rodape = f"Andar mais alto destrancado: {j['andar_max']}/{ANDAR_MAXIMO}"
     if j["pontos"]:
         rodape = f"{j['pontos']} ponto(s) para distribuir · " + rodape
@@ -610,6 +661,21 @@ async def andar_info(ctx):
     await ctx.send(embed=e)
 
 
+def custo_e_motivo_viagem(j, destino, gratis_carroca):
+    """(custo, motivo) — motivo é None se pago, "carroça" ou "guilda" se de graça.
+
+    A graça da guilda é checada por membro, não por guilda: quem tem
+    andar_max abaixo da home da guilda paga o preço normal mesmo pertencendo
+    a ela (ver guildas § home). A carroça não sobe o Selo — sem carroça
+    acima do andar 10 de propósito (ver decisoes.md § Andares 11-15).
+    """
+    if gratis_carroca and destino <= andares_altos.ANDAR_ACIMA_DO_SELO:
+        return 0, "carroça"
+    if db.viagem_gratis_guilda(j["user_id"], j["andar_max"], destino):
+        return 0, "guilda"
+    return custo_viagem(j["andar"], destino), None
+
+
 @bot.command(name="viajar", aliases=["ir", "travel"])
 async def viajar(ctx, destino: int = 0):
     j = await pegar_jogador(ctx)
@@ -617,7 +683,7 @@ async def viajar(ctx, destino: int = 0):
         return
 
     ativa, parte_em = carroca_ativa()
-    gratis = ativa and conheceu_bramm(j)
+    gratis_carroca = ativa and conheceu_bramm(j)
 
     if not destino:
         linhas = []
@@ -625,8 +691,8 @@ async def viajar(ctx, destino: int = 0):
             if n == j["andar"]:
                 linhas.append(f"**{n}. {ANDARES[n]['nome']}** — você está aqui")
             else:
-                custo = 0 if gratis else custo_viagem(j["andar"], n)
-                preco = "grátis (carroça)" if gratis else f"{custo} 🪙"
+                custo, motivo = custo_e_motivo_viagem(j, n, gratis_carroca)
+                preco = f"grátis ({motivo})" if motivo else f"{custo} 🪙"
                 linhas.append(f"`{n}.` {ANDARES[n]['nome']} — {preco}")
         e = discord.Embed(title="Para onde?", description="\n".join(linhas), color=0xA8DADC)
         e.set_footer(text="rpg viajar <número> · você tem "
@@ -644,7 +710,7 @@ async def viajar(ctx, destino: int = 0):
         await ctx.send("Você já está aqui.")
         return
 
-    custo = 0 if gratis else custo_viagem(j["andar"], destino)
+    custo, motivo = custo_e_motivo_viagem(j, destino, gratis_carroca)
     if j["moedas"] < custo:
         await ctx.send(
             f"A viagem custa **{custo}** 🪙 e você tem {j['moedas']}. "
@@ -659,9 +725,12 @@ async def viajar(ctx, destino: int = 0):
         description=a["descricao"],
         color=a["cor"],
     )
-    if gratis:
+    if motivo == "carroça":
         e.set_author(name="🐎 Você pegou carona com Bramm")
         e.set_footer(text=f"Não custou nada. A carroça parte {parte_em.strftime('%H:%M')}.")
+    elif motivo == "guilda":
+        e.set_author(name="🏠 Viagem de volta pra casa")
+        e.set_footer(text="Não custou nada — o andar é a home da sua guilda.")
     else:
         e.set_footer(text=f"Viagem: -{custo} 🪙 · restam {j['moedas'] - custo}")
     await ctx.send(embed=e)
@@ -715,7 +784,9 @@ async def listar_npcs(ctx):
     linhas = []
     for n in pessoas:
         papel = {"mercador": "vende poções", "ferreiro": "vende equipamento daqui",
-                 "carroceiro": "viagem grátis nos horários", "conversa": ""}[n["tipo"]]
+                 "carroceiro": "viagem grátis nos horários", "conversa": "",
+                 "taverneiro": "cura HP e mana cheios por moedas",
+                 "guia": f"leva de volta pro andar {andares_altos.ANDAR_ACIMA_DO_SELO} de graça"}[n["tipo"]]
         nome = f"{n['nome']} {n['titulo']}".strip()
         linhas.append(f"{ICONES_NPC.get(n['tipo'], '•')} **{nome}**" + (f" — {papel}" if papel else ""))
     e = discord.Embed(
@@ -737,86 +808,162 @@ async def falar(ctx, *, quem: str = ""):
         await ctx.send("Não tem ninguém com esse nome neste andar. Confere `rpg npcs`.")
         return
     nome = f"{n['nome']} {n['titulo']}".strip()
+
+    if n["tipo"] == "guia":
+        # falar com ela já desce de graça — descer é sempre grátis, subir nunca
+        fala = andares_altos.fala_da_guia(j["andar"], j["mortes"]) or n["fala"]
+        destino = andares_altos.ANDAR_ACIMA_DO_SELO
+        db.atualizar_jogador(j["user_id"], andar=destino)
+        e = discord.Embed(description=f"*{fala}*", color=ANDARES[j["andar"]]["cor"])
+        e.set_author(name=f"{ICONES_NPC['guia']} {nome}")
+        e.set_footer(text=f"Ela te leva de volta pro andar {destino}. De graça — subir é que nunca é.")
+        await ctx.send(embed=e)
+        return
+
     e = discord.Embed(description=f"*{n['fala']}*", color=ANDARES[j["andar"]]["cor"])
     e.set_author(name=f"{ICONES_NPC.get(n['tipo'], '•')} {nome}")
     if n["tipo"] in ("mercador", "ferreiro"):
         e.set_footer(text="rpg loja")
     elif n["tipo"] == "carroceiro":
         e.set_footer(text="rpg carroca")
+    elif n["tipo"] == "taverneiro":
+        e.set_footer(text="rpg descansar")
+    await ctx.send(embed=e)
+
+
+@bot.command(name="descansar", aliases=["rest", "descanso"])
+async def descansar(ctx):
+    """Cura HP e mana cheios em qualquer andar até o Selo (10) — sem NPC
+    físico exigido, só as duas tavernas (andares 1 e 10) têm um taverneiro
+    de verdade pra dar a fala. Acima do Selo não tem descanso pago, mesma
+    regra de "sem comércio" do resto dos andares 11-15. Preço fixo travado
+    por cooldown (ver decisoes.md) — sem o cooldown, preço fixo ficaria mais
+    barato que poção pra quem está bem machucado."""
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+        await ctx.send("Não tem descanso pago acima do Selo. Sobe abastecido ou não sobe.")
+        return
+
+    npc = taverneiro_do_andar(j["andar"])
+    nome_npc = f"{npc['nome']} {npc['titulo']}".strip() if npc else None
+
+    s = stats(j)
+    falta_hp = max(0, s["hp_max"] - max(0, j["hp"]))
+    falta_mana = max(0, s["mana_max"] - max(0, j["mana"]))
+    if falta_hp == 0 and falta_mana == 0:
+        await ctx.send(
+            f"*{nome_npc} olha pra você.* \"Já está inteiro. Volta quando estiver acabado.\""
+            if npc else "Você já está inteiro. Não precisa descansar agora."
+        )
+        return
+
+    restante = db.checar_cooldown(j["user_id"], "descansar")
+    if restante > 0:
+        await ctx.send(f"⏳ `rpg descansar` volta em **{fmt_tempo(restante)}**.")
+        return
+    if j["moedas"] < CUSTO_DESCANSAR:
+        await ctx.send(
+            f"*{nome_npc} olha os seus machucados.* \"Isso sai por **{CUSTO_DESCANSAR}** 🪙. Você tem {j['moedas']}.\""
+            if npc else f"Descansar sai por **{CUSTO_DESCANSAR}** 🪙. Você tem {j['moedas']}."
+        )
+        return
+
+    db.set_cooldown(j["user_id"], "descansar", COOLDOWN_DESCANSAR)
+    db.atualizar_jogador(j["user_id"], hp=s["hp_max"], mana=s["mana_max"], moedas=j["moedas"] - CUSTO_DESCANSAR)
+    descricao = (
+        f"*{nome_npc} empurra um prato na sua frente e não pergunta nada.*" if npc
+        else "*Você monta acampamento, cuida dos ferimentos e descansa até se sentir inteiro de novo.*"
+    )
+    e = discord.Embed(title="🛏️ Descanso", description=descricao, color=ANDARES[j["andar"]]["cor"])
+    e.add_field(name="Recuperado", value=f"HP +{falta_hp} · Mana +{falta_mana}", inline=False)
+    e.set_footer(
+        text=f"Custou {CUSTO_DESCANSAR} 🪙 · restam {j['moedas'] - CUSTO_DESCANSAR} · "
+             f"próximo em {fmt_tempo(COOLDOWN_DESCANSAR)}"
+    )
     await ctx.send(embed=e)
 
 
 # ==================== economia ====================
 @bot.command(name="inventario", aliases=["inventory", "inv", "i", "mochila", "inventário"])
-async def inventario(ctx):
+async def inventario(ctx, pagina: int = 1):
     j = await pegar_jogador(ctx)
     if not j:
         return
     itens = db.get_inventario(j["user_id"])
-    if not itens:
-        await ctx.send("Sua mochila está vazia.")
-        return
-    linhas = [
-        f"{ITENS[i['item']]['emoji']} **{ITENS[i['item']]['nome']}** x{i['qtd']}"
+    entradas = [
+        (f"{ITENS[i['item']]['emoji']} {ITENS[i['item']]['nome']}", f"x{i['qtd']}")
         for i in itens if i["item"] in ITENS
     ]
-    e = discord.Embed(title=f"Mochila de {j['nome']}", description="\n".join(linhas), color=0xC9ADA7)
-    e.set_footer(text=f"🪙 {j['moedas']} moedas")
-    await ctx.send(embed=e)
+    await paginacao.enviar_paginado(
+        ctx, entradas, f"Mochila de {j['nome']}", 0xC9ADA7,
+        rodape_extra=f"🪙 {j['moedas']} moedas", pagina_inicial=pagina,
+        mensagem_vazia="Sua mochila está vazia.",
+    )
 
 
 @bot.command(name="loja", aliases=["shop", "store"])
-async def loja(ctx):
+async def loja(ctx, pagina: int = 1):
     j = await pegar_jogador(ctx)
     if not j:
         return
+    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+        await ctx.send(
+            "Não tem comércio nenhum acima do Selo — nada é vendido, nem poção. "
+            "Sobe abastecido ou não sobe."
+        )
+        return
     a = ANDARES[j["andar"]]
-    e = discord.Embed(title=f"Comércio do andar {j['andar']} — {a['nome']}", color=0xE9C46A)
+    partes_desc = []
 
     mercador = next((n for n in npcs_do_andar(j["andar"]) if n["tipo"] == "mercador"), None)
     consumiveis = a_venda(consumiveis_disponiveis(j["andar_max"]))
-    if consumiveis:
-        nome = f"{mercador['nome']} {mercador['titulo']}".strip() if mercador else "Mercador"
-        e.add_field(
-            name=f"🧺 {nome}",
-            value="\n".join(
-                f"{v['emoji']} **{v['nome']}** — {v['preco']} 🪙 ({descricao_cura(v)})"
-                for v in consumiveis.values()
-            ),
-            inline=False,
-        )
+    entradas = [
+        (f"🧺 {v['emoji']} {v['nome']}", f"{v['preco']} 🪙 ({descricao_cura(v)})")
+        for v in consumiveis.values()
+    ]
+    if mercador:
+        nome_mercador = f"{mercador['nome']} {mercador['titulo']}".strip()
+        partes_desc.append(f"🧺 {nome_mercador}")
 
     ferreiro = ferreiro_do_andar(j["andar"])
     equipamentos = a_venda(equipamentos_do_andar(j["andar"]))
     if ferreiro and equipamentos:
-        nome = f"{ferreiro['nome']} {ferreiro['titulo']}".strip()
-        e.add_field(
-            name=f"🔨 {nome}",
-            value="\n".join(
-                f"{v['emoji']} **{v['nome']}** — {v['preco']} 🪙"
+        entradas += [
+            (
+                f"🔨 {v['emoji']} {v['nome']}",
+                f"{v['preco']} 🪙"
                 + (f" (+{v['atk']} ATK)" if "atk" in v else "")
-                + (f" (+{v['def']} DEF)" if "def" in v else "")
-                for v in equipamentos.values()
-            ),
-            inline=False,
-        )
+                + (f" (+{v['def']} DEF)" if "def" in v else ""),
+            )
+            for v in equipamentos.values()
+        ]
+        nome_ferreiro = f"{ferreiro['nome']} {ferreiro['titulo']}".strip()
+        partes_desc.append(f"🔨 {nome_ferreiro}")
     else:
         andares_com_forja = sorted({v["andar_min"] for v in ITENS.values()
                                     if v["tipo"] in ("arma", "armadura") and v.get("loja", True)})
-        e.add_field(
-            name="🔨 Sem ferreiro aqui",
-            value="Equipamento só nos andares " + ", ".join(str(n) for n in andares_com_forja) + ".",
-            inline=False,
+        partes_desc.append(
+            "🔨 Sem ferreiro aqui — equipamento só nos andares "
+            + ", ".join(str(n) for n in andares_com_forja) + "."
         )
 
-    e.set_footer(text=f"Você tem {j['moedas']} moedas · rpg comprar <item> <qtd>")
-    await ctx.send(embed=e)
+    await paginacao.enviar_paginado(
+        ctx, entradas, f"Comércio do andar {j['andar']} — {a['nome']}", 0xE9C46A,
+        descricao=" · ".join(partes_desc) or None,
+        rodape_extra=f"Você tem {j['moedas']} moedas · rpg comprar <item> <qtd>",
+        pagina_inicial=pagina, mensagem_vazia="Nada à venda aqui agora.",
+    )
 
 
 @bot.command(name="comprar", aliases=["buy"])
 async def comprar(ctx, *, argumento: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+        await ctx.send("Não tem ninguém vendendo nada acima do Selo.")
         return
     if not argumento:
         await ctx.send("Uso: `rpg comprar <item> <quantidade>`. Ex: `rpg comprar pocao pequena 3`")
@@ -927,8 +1074,15 @@ async def equipar(ctx, *, texto: str = ""):
         return
     possuidos = [i["item"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS]
     item = encontrar_item(texto, possuidos)
-    if not item or ITENS[item]["tipo"] not in ("arma", "armadura"):
+    if not item or ITENS[item]["tipo"] not in ("arma", "armadura", "anel", "colar"):
         await ctx.send("Você não tem esse equipamento na mochila.")
+        return
+    andar_min = ITENS[item]["andar_min"]
+    if andar_min > j["andar_max"]:
+        await ctx.send(
+            f"**{ITENS[item]['nome']}** é do andar {andar_min} — você só destrancou até o andar "
+            f"{j['andar_max']}. Fica guardado na mochila até você chegar lá."
+        )
         return
     if not db.remove_item(j["user_id"], item, 1):
         await ctx.send("Você não tem esse item.")
@@ -1014,8 +1168,6 @@ async def upar(ctx, *, argumento: str = ""):
     msg = f"{dados['emoji']} **{dados['sigla']} {atribs[chave]} ▸ {novo_valor}**"
     if j["pontos"] - qtd:
         msg += f" · restam {j['pontos'] - qtd} ponto(s)"
-    if chave == "inteligencia":
-        msg += "\n⚠️ Mana ainda não tem uso — habilidades vêm depois. `rpg respec` desfaz."
     await ctx.send(msg)
 
 
@@ -1092,21 +1244,19 @@ async def titulo(ctx, *, argumento: str = ""):
         await ctx.send("Título removido.")
         return
 
-    e = discord.Embed(title=f"Títulos de {j['nome']}", color=ANDARES[j["andar"]]["cor"])
-    if not possuidos:
-        e.description = "Nenhum título conquistado ainda."
-    else:
-        for chave in possuidos:
-            dados = TITULOS.get(chave)
-            if not dados:
-                continue
-            marca = " — equipado" if chave == j["titulo"] else ""
-            e.add_field(
-                name=f"{dados['emoji']} {dados['nome']}{marca}",
-                value=dados["desc"], inline=False,
-            )
-        e.set_footer(text="rpg titulo equipar <nome> · rpg titulo remover")
-    await ctx.send(embed=e)
+    pagina = int(acao) if acao.isdigit() else 1
+    entradas = []
+    for chave in possuidos:
+        dados = TITULOS.get(chave)
+        if not dados:
+            continue
+        marca = " — equipado" if chave == j["titulo"] else ""
+        entradas.append((f"{dados['emoji']} {dados['nome']}{marca}", dados["desc"]))
+    await paginacao.enviar_paginado(
+        ctx, entradas, f"Títulos de {j['nome']}", ANDARES[j["andar"]]["cor"],
+        rodape_extra="rpg titulo equipar <nome> · rpg titulo remover", pagina_inicial=pagina,
+        mensagem_vazia="Nenhum título conquistado ainda.",
+    )
 
 
 @bot.command(name="classe", aliases=["class", "vocacao", "vocação"])
@@ -1268,7 +1418,8 @@ def embed_ajuda():
             "`rpg andar` — onde você está\n"
             "`rpg viajar <n>` — muda de andar (custa moedas)\n"
             "`rpg carroca` — horários da carona grátis\n"
-            "`rpg npcs` · `rpg falar <nome>`"
+            "`rpg npcs` · `rpg falar <nome>`\n"
+            "`rpg descansar` — cura HP e mana cheios, 150 🪙, 1x a cada 2h (até o andar 10, não acima)"
         ),
         inline=False,
     )
@@ -1290,13 +1441,31 @@ def embed_ajuda():
         value=(
             "`rpg profissao` — escolhe entre Forja e Alquimia\n"
             "`rpg receitas` — o que você consegue fabricar\n"
-            "`rpg craftar <item> <qtd>` — fabrica na bancada do NPC"
+            "`rpg craftar <item> <qtd>` — fabrica na bancada do NPC\n"
+            "`rpg melhorar <arma|armadura>` — tenta +1/+2 no ferreiro, qualquer jogador\n"
+            "`rpg desmanchar <item> <qtd>` — devolve parte do material, item some"
         ),
         inline=False,
     )
     e.add_field(
         name="Economia",
-        value="`rpg loja` · `rpg comprar <item> <qtd>` · `rpg vender <item> <qtd>` · `rpg ranking`",
+        value=(
+            "`rpg loja` · `rpg comprar <item> <qtd>` · `rpg vender <item> <qtd>` · `rpg ranking`\n"
+            "`rpg pix @alguém <valor>` — manda moeda à distância, com confirmação por botão\n"
+            "`rpg trade @alguém` — troca item/moeda com quem estiver no mesmo andar"
+        ),
+        inline=False,
+    )
+    e.add_field(
+        name="Guilda",
+        value=(
+            "`rpg guilda` — status · `rpg guilda criar <nome>` (5.000 🪙)\n"
+            "`rpg guilda convidar/expulsar @alguém` · `rpg guilda sair`\n"
+            "`rpg guilda aceitar/recusar <nome>` · `rpg guilda convites` — convite vale 24h\n"
+            "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro\n"
+            "`rpg guilda bau` · `depositar <item> <qtd>` · `sacar <item> <qtd>` · `log`\n"
+            "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, 1x/dia por guilda"
+        ),
         inline=False,
     )
     e.add_field(
@@ -1331,9 +1500,29 @@ try:
 except ModuleNotFoundError:
     print("profissoes.py ainda não está na pasta — craft desligado.")
 
+# trocas — pix (transferência à distância) e trade (troca presencial de item/moeda)
+import trocas
+
+trocas.instalar(bot, globals())
+
+# guildas — baú, cargo/canal no Discord, viagem grátis pra home (custo_e_motivo_viagem acima já chama db.viagem_gratis_guilda)
+import guildas
+
+guildas.instalar(bot, globals())
+
+# raide — precisa vir depois de combate.instalar(), usa combate.H por baixo
+import raide
+
+raide.instalar(bot, globals())
+
 # agenda — aviso automático da carroça do Bramm
 import agenda
 
 agenda.instalar(bot)
+
+# admin — comandos restritos ao dono do bot (reset de temporada, etc.)
+import admin
+
+admin.instalar(bot)
 
 bot.run(TOKEN)

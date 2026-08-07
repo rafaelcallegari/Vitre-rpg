@@ -78,6 +78,8 @@ NPCS = {
          "fala": "Aposentado uma ova. Ninguém mais desce pra me render."},
         {"nome": "Pip", "titulo": "o Menino que Conta", "tipo": "conversa",
          "fala": "Já contei os degraus até em cima. Deu um número que não cabe na boca."},
+        {"nome": "Sera", "titulo": "a Taverneira", "tipo": "taverneiro",
+         "fala": "Aqui ninguém pergunta o motivo do cansaço. Só cobra por ele."},
     ],
     2: [
         {"nome": "Irmã Vell", "titulo": "da Tenda de Musgo", "tipo": "mercador",
@@ -138,8 +140,34 @@ NPCS = {
     10: [
         {"nome": "Eco de um Mercador", "titulo": "", "tipo": "mercador",
          "fala": "Eu já te vendi isso. Você já me pagou. Nós dois já esquecemos."},
+        {"nome": "Eco de uma Taverneira", "titulo": "", "tipo": "taverneiro",
+         "fala": "Descansa. Não vai ajudar, mas descansa."},
         {"nome": "A Porta", "titulo": "", "tipo": "conversa",
          "fala": "(Não é um NPC. Mas responde quando você fala com ela.)"},
+    ],
+
+    # ---- acima do selo: só A Guia. Sem loja, ferreiro nem carroça de propósito
+    # (bot.py bloqueia comércio pra andar > 10). "fala" abaixo é só o fallback —
+    # a fala de verdade escala com mortes, ver andares_altos.fala_da_guia() ----
+    11: [
+        {"nome": "A Guia", "titulo": "", "tipo": "guia",
+         "fala": "Ainda dá pra descer. Ninguém vai lembrar que você chegou até aqui."},
+    ],
+    12: [
+        {"nome": "A Guia", "titulo": "", "tipo": "guia",
+         "fala": "O trovão aqui não faz barulho. Você também vai parar de fazer, com o tempo."},
+    ],
+    13: [
+        {"nome": "A Guia", "titulo": "", "tipo": "guia",
+         "fala": "Branco é só a cor que sobra quando não tem mais nada pra ver. Volta antes de aprender isso."},
+    ],
+    14: [
+        {"nome": "A Guia", "titulo": "", "tipo": "guia",
+         "fala": "Calor sem fogo é o corpo avisando. Eu só estou repetindo o aviso."},
+    ],
+    15: [
+        {"nome": "A Guia", "titulo": "", "tipo": "guia",
+         "fala": "Essa cadeira não é sua. Não é de ninguém. Senta lá embaixo, onde as coisas ainda cabem."},
     ],
 }
 
@@ -151,6 +179,22 @@ def npcs_do_andar(andar):
 def ferreiro_do_andar(andar):
     for n in npcs_do_andar(andar):
         if n["tipo"] == "ferreiro":
+            return n
+    return None
+
+
+def taverneiro_do_andar(andar):
+    """Só existe nos andares 1 e 10 — ver decisoes.md § Taverna."""
+    for n in npcs_do_andar(andar):
+        if n["tipo"] == "taverneiro":
+            return n
+    return None
+
+
+def guia_do_andar(andar):
+    """Só existe nos andares 11-15 — ver decisoes.md § A Guia."""
+    for n in npcs_do_andar(andar):
+        if n["tipo"] == "guia":
             return n
     return None
 

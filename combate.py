@@ -10,7 +10,8 @@ import atributos as at
 import condicoes
 import database as db
 import habilidades as hab
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES
+from andares_altos import ANDAR_ACIMA_DO_SELO
+from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
 
 # helpers emprestados do bot.py, preenchidos por instalar()
@@ -31,6 +32,54 @@ PENETRACAO_POR_ANDAR = 0.015
 PENETRACAO_CARREGADO = 0.25  # somada a base no golpe pesado
 FUGA_POR_DESFALQUE = 0.15    # cada companheiro perdido facilita a fuga
 HP_MINIMO_PARA_ENTRAR = 0.40
+
+# ajuda de veterano na party: quem entra num andar abaixo do próprio andar_max
+# não é "dono" daquele andar (não infla o HP do chefe, não puxa drop nem
+# progressão) — só o dono (andar_max == andar do chefe na hora que a luta
+# começa) conta pra essas coisas. Ver decisoes.md § Ajuda de veterano na party.
+REDUCAO_RECOMPENSA_POR_ANDAR_AJUDA = 0.25
+FATOR_MINIMO_RECOMPENSA_AJUDA = 0.10
+
+# rodada 1 é só do jogador: chefe não ataca, não rola carregar, não rola
+# telegraph de condição, e não abre a luta com o golpe de iniciativa por DES.
+# Desliga voltando isso pra False — nenhuma outra lógica depende disso.
+# Ver decisoes.md § Rodada 1 sem chefe.
+RODADA_1_SEM_CHEFE = True
+
+# andares 11+: telegraph de condição elemental, independente do golpe
+# carregado (rolls separados, de propósito — ver decisoes.md § Condições)
+CHANCE_TELEGRAFAR_CONDICAO = 0.25
+FASE2_LIMIAR = 0.5   # fração de hp_chefe_max que dispara o "fase2" do chefe
+# ANDAR_ACIMA_DO_SELO vem de andares_altos.py: acima dele, material de chefe
+# segue chefes_derrotados (100% primeira vez, 15% repetição) em vez da
+# chance fixa no dict — ver decisoes.md § Morte e reconquista
+
+# recursos de habilidade por luta (Fúria, Energia) — não persistem no banco,
+# resetam toda vez que uma luta de chefe começa. Mana é o recurso de sempre
+# (jogadores.mana), persistente e regenerado fora de combate.
+FURIA_MAX = 100
+FURIA_POR_GOLPE = 15          # + FOR/5; crítico dá +50%; Defender gera metade
+ENERGIA_MAX = 100
+ENERGIA_REGEN_POR_TURNO = 20
+
+# números das 8 primeiras skills — ver decisoes.md § Primeira leva de skills
+MAX_STACKS_SANGRAMENTO = 3
+VALOR_SANGRAMENTO = 0.03          # fração do HP máximo do chefe, por rodada, por stack
+TETO_STUN_ATORDOANTE = at.TETO_ESQUIVA   # 0.25 — mesmo teto de chance_esquiva
+BONUS_CRITICO_CORTE_RAPIDO = 0.10
+BONUS_CRITICO_PONTO_CEGO = 0.45
+CURA_POR_RODADA_ALENTO = 0.08
+VULNERAVEL_RUPTURA = 0.20
+REDUCAO_VOTO_DE_FERRO = 0.20
+
+# multiplicadores de dano de skill sobre a MESMA base do ataque normal
+# (atributo + atk da arma, ver hab.poder_base) — o número já É a razão
+# skill/ataque-básico, em qualquer nível e com qualquer arma. Regra:
+# dano puro ~2 ataques, dano + efeito relevante ~1,3 ataque + o efeito.
+# Ver decisoes.md § Dano de skill abaixo do ataque básico.
+MULTIPLICADOR_DARDO_ARCANO = 2.0     # dano puro (+ ignora defesa, bônus à parte)
+MULTIPLICADOR_GOLPE_ABERTO = 1.3     # dano + sangramento (o efeito)
+MULTIPLICADOR_CORTE_RAPIDO = 1.0     # dano puro, por golpe — 2 golpes = 2 ataques
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -89,6 +138,31 @@ def pode_usar(combatente, chave):
     return combatente.pocoes_usadas < MAX_POCOES
 
 
+def ganhar_furia(c, critico=False):
+    """Só o Guerreiro acumula Fúria, e só atacando — golpe crítico dá +50%."""
+    if c.jogador["classe"] != "guerreiro":
+        return
+    ganho = FURIA_POR_GOLPE + int(c.jogador["forca"] or 0) / 5
+    if critico:
+        ganho *= 1.5
+    c.furia = min(FURIA_MAX, c.furia + ganho)
+
+
+def ganhar_furia_defesa(c):
+    """Defender também gera Fúria pro Guerreiro, metade do golpe normal."""
+    if c.jogador["classe"] != "guerreiro":
+        return
+    ganho = 0.5 * (FURIA_POR_GOLPE + int(c.jogador["forca"] or 0) / 5)
+    c.furia = min(FURIA_MAX, c.furia + ganho)
+
+
+def regenerar_energia(luta):
+    """Energia do Ladino sobe todo turno, agindo ou não."""
+    for c in luta.ativos:
+        if c.jogador["classe"] == "ladino":
+            c.energia = min(ENERGIA_MAX, c.energia + ENERGIA_REGEN_POR_TURNO)
+
+
 # ------------------------------------------------------------- combatente
 
 class Combatente:
@@ -101,6 +175,8 @@ class Combatente:
         self.s = s
         self.hp = max(0, jogador["hp"])
         self.mana = max(0, jogador["mana"])
+        self.furia = 0             # Guerreiro: começa zerada, só sobe com dano causado
+        self.energia = ENERGIA_MAX  # Ladino: começa cheia, regenera por turno
         self.acao = None            # o que ele escolheu nesta rodada
         self.defendendo = False
         self.pocoes_usadas = 0
@@ -108,10 +184,16 @@ class Combatente:
         self.caiu = False
         self.fugiu = False
         self.saiu = False
+        self.dono = True   # Luta.__init__ ajusta pra quem entrou só de ajuda
 
     @property
     def ativo(self):
         return not (self.caiu or self.fugiu or self.saiu)
+
+    def recurso_atual(self):
+        """Mana, Fúria ou Energia — o que a classe do jogador usa pra lançar."""
+        recurso = CLASSES.get(self.jogador["classe"], {}).get("recurso")
+        return {"mana": self.mana, "furia": self.furia, "energia": self.energia}.get(recurso, 0)
 
     def salvar_estado(self):
         db.atualizar_jogador(self.id, hp=max(0, self.hp), mana=max(0, self.mana))
@@ -128,22 +210,41 @@ class Combatente:
             estado = " — pronto"
         linha = (f"{H['barra_hp'](self.hp, self.s['hp_max'])} "
                  f"{max(0, self.hp)}/{self.s['hp_max']}{estado}")
-        if self.jogador["classe"]:
-            linha += f" · 🔷 {max(0, self.mana)}/{self.s['mana_max']}"
+        classe = self.jogador["classe"]
+        if classe:
+            recurso = CLASSES[classe]["recurso"]
+            emoji, valor, teto = {
+                "mana": ("🔷", self.mana, self.s["mana_max"]),
+                "furia": ("🔥", self.furia, FURIA_MAX),
+                "energia": ("⚡", self.energia, ENERGIA_MAX),
+            }[recurso]
+            linha += f" · {emoji} {max(0, valor)}/{teto}"
         return linha
 
 
 # ------------------------------------------------------------ estado da luta
 
 class Luta:
-    def __init__(self, combatentes, chefe, andar_num):
+    def __init__(self, combatentes, chefe, andar_num, donos_ids=None):
+        """donos_ids: quem conta como "dono do andar" pra HP do chefe, drop e
+        progressão. None = todo mundo é dono (luta solo, raide.py) — só a
+        party de `combate.py` passa um subconjunto de propósito, pra quem
+        entrou só de ajuda (andar_max diferente do andar do chefe) não
+        inflar o chefe nem levar recompensa cheia. Ver decisoes.md § Ajuda
+        de veterano na party."""
         self.participantes = combatentes
         self.chefe = chefe
         self.andar_num = andar_num
-        self.hp_chefe = chefe["hp"] * len(combatentes)
+        donos_ids = set(donos_ids) if donos_ids is not None else {c.id for c in combatentes}
+        for c in combatentes:
+            c.dono = c.id in donos_ids
+        num_donos = sum(1 for c in combatentes if c.dono)
+        self.hp_chefe = chefe["hp"] * max(1, num_donos)
         self.hp_chefe_max = self.hp_chefe
         self.rodada = 1
         self.carregando = False
+        self.preparando_condicao = None   # telegraph independente — ver _talvez_telegrafar_condicao
+        self.materiais_extras = []        # material da fase 1 quando o chefe troca de fase (andar 15)
         self.encerrada = False
         self.condicoes = []   # ver condicoes.py — sangramento, confusão, elementos etc.
         self.log = []
@@ -151,6 +252,13 @@ class Luta:
     @property
     def ativos(self):
         return [c for c in self.participantes if c.ativo]
+
+    @property
+    def donos_ativos(self):
+        """Donos do andar ainda de pé — se isso esvaziar com gente ainda
+        ativa (ajuda sobrevivendo sozinha), a luta não vale mais pra
+        ninguém. Ver PainelLuta.fim_da_luta / encerrar_sem_donos."""
+        return [c for c in self.ativos if c.dono]
 
     @property
     def desfalque(self):
@@ -188,7 +296,14 @@ class Luta:
             inline=False,
         )
         for c in self.participantes:
-            e.add_field(name=c.nome, value=c.barra(), inline=False)
+            nome = c.nome if c.dono else f"{c.nome} (ajuda)"
+            e.add_field(name=nome, value=c.barra(), inline=False)
+        if RODADA_1_SEM_CHEFE and self.rodada == 1 and not self.encerrada:
+            e.add_field(
+                name="🕯️ O chefe ainda não reagiu",
+                value=f"*{self.chefe['nome']} observa. A primeira rodada é toda sua.*",
+                inline=False,
+            )
         if self.log:
             limite = 4 if self.em_party else 2
             e.add_field(
@@ -203,6 +318,16 @@ class Luta:
                       f"Ele acerta **todo mundo** — Defender anula a penetração de armadura.",
                 inline=False,
             )
+        if self.preparando_condicao and not self.encerrada:
+            pend = self.preparando_condicao
+            alvo = self.por_id(pend["alvo_id"])
+            nome_alvo = alvo.nome if alvo else "alguém que já saiu"
+            e.add_field(
+                name=f"{pend['emoji']} {pend['nome']} sendo reunido",
+                value=f"*{self.chefe['nome']} mira em **{nome_alvo}**.* "
+                      f"Defender reduz a duração pela metade se acertar.",
+                inline=False,
+            )
         if rodape:
             e.set_footer(text=rodape)
         elif not self.encerrada:
@@ -214,42 +339,56 @@ class Luta:
 
     # -------- resolucao da rodada
     def turno_do_chefe(self):
-        """O chefe age uma vez por rodada, contra a party inteira."""
+        """O chefe age uma vez por rodada, contra a party inteira — exceto
+        na rodada 1, que é só do jogador (RODADA_1_SEM_CHEFE). Chefe com
+        "elemento" (andares 11+) também rola, de forma independente do golpe
+        carregado, pra telegrafar/aplicar uma condição elemental — os dois
+        podem acontecer na mesma rodada."""
         alvos = self.ativos
         if not alvos:
             return
 
-        if not condicoes.pode_agir(self, "chefe"):
+        if RODADA_1_SEM_CHEFE and self.rodada == 1:
+            self.registrar(f"{self.chefe['nome']} ainda não reagiu à entrada de vocês.")
+        elif not condicoes.pode_agir(self, "chefe"):
             self.registrar(f"{self.chefe['nome']} está sob efeito e perde a rodada.")
-        elif self.carregando:
-            self.carregando = False
-            self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
-            for c in alvos:
-                dano = dano_do_chefe(
-                    self.chefe, c.s, self.andar_num,
-                    defendendo=c.defendendo, carregado=True,
-                )
-                c.hp -= dano
-                aparou = " (aparou)" if c.defendendo else ""
-                self.registrar(f"· {c.nome} toma **{dano}**{aparou}")
-                if c.hp <= 0:
-                    c.caiu = True
-        elif random.random() < CHANCE_CARREGAR:
-            self.carregando = True
-            self.registrar(f"{self.chefe['nome']} recua e começa a se preparar.")
         else:
-            alvo = condicoes.alvo_forcado(self) or random.choice(alvos)
-            des = alvo.s["atribs"]["destreza"]
-            if random.random() < at.chance_esquiva(des, at.destreza_monstro(self.andar_num)):
-                self.registrar(f"{alvo.nome} esquivou do ataque.")
+            self._resolver_condicao_pendente()
+            if self.carregando:
+                self.carregando = False
+                self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
+                for c in alvos:
+                    dano = dano_do_chefe(
+                        self.chefe, c.s, self.andar_num,
+                        defendendo=c.defendendo, carregado=True,
+                    )
+                    dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
+                    dano = max(1, int(dano * (1 - condicoes.reducao_dano_recebido(self, c.id))))
+                    c.hp -= dano
+                    aparou = " (aparou)" if c.defendendo else ""
+                    self.registrar(f"· {c.nome} toma **{dano}**{aparou}")
+                    if c.hp <= 0:
+                        c.caiu = True
+            elif random.random() < CHANCE_CARREGAR:
+                self.carregando = True
+                self.registrar(f"{self.chefe['nome']} recua e começa a se preparar.")
             else:
-                dano = dano_do_chefe(
-                    self.chefe, alvo.s, self.andar_num, defendendo=alvo.defendendo
-                )
-                alvo.hp -= dano
-                self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano} de dano")
-                if alvo.hp <= 0:
-                    alvo.caiu = True
+                alvo = condicoes.alvo_forcado(self) or random.choice(alvos)
+                des = alvo.s["atribs"]["destreza"]
+                if random.random() < at.chance_esquiva(des, at.destreza_monstro(self.andar_num)):
+                    self.registrar(f"{alvo.nome} esquivou do ataque.")
+                else:
+                    dano = dano_do_chefe(
+                        self.chefe, alvo.s, self.andar_num, defendendo=alvo.defendendo
+                    )
+                    dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
+                    dano = max(1, int(dano * (1 - condicoes.reducao_dano_recebido(self, alvo.id))))
+                    alvo.hp -= dano
+                    self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano} de dano")
+                    if alvo.hp <= 0:
+                        alvo.caiu = True
+
+            self._talvez_telegrafar_condicao()
 
         for c in self.participantes:
             c.defendendo = False
@@ -257,24 +396,114 @@ class Luta:
             c.salvar_estado()
         self.rodada += 1
 
+    def _resolver_condicao_pendente(self):
+        """Aplica a condição que foi telegrafada na rodada anterior. Se o
+        alvo defendeu, a duração é cortada pela metade — é isso que faz
+        Defender virar decisão, não sorte."""
+        pend = self.preparando_condicao
+        if not pend:
+            return
+        self.preparando_condicao = None
+        alvo = self.por_id(pend["alvo_id"])
+        if not alvo or not alvo.ativo:
+            self.registrar(f"{pend['emoji']} O alvo de {self.chefe['nome']} já não está mais na luta.")
+            return
+        duracao = pend["duracao"]
+        if alvo.defendendo:
+            duracao = max(1, duracao // 2)
+        condicoes.aplicar(
+            self, alvo.id, pend["tipo"], pend["nome"], pend["emoji"],
+            duracao, pend["valor"], origem="chefe",
+        )
+
+    def _talvez_telegrafar_condicao(self):
+        """Roll independente do golpe carregado — só chefes com "elemento"
+        (andares 11+) participam."""
+        elemento = self.chefe.get("elemento")
+        if not elemento or self.preparando_condicao is not None:
+            return
+        if random.random() >= CHANCE_TELEGRAFAR_CONDICAO:
+            return
+        dados = CONDICOES_ELEMENTO[elemento]
+        alvo = random.choice(self.ativos)
+        self.preparando_condicao = {**dados, "alvo_id": alvo.id}
+        self.registrar(
+            f"{dados['emoji']} {self.chefe['nome']} está reunindo **{dados['nome']}** contra {alvo.nome}."
+        )
+
+    def verificar_fase2(self):
+        """Chamado sempre que o jogador causa dano ao chefe. Troca ATK/DEF/
+        elemento sem resetar nada da luta (fúria, energia, poções,
+        condições ativas continuam) — só o andar 15 tem "fase2" no dict."""
+        fase2 = self.chefe.get("fase2")
+        if not fase2 or self.hp_chefe > self.hp_chefe_max * FASE2_LIMIAR:
+            return
+        self.materiais_extras.extend(self.chefe.get("drops", []))
+        novo_chefe = dict(self.chefe)
+        novo_chefe.update(fase2)
+        novo_chefe.pop("fase2", None)
+        self.chefe = novo_chefe
+        self.registrar(
+            f"⚡ **{self.chefe['nome']}** — a postura muda por completo. "
+            f"Elemento agora é {fase2['elemento']}."
+        )
+
 
 # ---------------------------------------------------------- fim de combate
 
+def fator_recompensa_ajuda(andar_max_jogador, andar_chefe):
+    """Quanto de XP/moedas um veterano leva ajudando um andar abaixo do
+    próprio andar_max — cai com a distância, nunca some de vez. Dono do
+    andar (diff <= 0) sempre leva o fator cheio."""
+    diff = andar_max_jogador - andar_chefe
+    if diff <= 0:
+        return 1.0
+    return max(FATOR_MINIMO_RECOMPENSA_AJUDA, 1 - REDUCAO_RECOMPENSA_POR_ANDAR_AJUDA * diff)
+
+
 async def recompensar(luta, combatente):
-    """Paga um sobrevivente e sobe o andar dele."""
+    """Paga um sobrevivente. Dono do andar (andar_max == andar do chefe no
+    início da luta, `combatente.dono`) leva XP/moedas cheios, drop e sobe
+    andar/andar_max. Quem entrou só de ajuda leva XP/moedas reduzidos por
+    `fator_recompensa_ajuda`, nenhum drop de chefe, e a posição na torre
+    dele não muda nem um pouco — ele só estava de visita. Acima do andar 10
+    o material de chefe (só pra dono) usa chefes_derrotados em vez da
+    chance fixa do dict: 100% na primeira vez, 15% nas repetições — senão
+    morrer de propósito vira o jeito mais eficiente de farmar material (ver
+    decisoes.md)."""
     j, s, chefe = combatente.jogador, combatente.s, luta.chefe
-    for item in H["rolar_drops"](chefe):
-        db.add_item(j["user_id"], item)
-    nivel, xp, subiu = H["aplicar_xp"](j, chefe["xp"])
-    novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
-    novo_max = max(j["andar_max"], novo_andar)
+    fator = 1.0 if combatente.dono else fator_recompensa_ajuda(j["andar_max"], luta.andar_num)
+
+    if combatente.dono:
+        if luta.andar_num > ANDAR_ACIMA_DO_SELO:
+            vezes = db.vezes_derrotado_chefe(j["user_id"], luta.andar_num)
+            chance_material = 1.0 if vezes == 0 else 0.15
+            for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
+                if random.random() < chance_material:
+                    db.add_item(j["user_id"], item)
+            db.registrar_vitoria_chefe(j["user_id"], luta.andar_num)
+        else:
+            for item in H["rolar_drops"](chefe):
+                db.add_item(j["user_id"], item)
+
+    xp_ganho = int(chefe["xp"] * fator)
+    moedas_ganho = int(chefe["moedas"] * fator)
+    nivel, xp, subiu = H["aplicar_xp"](j, xp_ganho)
     hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
+
+    if combatente.dono:
+        novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
+        novo_max = max(j["andar_max"], novo_andar)
+    else:
+        novo_andar = j["andar"]
+        novo_max = j["andar_max"]
+
     db.atualizar_jogador(
         j["user_id"], hp=hp_cheio, mana=s["mana_max"], xp=xp, nivel=nivel,
         pontos=H["pontos_por_subir"](j, subiu),
-        moedas=j["moedas"] + chefe["moedas"], andar=novo_andar, andar_max=novo_max,
+        moedas=j["moedas"] + moedas_ganho, andar=novo_andar, andar_max=novo_max,
     )
-    return nivel, subiu, novo_andar
+    return nivel, subiu, xp_ganho, moedas_ganho
 
 
 async def finalizar_vitoria(luta):
@@ -283,8 +512,12 @@ async def finalizar_vitoria(luta):
     novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
     linhas = []
     for c in vencedores:
-        nivel, subiu, novo_andar = await recompensar(luta, c)
-        linha = f"**{c.nome}** — +{luta.chefe['xp']} XP · +{luta.chefe['moedas']} 🪙 · 🔷 Fragmento"
+        nivel, subiu, xp_ganho, moedas_ganho = await recompensar(luta, c)
+        if c.dono:
+            linha = f"**{c.nome}** — +{xp_ganho} XP · +{moedas_ganho} 🪙 · 🔷 Fragmento"
+        else:
+            linha = (f"**{c.nome}** (ajuda) — +{xp_ganho} XP · +{moedas_ganho} 🪙 "
+                      f"— sem fragmento, sem progresso de andar")
         if subiu:
             linha += f"\n· subiu para o **nível {nivel}** (+{at.PONTOS_POR_NIVEL * subiu} pontos)"
         linhas.append(linha)
@@ -312,6 +545,32 @@ async def finalizar_vitoria(luta):
                 value="O carroceiro passa por aqui três vezes por dia e não cobra. `rpg carroca`",
                 inline=False,
             )
+    return e
+
+
+async def encerrar_sem_donos(luta):
+    """Nenhum dono do andar (quem tinha andar == andar_max ao começar a
+    luta) segue de pé — só ajuda ficou. Sem dono na luta, ela não conta pra
+    ninguém: o chefe não morre pra valer (mesmo com hp_chefe <= 0) e quem
+    ainda estava de pé não ganha nada. Quem caiu antes disso ainda paga a
+    penalidade normal de morte. Ver decisoes.md § Ajuda de veterano na
+    party."""
+    luta.encerrada = True
+    perdas = []
+    for c in luta.participantes:
+        if c.dono and c.caiu:
+            perda = H["processar_morte"](c.jogador, c.s)
+            perdas.append(f"**{c.nome}** perdeu {perda} 🪙")
+    e = luta.embed(
+        titulo=f"A luta acabou sem o dono do andar — {luta.chefe['nome']}",
+        cor=COR_FUGA,
+        rodape="Sem quem convocou a luta, ela não vale pra ninguém — nem pro chefe, nem pra ajuda.",
+    )
+    e.add_field(
+        name="Sem vencedor",
+        value="\n".join(perdas) or "O dono do andar já não estava mais na luta — quem ficou só ajudava.",
+        inline=False,
+    )
     return e
 
 
@@ -400,6 +659,7 @@ class BotaoPocao(discord.ui.Button):
             c.mana = min(c.s["mana_max"], antes + valor)
             ganho, rotulo = c.mana - antes, "mana"
         else:
+            valor = int(valor * (1 - condicoes.reducao_cura_recebida(painel.luta, c.id)))
             antes = max(0, c.hp)
             c.hp = min(c.s["hp_max"], antes + valor)
             ganho, rotulo = c.hp - antes, "HP"
@@ -423,12 +683,165 @@ class BotaoVoltar(discord.ui.Button):
         await responder(interaction, painel.luta.embed(), painel)
 
 
+# --------------------------------------------------------- efeitos de habilidade
+# Uma função por skill, disparada por _lancar_habilidade(). O efeito acontece
+# no clique do botão, antes da rodada resolver de verdade — mesmo timing das
+# poções (BotaoPocao).
+#
+# Duração de condições tipo "buff consultado depois" (vulneravel, reduz_dano,
+# bonus_critico, pula_turno): condicoes.tick() já desconta 1 rodada na MESMA
+# chamada em que a skill foi lançada, antes de qualquer ataque ou turno do
+# chefe dessa rodada ser resolvido. Pra sobreviver a esse desconto e ainda
+# valer pelas N rodadas prometidas na descrição da skill, a duração passada
+# pra condicoes.aplicar() precisa ser N+1. Isso NÃO vale pra dano_por_rodada/
+# cura_por_rodada (sangramento, regeneração) — esses já aplicam o efeito
+# dentro do próprio tick(), então duração ali é literal (N = N aplicações).
+
+def _multiplicador_afinidade(c):
+    arma = ITENS.get(c.jogador["arma"], {})
+    return hab.fator_afinidade(c.jogador["classe"], arma)
+
+
+def _bonus_arma_de(c):
+    return ITENS.get(c.jogador["arma"], {}).get("atk", 0)
+
+
+def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
+    """Dano bruto de uma skill: mesma variação (±15%) e crítico de um golpe
+    normal, sobre a MESMA base do ataque normal (atributo + atk da arma) —
+    é isso que faz o multiplicador ser literalmente "quantos ataques
+    básicos essa skill vale", em qualquer nível e com qualquer arma. Ver
+    decisoes.md § Dano de skill abaixo do ataque básico."""
+    base = hab.poder_base(c.jogador, _bonus_arma_de(c)) * multiplicador * _multiplicador_afinidade(c)
+    bruto = base * random.uniform(0.85, 1.15)
+    if random.random() < (c.s["critico"] + critico_extra):
+        bruto *= at.MULTIPLICADOR_CRITICO
+    return bruto
+
+
+def _efeito_dardo_arcano(luta, c, dados):
+    dano = max(1, int(_rolar_dano_habilidade(c, MULTIPLICADOR_DARDO_ARCANO)))
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(
+        f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano, ignorando a defesa."
+    )
+
+
+def _efeito_ruptura(luta, c, dados):
+    condicoes.aplicar(
+        luta, "chefe", "vulneravel", dados["nome"], dados["emoji"],
+        duracao=4, valor=VULNERAVEL_RUPTURA, origem=c.id,
+    )
+
+
+def _efeito_golpe_aberto(luta, c, dados):
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} abre **{dados['nome']}** — {dano} de dano.")
+    stacks = [
+        cond for cond in luta.condicoes
+        if cond["tipo"] == "dano_por_rodada" and cond["nome"] == "Sangramento" and cond["alvo"] == "chefe"
+    ]
+    if len(stacks) >= MAX_STACKS_SANGRAMENTO:
+        stacks[0]["duracao"] = 3
+        luta.registrar(f"🩸 Sangramento renovado ({len(stacks)}/{MAX_STACKS_SANGRAMENTO} pilhas).")
+    else:
+        condicoes.aplicar(
+            luta, "chefe", "dano_por_rodada", "Sangramento", "🩸",
+            duracao=3, valor=VALOR_SANGRAMENTO, origem=c.id,
+        )
+
+
+def _efeito_pancada_atordoante(luta, c, dados):
+    forca = int(c.jogador["forca"] or 0)
+    chance = min(TETO_STUN_ATORDOANTE, 0.05 + 0.01 * forca)
+    if random.random() < chance:
+        condicoes.aplicar(
+            luta, "chefe", "pula_turno", dados["nome"], dados["emoji"],
+            duracao=2, valor=0, origem=c.id,
+        )
+        luta.registrar(f"{dados['emoji']} {c.nome} atordoa {luta.chefe['nome']}!")
+    else:
+        luta.registrar(
+            f"{dados['emoji']} {c.nome} tenta atordoar {luta.chefe['nome']} "
+            f"e falha ({chance * 100:.0f}%)."
+        )
+
+
+def _efeito_corte_rapido(luta, c, dados):
+    golpes = []
+    total = 0
+    for _ in range(2):
+        dano = at.aplicar_defesa(
+            _rolar_dano_habilidade(c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
+            luta.chefe["def"],
+        )
+        luta.hp_chefe -= dano
+        luta.verificar_fase2()
+        total += dano
+        golpes.append(str(dano))
+    luta.registrar(
+        f"{dados['emoji']} {c.nome} desfere **{dados['nome']}** — "
+        f"{' + '.join(golpes)} = {total} de dano."
+    )
+
+
+def _efeito_ponto_cego(luta, c, dados):
+    condicoes.aplicar(
+        luta, c.id, "bonus_critico", dados["nome"], dados["emoji"],
+        duracao=4, valor=BONUS_CRITICO_PONTO_CEGO, origem=c.id,
+    )
+
+
+def _efeito_palavra_de_alento(luta, c, dados, alvo_id):
+    condicoes.aplicar(
+        luta, alvo_id, "cura_por_rodada", dados["nome"], dados["emoji"],
+        duracao=2, valor=CURA_POR_RODADA_ALENTO, origem=c.id,
+    )
+
+
+def _efeito_voto_de_ferro(luta, c, dados):
+    for alvo in luta.ativos:
+        condicoes.aplicar(
+            luta, alvo.id, "reduz_dano", dados["nome"], dados["emoji"],
+            duracao=3, valor=REDUCAO_VOTO_DE_FERRO, origem=c.id,
+        )
+
+
+EFEITOS_HABILIDADE = {
+    "dardo_arcano": _efeito_dardo_arcano,
+    "ruptura": _efeito_ruptura,
+    "golpe_aberto": _efeito_golpe_aberto,
+    "pancada_atordoante": _efeito_pancada_atordoante,
+    "corte_rapido": _efeito_corte_rapido,
+    "ponto_cego": _efeito_ponto_cego,
+    "palavra_de_alento": _efeito_palavra_de_alento,
+    "voto_de_ferro": _efeito_voto_de_ferro,
+}
+
+
+def _lancar_habilidade(luta, c, chave, dados, alvo_id=None):
+    if dados["recurso"] == "mana":
+        c.mana -= dados["custo"]
+    elif dados["recurso"] == "furia":
+        c.furia -= dados["custo"]
+    else:
+        c.energia -= dados["custo"]
+    efeito = EFEITOS_HABILIDADE[chave]
+    if dados.get("alvo") == "aliado_escolhido":
+        efeito(luta, c, dados, alvo_id)
+    else:
+        efeito(luta, c, dados)
+
+
 class MenuHabilidades(discord.ui.View):
     def __init__(self, painel, combatente):
         super().__init__(timeout=TIMEOUT_RODADA)
         self.painel = painel
         self.combatente = combatente
-        for chave, dados in hab.lancaveis(combatente.jogador, combatente.mana).items():
+        for chave, dados in hab.lancaveis(combatente.jogador, combatente.recurso_atual()).items():
             self.add_item(BotaoHabilidade(chave, dados))
         self.add_item(BotaoVoltar())
 
@@ -442,7 +855,7 @@ class MenuHabilidades(discord.ui.View):
 class BotaoHabilidade(discord.ui.Button):
     def __init__(self, chave, dados):
         super().__init__(
-            label=f"{dados['nome']} ({dados['custo_mana']} mana)",
+            label=f"{dados['nome']} ({dados['custo']} {hab.NOME_RECURSO[dados['recurso']]})",
             emoji=dados.get("emoji"),
             style=discord.ButtonStyle.primary,
         )
@@ -453,11 +866,47 @@ class BotaoHabilidade(discord.ui.Button):
         painel = self.view.painel
         c = self.view.combatente
         dados = HABILIDADES[self.chave]
-        c.mana -= dados["custo_mana"]
-        # o efeito de verdade (dano, condição, cura, redirecionamento) entra
-        # junto com a primeira skill de cada tipo — aqui só gasta mana e
-        # consome o turno, igual a poção.
-        painel.luta.registrar(f"{dados.get('emoji', '✨')} {c.nome} lança **{dados['nome']}**.")
+
+        if dados.get("alvo") == "aliado_escolhido" and len(painel.luta.ativos) > 1:
+            await responder(interaction, painel.luta.embed(), MenuAlvoHabilidade(painel, c, self.chave))
+            return
+
+        # luta solo ou skill sem alvo escolhido: alvo é sempre quem lançou
+        alvo_id = c.id if dados.get("alvo") == "aliado_escolhido" else None
+        _lancar_habilidade(painel.luta, c, self.chave, dados, alvo_id)
+        await painel.registrar_acao(interaction, c, "habilidade")
+
+
+class MenuAlvoHabilidade(discord.ui.View):
+    """Seletor de alvo pra skills que miram um aliado escolhido (Palavra de Alento)."""
+
+    def __init__(self, painel, combatente, chave):
+        super().__init__(timeout=TIMEOUT_RODADA)
+        self.painel = painel
+        self.combatente = combatente
+        for alvo in painel.luta.ativos:
+            self.add_item(BotaoAlvoHabilidade(alvo, chave))
+        self.add_item(BotaoVoltar())
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.combatente.id:
+            await interaction.response.send_message("Essa não é sua habilidade.", ephemeral=True)
+            return False
+        return True
+
+
+class BotaoAlvoHabilidade(discord.ui.Button):
+    def __init__(self, alvo, chave):
+        super().__init__(label=alvo.nome, emoji="🎯", style=discord.ButtonStyle.success)
+        self.alvo_id = alvo.id
+        self.chave = chave
+
+    async def callback(self, interaction):
+        await interaction.response.defer()
+        painel = self.view.painel
+        c = self.view.combatente
+        dados = HABILIDADES[self.chave]
+        _lancar_habilidade(painel.luta, c, self.chave, dados, self.alvo_id)
         await painel.registrar_acao(interaction, c, "habilidade")
 
 
@@ -500,9 +949,18 @@ class PainelLuta(discord.ui.View):
         self.travar()
         await responder(interaction, embed, self)
 
+    def _continuar(self, luta):
+        """Painel novo pra quando sobra gente depois de um timeout — método
+        à parte (não só `PainelLuta(luta)` direto) pra uma subclasse como
+        PainelRaide (raide.py) poder continuar sendo ela mesma, com os
+        argumentos extras que precisa (guilda_id, iniciador_id)."""
+        return PainelLuta(luta)
+
     async def fim_da_luta(self, interaction=None):
         """Devolve o embed final se a luta acabou, ou None se continua."""
         luta = self.luta
+        if luta.ativos and not luta.donos_ativos:
+            return await encerrar_sem_donos(luta)
         if luta.hp_chefe <= 0:
             return await finalizar_vitoria(luta)
         if not luta.ativos:
@@ -519,6 +977,7 @@ class PainelLuta(discord.ui.View):
         combatente.acao = acao
         if acao == "defender":
             combatente.defendendo = True
+            ganhar_furia_defesa(combatente)
 
         luta = self.luta
         if any(c.acao is None for c in luta.ativos):
@@ -527,6 +986,7 @@ class PainelLuta(discord.ui.View):
 
         # começo da rodada: condições contínuas (sangramento, elementos etc.) primeiro
         condicoes.tick(luta)
+        regenerar_energia(luta)
         fim = await self.fim_da_luta()
         if fim:
             await self.encerrar(interaction, fim)
@@ -535,9 +995,18 @@ class PainelLuta(discord.ui.View):
         # depois, ataques, e por fim o chefe
         for c in luta.ativos:
             if c.acao == "atacar" and condicoes.pode_agir(luta, c.id):
-                dano = H["calcular_dano"](c.s["atk"], luta.chefe["def"], c.s["critico"])
+                if random.random() < condicoes.chance_de_erro(luta, c.id):
+                    luta.registrar(f"🌪️ {c.nome} erra o golpe — o vento desvia.")
+                    continue
+                critico_extra = condicoes.bonus_critico(luta, c.id)
+                dano, critico = H["calcular_dano"](
+                    c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                )
+                dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                 luta.hp_chefe -= dano
+                luta.verificar_fase2()
                 luta.registrar(f"{c.nome} acerta **{dano}**")
+                ganhar_furia(c, critico)
         fim = await self.fim_da_luta()
         if fim:
             await self.encerrar(interaction, fim)
@@ -584,10 +1053,15 @@ class PainelLuta(discord.ui.View):
                 "Você não tem classe — `rpg classe` primeiro.", ephemeral=True
             )
             return
-        if not hab.lancaveis(c.jogador, c.mana):
+        if not condicoes.pode_lancar_habilidade(self.luta, c.id):
             await interaction.response.send_message(
-                "Nenhuma habilidade disponível agora — sem mana, sem nada destravado, "
-                "ou o catálogo ainda nem existe.",
+                "⚡ Você está sob Choque — não consegue canalizar nada agora.", ephemeral=True
+            )
+            return
+        if not hab.lancaveis(c.jogador, c.recurso_atual()):
+            await interaction.response.send_message(
+                "Nenhuma habilidade disponível agora — sem recurso pra nenhuma "
+                "que você já destravou.",
                 ephemeral=True,
             )
             return
@@ -624,23 +1098,31 @@ class PainelLuta(discord.ui.View):
 
         if luta.ativos:
             condicoes.tick(luta)
+            regenerar_energia(luta)
             if luta.hp_chefe > 0:
                 for c in luta.ativos:
                     if c.acao == "atacar" and condicoes.pode_agir(luta, c.id):
-                        dano = H["calcular_dano"](c.s["atk"], luta.chefe["def"], c.s["critico"])
+                        if random.random() < condicoes.chance_de_erro(luta, c.id):
+                            luta.registrar(f"🌪️ {c.nome} erra o golpe — o vento desvia.")
+                            continue
+                        critico_extra = condicoes.bonus_critico(luta, c.id)
+                        dano, critico = H["calcular_dano"](
+                            c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                        )
+                        dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                         luta.hp_chefe -= dano
+                        luta.verificar_fase2()
                         luta.registrar(f"{c.nome} acerta **{dano}**")
+                        ganhar_furia(c, critico)
             if luta.hp_chefe > 0:
                 luta.turno_do_chefe()
 
-        if luta.hp_chefe <= 0:
-            embed = await finalizar_vitoria(luta)
-        elif not luta.ativos:
-            embed = (await finalizar_derrota(luta) if all(
-                c.caiu for c in luta.participantes) else await encerrar_por_abandono(luta))
-        else:
-            # sobrou gente: a luta continua num painel novo
-            novo = PainelLuta(luta)
+        embed = await self.fim_da_luta()
+        if embed is None:
+            # sobrou gente: a luta continua num painel novo — _continuar() é
+            # overridável, pra subclasses (PainelRaide) continuarem sendo
+            # elas mesmas em vez de virar um PainelLuta genérico
+            novo = self._continuar(luta)
             novo.mensagem = self.mensagem
             self.stop()
             await self.mensagem.edit(embed=luta.embed(), view=novo)
@@ -666,14 +1148,16 @@ class SalaDeEspera(discord.ui.View):
         nomes = []
         for uid in self.inscritos:
             j = db.get_jogador(uid)
-            nomes.append(f"• **{j['nome']}** — nível {j['nivel']}")
+            tag = "" if j["andar_max"] == self.andar_num else " — ajuda, recompensa reduzida"
+            nomes.append(f"• **{j['nome']}** — nível {j['nivel']}{tag}")
         e = discord.Embed(
             title=f"Party para {chefe['nome']}",
             description=(
                 f"Andar {self.andar_num}. O chefe entra com "
-                f"**{chefe['hp']} HP por pessoa**, e cada um leva a recompensa inteira.\n\n"
-                f"Só entra quem já destrancou o andar {self.andar_num} e está com pelo menos "
-                f"{int(HP_MINIMO_PARA_ENTRAR * 100)}% de HP."
+                f"**{chefe['hp']} HP por dono do andar** — quem só está ajudando não infla "
+                f"o chefe e leva XP/moedas reduzidos, sem fragmento e sem progresso.\n\n"
+                f"Precisa estar fisicamente no andar {self.andar_num} (`rpg viajar {self.andar_num}`) "
+                f"e com pelo menos {int(HP_MINIMO_PARA_ENTRAR * 100)}% de HP."
             ),
             color=COR_SALA,
         )
@@ -683,11 +1167,11 @@ class SalaDeEspera(discord.ui.View):
         return e
 
     async def validar(self, interaction, j):
-        anfitriao = db.get_jogador(self.anfitriao)
-        if j["andar_max"] != anfitriao["andar_max"]:
+        if j["andar"] != self.andar_num:
             await interaction.response.send_message(
-                f"Essa party é do andar {anfitriao['andar_max']} e você está no "
-                f"{j['andar_max']}. Só dá para lutar com quem está no mesmo ponto da torre.",
+                f"Você está no andar {j['andar']}, e essa sala é do andar {self.andar_num}. "
+                f"Precisa estar fisicamente lá — `rpg viajar {self.andar_num}` primeiro. "
+                f"Seu andar_max não importa pra entrar, só pra abrir a sala.",
                 ephemeral=True,
             )
             return False
@@ -780,22 +1264,26 @@ async def iniciar_luta(destino, ids, andar_num, editar=False):
     """destino e' um ctx (comando) ou uma interaction (botao Começar)."""
     combatentes = await montar_combatentes(ids)
     chefe = ANDARES[andar_num]["boss"]
-    luta = Luta(combatentes, chefe, andar_num)
+    donos_ids = [c.id for c in combatentes if c.jogador["andar_max"] == andar_num]
+    luta = Luta(combatentes, chefe, andar_num, donos_ids=donos_ids)
 
     for c in combatentes:
         db.set_cooldown(c.id, "boss", H["COOLDOWN_BOSS"])
         db.marcar_combate(c.id)
 
-    # iniciativa: o chefe pode abrir a luta batendo em alguem
-    mais_rapido = max(c.s["atribs"]["destreza"] for c in combatentes)
-    if random.random() >= at.chance_iniciativa(mais_rapido, at.destreza_monstro(andar_num)):
-        alvo = random.choice(combatentes)
-        dano = dano_do_chefe(chefe, alvo.s, andar_num)
-        alvo.hp -= dano
-        luta.registrar(f"{chefe['nome']} foi mais rápido e acerta {alvo.nome} — **{dano}**")
-        if alvo.hp <= 0:
-            alvo.caiu = True
-        alvo.salvar_estado()
+    # iniciativa: o chefe pode abrir a luta batendo em alguem — desligado
+    # com RODADA_1_SEM_CHEFE, senão o chefe "agiria" antes da rodada 1 nem
+    # começar de verdade (ver decisoes.md § Rodada 1 sem chefe)
+    if not RODADA_1_SEM_CHEFE:
+        mais_rapido = max(c.s["atribs"]["destreza"] for c in combatentes)
+        if random.random() >= at.chance_iniciativa(mais_rapido, at.destreza_monstro(andar_num)):
+            alvo = random.choice(combatentes)
+            dano = dano_do_chefe(chefe, alvo.s, andar_num)
+            alvo.hp -= dano
+            luta.registrar(f"{chefe['nome']} foi mais rápido e acerta {alvo.nome} — **{dano}**")
+            if alvo.hp <= 0:
+                alvo.caiu = True
+            alvo.salvar_estado()
 
     painel = PainelLuta(luta)
     if not luta.ativos:
@@ -821,12 +1309,21 @@ def instalar(bot, contexto):
     H.update(contexto)
     bot.remove_command("boss")
 
-    async def checar_sala_do_chefe(ctx, j):
-        """Regras comuns ao boss solo e a' party."""
+    async def checar_sala_do_chefe(ctx, j, party=False):
+        """Regras comuns ao boss solo e a' party — abrir a sala (ou lutar
+        sozinho) sempre exige andar == andar_max. Em `rpg party`, quem não
+        bate esse requisito ainda pode ajudar a luta de outro andar, então a
+        mensagem ensina isso em vez de só mandar voltar pro topo."""
         if j["andar"] < j["andar_max"]:
+            extra = (
+                f" Se é pra ajudar em vez de hospedar, não precisa fazer nada — você já está "
+                f"no andar {j['andar']}: espera alguém de lá abrir a sala e entra com **Entrar**."
+                if party else ""
+            )
             await ctx.send(
-                f"A sala do chefe do andar {j['andar']} está vazia — você já limpou esse andar. "
-                f"Manda `rpg viajar {j['andar_max']}` pra voltar pro topo."
+                f"A sala do chefe do andar {j['andar']} não é sua pra abrir — só quem tem "
+                f"andar_max {j['andar']} hospeda aqui. Manda `rpg viajar {j['andar_max']}` "
+                f"pra abrir a sua lá em cima.{extra}"
             )
             return False
         s = H["stats"](j)
@@ -856,7 +1353,7 @@ def instalar(bot, contexto):
         j = await H["pegar_jogador"](ctx)
         if not j:
             return
-        if not await checar_sala_do_chefe(ctx, j):
+        if not await checar_sala_do_chefe(ctx, j, party=True):
             return
         restante = db.checar_cooldown(ctx.author.id, "boss")
         if restante > 0:

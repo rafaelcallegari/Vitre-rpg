@@ -2,15 +2,34 @@
 # Forja e Alquimia: escolha de oficio, nivel proprio e receitas.
 # Mesmo padrao do combate.py: nao importa bot.py, recebe os helpers em instalar().
 
+import random
+
 import discord
 
 import database as db
+import paginacao
 from game_data import ITENS, ANDARES
 
 H = {}
 
 CUSTO_TROCA = 1000        # moedas para trocar de profissao (zera o nivel)
 NIVEL_MAXIMO = 10
+
+# ---- melhoria (+1/+2) e desmanche ----
+ANDAR_MATERIAL = {           # material do andar, so' existe ferreiro nos impares
+    1: "presa_javali", 3: "osso_enferrujado", 5: "nucleo_gelado",
+    7: "brasa_eterna", 9: "pena_do_trovao",
+}
+NIVEL_MAX_UPGRADE = 2
+PCT_STAT_POR_UPGRADE = 0.12
+CUSTO_MATERIAL_UPGRADE = {1: 2, 2: 3}       # quantas unidades do material do andar
+CUSTO_PRECO_UPGRADE = {1: 0.40, 2: 1.00}    # fracao do preco da peca
+CHANCE_UPGRADE = {1: 1.0, 2: 0.70}
+CHANCE_UPGRADE_FORJADOR = {1: 1.0, 2: 0.85}
+DESCONTO_FORJADOR = 0.25    # so' em melhorar: material e moedas, so' pra quem e' Forjador
+XP_UPGRADE = {1: 25, 2: 50}
+PCT_REFUND_DESMANCHE = 0.50
+PCT_XP_DESMANCHE = 0.40
 
 
 PROFISSOES = {
@@ -32,24 +51,73 @@ APELIDOS = {
 # nivel, materiais, moedas e xp de cada receita
 RECEITAS = {
     # ---- Forja
-    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 700, "xp": 35,
-                     "materiais": {"presa_javali": 5}},
-    "malha_reforcada": {"profissao": "forja", "nivel": 3, "moedas": 2400, "xp": 120,
-                        "materiais": {"osso_enferrujado": 5}},
-    "placas_polidas": {"profissao": "forja", "nivel": 5, "moedas": 5200, "xp": 260,
-                       "materiais": {"nucleo_gelado": 5}},
-    "couraca_cinzas": {"profissao": "forja", "nivel": 7, "moedas": 11000, "xp": 550,
-                       "materiais": {"brasa_eterna": 5}},
-    "lamina_selo": {"profissao": "forja", "nivel": 9, "moedas": 8000, "xp": 900,
-                    "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
-    "adaga_selo": {"profissao": "forja", "nivel": 9, "moedas": 7000, "xp": 900,
-                   "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
-    "manto_selo": {"profissao": "forja", "nivel": 9, "moedas": 7500, "xp": 900,
-                   "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
-    "cajado_selo": {"profissao": "forja", "nivel": 9, "moedas": 8000, "xp": 900,
-                    "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
-    "manoplas_selo": {"profissao": "forja", "nivel": 9, "moedas": 7000, "xp": 900,
-                      "materiais": {"fragmento_selo": 3, "pena_do_trovao": 5}},
+    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 700, "xp": 20,
+                     "materiais": {"presa_javali": 3}},
+    "malha_reforcada": {"profissao": "forja", "nivel": 3, "moedas": 2400, "xp": 45,
+                        "materiais": {"osso_enferrujado": 3}},
+    "placas_polidas": {"profissao": "forja", "nivel": 3, "moedas": 5200, "xp": 80,
+                       "materiais": {"nucleo_gelado": 3}},
+    "couraca_cinzas": {"profissao": "forja", "nivel": 5, "moedas": 11000, "xp": 130,
+                       "materiais": {"brasa_eterna": 3}},
+    "lamina_selo": {"profissao": "forja", "nivel": 7, "moedas": 8000, "xp": 180,
+                    "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},
+    "adaga_selo": {"profissao": "forja", "nivel": 7, "moedas": 7000, "xp": 180,
+                   "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},
+    "manto_selo": {"profissao": "forja", "nivel": 8, "moedas": 7500, "xp": 180,
+                   "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},
+    "cajado_selo": {"profissao": "forja", "nivel": 7, "moedas": 8000, "xp": 180,
+                    "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},
+    "manoplas_selo": {"profissao": "forja", "nivel": 7, "moedas": 7000, "xp": 180,
+                      "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},
+    # ---- Forja, armas elementais (andares 11-15, ver decisoes.md) ----
+    "espada_vento": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"sopro_contido": 2, "pluma_eterea": 3}},
+    "arco_vento": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                   "materiais": {"sopro_contido": 2, "pluma_eterea": 3}},
+    "cajado_vento": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"sopro_contido": 2, "pluma_eterea": 3}},
+    "manopla_vento": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                      "materiais": {"sopro_contido": 2, "pluma_eterea": 3}},
+    "machado_raio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"semente_de_trovao": 2, "farpa_eletrica": 3}},
+    "adaga_raio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                   "materiais": {"semente_de_trovao": 2, "farpa_eletrica": 3}},
+    "cajado_raio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                    "materiais": {"semente_de_trovao": 2, "farpa_eletrica": 3}},
+    "manopla_raio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"semente_de_trovao": 2, "farpa_eletrica": 3}},
+    "martelo_gelo": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"lasca_de_silencio": 2, "estilhaco_gelido": 3}},
+    "foice_gelo": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                   "materiais": {"lasca_de_silencio": 2, "estilhaco_gelido": 3}},
+    "cajado_gelo": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                    "materiais": {"lasca_de_silencio": 2, "estilhaco_gelido": 3}},
+    "manopla_gelo": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"lasca_de_silencio": 2, "estilhaco_gelido": 3}},
+    "espada_solario": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                       "materiais": {"brasa_sem_fumaca": 2, "cinza_quente": 3}},
+    "arco_solario": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"brasa_sem_fumaca": 2, "cinza_quente": 3}},
+    "cajado_solario": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                       "materiais": {"brasa_sem_fumaca": 2, "cinza_quente": 3}},
+    "manopla_solario": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                        "materiais": {"brasa_sem_fumaca": 2, "cinza_quente": 3}},
+    "machado_sombrio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                        "materiais": {"sombra_dobrada": 2, "po_de_estrela": 3}},
+    "adaga_sombria": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                      "materiais": {"sombra_dobrada": 2, "po_de_estrela": 3}},
+    "cajado_sombrio": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                       "materiais": {"sombra_dobrada": 2, "po_de_estrela": 3}},
+    "manopla_sombria": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                        "materiais": {"sombra_dobrada": 2, "po_de_estrela": 3}},
+    "martelo_divino": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                       "materiais": {"prego_de_luz": 2, "po_de_estrela": 3}},
+    "foice_divina": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                     "materiais": {"prego_de_luz": 2, "po_de_estrela": 3}},
+    "cajado_divino": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                      "materiais": {"prego_de_luz": 2, "po_de_estrela": 3}},
+    "manopla_divina": {"profissao": "forja", "nivel": 9, "moedas": 10000, "xp": 260,
+                       "materiais": {"prego_de_luz": 2, "po_de_estrela": 3}},
     # ---- Alquimia
     "elixir_ervas": {"profissao": "alquimia", "nivel": 1, "moedas": 200, "xp": 20,
                      "materiais": {"seda_sussurrante": 3}},
@@ -66,7 +134,7 @@ RECEITAS = {
 
 def xp_para_subir(nivel):
     """XP necessario para sair do nivel N para o N+1."""
-    return int(50 * nivel ** 1.4)
+    return 50 * nivel
 
 
 def aplicar_xp_profissao(nivel, xp_atual, ganho):
@@ -117,6 +185,119 @@ def texto_materiais(receita, vezes=1):
         f"{ITENS[i]['emoji']} {ITENS[i]['nome']} x{q * vezes}"
         for i, q in receita["materiais"].items()
     )
+
+
+def pode_fazer(j, chave, receita):
+    if receita["nivel"] > j["prof_nivel"]:
+        return False
+    if j["moedas"] < receita["moedas"]:
+        return False
+    return not falta_material(j["user_id"], receita)
+
+
+# ---------------------------------------------------- listagem de receitas (rpg receitas)
+# Armas elementais (Pacote 2) viraram 24 receitas de Forja de uma vez — um
+# field por receita estourou o limite de 25 fields do Discord. Agrupadas por
+# "elemento" (game_data.ITENS[chave]["elemento"]) viram 6 fields; o resto (>25
+# jogadores acumulando muito, ou catálogo crescendo mais) vai pra paginação
+# genérica em paginacao.py. Ver decisoes.md § Paginação de embeds.
+NOME_ELEMENTO = {"ar": "Ar", "raio": "Raio", "gelo": "Gelo", "fogo": "Fogo",
+                  "sombrio": "Sombrio", "divino": "Divino"}
+EMOJI_ELEMENTO = {"ar": "🌪️", "raio": "⚡", "gelo": "❄️", "fogo": "🔥",
+                   "sombrio": "🌑", "divino": "✨"}
+
+
+def _campo_receita(chave, receita, j):
+    item = ITENS[chave]
+    travada = receita["nivel"] > j["prof_nivel"]
+    faltando = falta_material(j["user_id"], receita)
+    if travada:
+        marca = f"🔒 nível {receita['nivel']}"
+    elif faltando or j["moedas"] < receita["moedas"]:
+        marca = "⬜ falta material"
+    else:
+        marca = "✅ pode fazer"
+    ganho = (f"+{item['def']} DEF" if "def" in item
+             else f"+{item['atk']} ATK" if "atk" in item
+             else f"cura {int(item['cura_pct'] * 100)}%" if "cura_pct" in item
+             else f"restaura {int(item['mana_pct'] * 100)}% de mana")
+    nome = f"{item['emoji']} {item['nome']} — {marca}"
+    valor = f"{ganho}\n{texto_materiais(receita)} + {receita['moedas']} 🪙"
+    return nome, valor
+
+
+def _campo_elemento(elemento, pares, j):
+    """pares: lista de (chave, receita) das 4 armas daquele elemento — todas
+    com o mesmo custo/material, então mostra isso uma vez só no fim."""
+    linhas = []
+    for chave, receita in pares:
+        item = ITENS[chave]
+        pronto = pode_fazer(j, chave, receita)
+        marca = "✅" if pronto else ("🔒" if receita["nivel"] > j["prof_nivel"] else "⬜")
+        linhas.append(f"{marca} {item['emoji']} {item['nome']} (+{item['bonus']} {item['atributo'][:3].upper()})")
+    _, receita_qualquer = pares[0]
+    linhas.append(f"{texto_materiais(receita_qualquer)} + {receita_qualquer['moedas']} 🪙 cada")
+    nome = f"{EMOJI_ELEMENTO[elemento]} {NOME_ELEMENTO[elemento]}"
+    return nome, "\n".join(linhas)
+
+
+def entradas_receitas(j, apenas_prontas):
+    """Lista de (nome, valor) pra alimentar paginacao.enviar_paginado — as
+    receitas normais uma a uma, as armas elementais agrupadas por elemento."""
+    todas = sorted(receitas_da(j["profissao"]).items(), key=lambda kv: kv[1]["nivel"])
+    normais = [(k, r) for k, r in todas if "elemento" not in ITENS[k]]
+    elementais = [(k, r) for k, r in todas if "elemento" in ITENS[k]]
+
+    entradas = []
+    for chave, receita in normais:
+        if apenas_prontas and not pode_fazer(j, chave, receita):
+            continue
+        entradas.append(_campo_receita(chave, receita, j))
+
+    por_elemento = {}
+    for chave, receita in elementais:
+        por_elemento.setdefault(ITENS[chave]["elemento"], []).append((chave, receita))
+    for elemento in ("ar", "raio", "gelo", "fogo", "sombrio", "divino"):
+        pares = por_elemento.get(elemento)
+        if not pares:
+            continue
+        if apenas_prontas:
+            pares = [(k, r) for k, r in pares if pode_fazer(j, k, r)]
+            if not pares:
+                continue
+        entradas.append(_campo_elemento(elemento, pares, j))
+    return entradas
+
+
+# ------------------------------------------------------------ melhoria/desmanche
+
+def custo_melhorar(item_chave, alvo_nivel, eh_forjador):
+    """(material, qtd, moedas) para tentar +1 ou +2 nesse item."""
+    item = ITENS[item_chave]
+    material = ANDAR_MATERIAL[item["andar_min"]]
+    qtd = CUSTO_MATERIAL_UPGRADE[alvo_nivel]
+    moedas = int(item["preco"] * CUSTO_PRECO_UPGRADE[alvo_nivel])
+    if eh_forjador:
+        qtd = max(1, int(qtd * (1 - DESCONTO_FORJADOR)))
+        moedas = max(1, int(moedas * (1 - DESCONTO_FORJADOR)))
+    return material, qtd, moedas
+
+
+def refund_desmanche(item_chave, nivel_upgrade):
+    """(materiais devolvidos, xp de oficio devolvido) ao desmanchar uma peca."""
+    receita = RECEITAS.get(item_chave)
+    if receita:
+        materiais_base = receita["materiais"]
+        xp = int(receita["xp"] * PCT_XP_DESMANCHE)
+    else:
+        item = ITENS[item_chave]
+        materiais_base = {ANDAR_MATERIAL[item["andar_min"]]: 3}
+        xp = 0
+    materiais = {
+        mat: max(1, int(qtd * PCT_REFUND_DESMANCHE)) + nivel_upgrade
+        for mat, qtd in materiais_base.items()
+    }
+    return materiais, xp
 
 
 # ---------------------------------------------------------------- instalacao
@@ -219,7 +400,7 @@ def instalar(bot, contexto):
         await ctx.send(embed=e)
 
     @bot.command(name="receitas", aliases=["receita", "craftaveis"])
-    async def receitas(ctx):
+    async def receitas(ctx, *, argumento: str = ""):
         j = await H["pegar_jogador"](ctx)
         if not j:
             return
@@ -227,39 +408,34 @@ def instalar(bot, contexto):
             await ctx.send("Você ainda não escolheu um ofício. Manda `rpg profissao`.")
             return
 
+        partes = argumento.split()
+        modo_tudo = bool(partes) and H["normalizar"](partes[0]) == "tudo"
+        resto = partes[1:] if modo_tudo else partes
+        pagina = int(resto[0]) if resto and resto[0].isdigit() else 1
+
         dados = PROFISSOES[j["profissao"]]
         npc = bancada_no_andar(j["andar"], j["profissao"])
-        e = discord.Embed(
-            title=f"{dados['emoji']} Receitas de {dados['nome']}",
-            description=(
-                f"Você trabalha na bancada do **{dados['npc']}**. "
-                + (f"Tem um aqui no andar {j['andar']}." if npc
-                   else f"Não tem nenhum no andar {j['andar']} — precisa viajar.")
+        onde = (f"Tem um aqui no andar {j['andar']}." if npc
+                else f"Não tem nenhum no andar {j['andar']} — precisa viajar.")
+
+        if modo_tudo:
+            entradas = entradas_receitas(j, apenas_prontas=False)
+            titulo = f"{dados['emoji']} Receitas de {dados['nome']} — lista completa"
+            rodape_extra = "rpg craftar <item> <qtd>"
+        else:
+            entradas = entradas_receitas(j, apenas_prontas=True)
+            titulo = f"{dados['emoji']} O que você pode fazer agora"
+            rodape_extra = "rpg receitas tudo — lista completa · rpg craftar <item> <qtd>"
+
+        await paginacao.enviar_paginado(
+            ctx, entradas, titulo, ANDARES[j["andar"]]["cor"],
+            descricao=f"Você trabalha na bancada do **{dados['npc']}**. {onde}",
+            rodape_extra=rodape_extra, pagina_inicial=pagina,
+            mensagem_vazia=(
+                "Nada pronto pra fabricar agora — falta nível de ofício, moedas ou material. "
+                "`rpg receitas tudo` mostra o catálogo inteiro."
             ),
-            color=ANDARES[j["andar"]]["cor"],
         )
-        for chave, receita in sorted(receitas_da(j["profissao"]).items(),
-                                     key=lambda kv: kv[1]["nivel"]):
-            item = ITENS[chave]
-            travada = receita["nivel"] > j["prof_nivel"]
-            faltando = falta_material(j["user_id"], receita)
-            if travada:
-                marca = f"🔒 nível {receita['nivel']}"
-            elif faltando or j["moedas"] < receita["moedas"]:
-                marca = "⬜ falta material"
-            else:
-                marca = "✅ pode fazer"
-            ganho = (f"+{item['def']} DEF" if "def" in item
-                     else f"+{item['atk']} ATK" if "atk" in item
-                     else f"cura {int(item['cura_pct'] * 100)}%" if "cura_pct" in item
-                     else f"restaura {int(item['mana_pct'] * 100)}% de mana")
-            e.add_field(
-                name=f"{item['emoji']} {item['nome']} — {marca}",
-                value=f"{ganho}\n{texto_materiais(receita)} + {receita['moedas']} 🪙",
-                inline=False,
-            )
-        e.set_footer(text="rpg craftar <item> <qtd>")
-        await ctx.send(embed=e)
 
     @bot.command(name="craftar", aliases=["craft", "forjar", "fabricar"])
     async def craftar(ctx, *, argumento: str = ""):
@@ -345,6 +521,150 @@ def instalar(bot, contexto):
         e.set_footer(text=f"Na mochila. Equipa com `rpg equipar {ITENS[chave]['nome']}`"
                      if ITENS[chave]["tipo"] in ("arma", "armadura")
                      else "Na mochila. Usa com `rpg usar`")
+        await ctx.send(embed=e)
+
+    @bot.command(name="melhorar", aliases=["upgrade", "aprimorar"])
+    async def melhorar(ctx, *, argumento: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+
+        alvo = H["normalizar"](argumento)
+        if alvo.startswith("armad"):
+            slot = "armadura"
+        elif alvo.startswith("arm"):
+            slot = "arma"
+        else:
+            await ctx.send("Uso: `rpg melhorar arma` ou `rpg melhorar armadura`.")
+            return
+
+        item_chave = j[slot]
+        if not item_chave:
+            await ctx.send(f"Você não tem {slot} equipada pra melhorar.")
+            return
+
+        npc = bancada_no_andar(j["andar"], "forja")
+        if not npc:
+            await ctx.send(
+                f"Precisa de um **ferreiro** pra isso, e não tem nenhum no andar {j['andar']}."
+            )
+            return
+
+        nivel_atual = db.get_upgrade(j["user_id"], item_chave)
+        if nivel_atual >= NIVEL_MAX_UPGRADE:
+            await ctx.send(f"**{ITENS[item_chave]['nome']}** já está no teto: +{NIVEL_MAX_UPGRADE}.")
+            return
+
+        alvo_nivel = nivel_atual + 1
+        eh_forjador = j["profissao"] == "forja"
+        material, qtd_material, custo = custo_melhorar(item_chave, alvo_nivel, eh_forjador)
+
+        if not db.tem_item(j["user_id"], material, qtd_material):
+            tem = next((i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] == material), 0)
+            await ctx.send(
+                f"Falta material: {ITENS[material]['emoji']} {ITENS[material]['nome']} "
+                f"x{qtd_material - tem}."
+            )
+            return
+        if j["moedas"] < custo:
+            await ctx.send(f"Faltam **{custo - j['moedas']}** moedas para essa melhoria.")
+            return
+
+        db.remove_item(j["user_id"], material, qtd_material)
+        campos = {"moedas": j["moedas"] - custo}
+
+        chance = (CHANCE_UPGRADE_FORJADOR if eh_forjador else CHANCE_UPGRADE)[alvo_nivel]
+        sucesso = random.random() < chance
+
+        dados = PROFISSOES["forja"]
+        e = discord.Embed(
+            title=f"⚒️ Melhorar {ITENS[item_chave]['nome']} para +{alvo_nivel}",
+            description=f"*{npc['nome']} espia a peça e decide se vale o risco.*",
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        e.add_field(
+            name="Gasto",
+            value=f"{ITENS[material]['emoji']} {ITENS[material]['nome']} x{qtd_material} + {custo} 🪙"
+                  + (" (desconto de Forjador)" if eh_forjador else ""),
+            inline=False,
+        )
+
+        if sucesso:
+            db.set_upgrade(j["user_id"], item_chave, alvo_nivel)
+            e.add_field(name="✅ Sucesso", value=f"Peça agora é **+{alvo_nivel}**.", inline=False)
+            if eh_forjador:
+                nivel, xp, subiu = aplicar_xp_profissao(
+                    j["prof_nivel"], j["prof_xp"], XP_UPGRADE[alvo_nivel]
+                )
+                campos["prof_nivel"], campos["prof_xp"] = nivel, xp
+                if subiu:
+                    e.add_field(
+                        name="⬆️ Ofício melhorou",
+                        value=f"**{dados['nome']} nível {nivel}**.", inline=False,
+                    )
+        else:
+            e.add_field(
+                name="❌ Falhou",
+                value="A peça não quebrou, mas o material e as moedas já foram gastos.",
+                inline=False,
+            )
+
+        db.atualizar_jogador(j["user_id"], **campos)
+        await ctx.send(embed=e)
+
+    @bot.command(name="desmanchar", aliases=["desmontar", "sucatear"])
+    async def desmanchar(ctx, *, argumento: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        if not argumento:
+            await ctx.send("Uso: `rpg desmanchar <item>`. Só equipamento, e não pode estar equipado.")
+            return
+
+        texto, vezes = H["separar_quantidade"](argumento)
+        possuidos = [
+            i["item"] for i in db.get_inventario(j["user_id"])
+            if i["item"] in ITENS and ITENS[i["item"]]["tipo"] in ("arma", "armadura")
+        ]
+        item_chave = H["encontrar_item"](texto, possuidos)
+        if not item_chave:
+            fora = H["encontrar_item"](texto)
+            if fora and ITENS[fora]["tipo"] not in ("arma", "armadura"):
+                await ctx.send(f"**{ITENS[fora]['nome']}** não é equipamento — não dá pra desmanchar.")
+            else:
+                await ctx.send("Você não tem esse equipamento (sem estar equipado) na mochila.")
+            return
+        if not db.tem_item(j["user_id"], item_chave, vezes):
+            await ctx.send(f"Você não tem {vezes}x **{ITENS[item_chave]['nome']}** sobrando na mochila.")
+            return
+
+        nivel_upgrade = db.get_upgrade(j["user_id"], item_chave)
+        materiais, xp_peca = refund_desmanche(item_chave, nivel_upgrade)
+
+        db.remove_item(j["user_id"], item_chave, vezes)
+        for mat, qtd in materiais.items():
+            db.add_item(j["user_id"], mat, qtd * vezes)
+        db.set_upgrade(j["user_id"], item_chave, 0)
+
+        texto_devolvido = " · ".join(
+            f"{ITENS[m]['emoji']} {ITENS[m]['nome']} x{q * vezes}" for m, q in materiais.items()
+        )
+        e = discord.Embed(
+            title=f"🔨 Desmanchou {ITENS[item_chave]['nome']}" + (f" x{vezes}" if vezes > 1 else ""),
+            description=f"Devolveu {texto_devolvido}.",
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        if nivel_upgrade:
+            e.add_field(name="Upgrade zerado", value=f"A peça estava +{nivel_upgrade}.", inline=False)
+
+        if j["profissao"] == "forja" and xp_peca:
+            ganho = xp_peca * vezes
+            nivel, xp, subiu = aplicar_xp_profissao(j["prof_nivel"], j["prof_xp"], ganho)
+            db.atualizar_jogador(j["user_id"], prof_nivel=nivel, prof_xp=xp)
+            e.add_field(name="Ofício", value=f"+{ganho} XP de Forja.", inline=False)
+            if subiu:
+                e.add_field(name="⬆️ Ofício melhorou", value=f"**Forja nível {nivel}**.", inline=False)
+
         await ctx.send(embed=e)
 
     print("profissoes.py carregado — forja e alquimia no ar.")

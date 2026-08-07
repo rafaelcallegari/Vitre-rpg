@@ -1,4 +1,6 @@
 # database.py
+import os
+import shutil
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -6,6 +8,7 @@ from contextlib import contextmanager
 import atributos as at
 
 DB_PATH = "aincrad.db"
+BACKUP_DIR = "backups"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jogadores (
@@ -45,6 +48,60 @@ CREATE TABLE IF NOT EXISTS cooldowns (
     expira_em REAL,
     PRIMARY KEY (user_id, comando)
 );
+CREATE TABLE IF NOT EXISTS upgrades (
+    user_id INTEGER,
+    item    TEXT,
+    nivel   INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, item)
+);
+CREATE TABLE IF NOT EXISTS guildas (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome       TEXT UNIQUE,
+    lider_id   INTEGER,
+    andar_home INTEGER DEFAULT 1,
+    cargo_id   INTEGER,
+    canal_id   INTEGER,
+    moedas     INTEGER DEFAULT 0,
+    criada_em  REAL
+);
+CREATE TABLE IF NOT EXISTS guilda_membros (
+    user_id   INTEGER PRIMARY KEY,
+    guilda_id INTEGER,
+    entrou_em REAL,
+    papel     TEXT DEFAULT 'membro'
+);
+CREATE TABLE IF NOT EXISTS guilda_bau (
+    guilda_id INTEGER,
+    item      TEXT,
+    qtd       INTEGER DEFAULT 0,
+    PRIMARY KEY (guilda_id, item)
+);
+CREATE TABLE IF NOT EXISTS guilda_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    guilda_id INTEGER,
+    user_id   INTEGER,
+    acao      TEXT,
+    item      TEXT,
+    qtd       INTEGER,
+    quando    REAL
+);
+CREATE TABLE IF NOT EXISTS guilda_raide (
+    guilda_id INTEGER PRIMARY KEY,
+    expira_em REAL
+);
+CREATE TABLE IF NOT EXISTS chefes_derrotados (
+    user_id INTEGER,
+    andar   INTEGER,
+    vezes   INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, andar)
+);
+CREATE TABLE IF NOT EXISTS guilda_convites (
+    guilda_id     INTEGER,
+    user_id       INTEGER,
+    convidado_por INTEGER,
+    expira_em     REAL,
+    PRIMARY KEY (guilda_id, user_id)
+);
 """
 
 COLUNAS_ATRIBUTO = {
@@ -80,6 +137,11 @@ COLUNAS_HABILIDADES = {
     "classe": "TEXT",                        # None = sem classe, escolhe com rpg classe
     "habilidades_extras": "TEXT DEFAULT ''",  # skills destravadas por sidequest, não por atributo
     "mana_em": "REAL DEFAULT 0",              # último instante em que a mana mudou
+}
+
+COLUNAS_ACESSORIOS = {
+    "anel": "TEXT",
+    "colar": "TEXT",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -187,6 +249,15 @@ def init_db():
             print("Banco migrado: classes criadas — ninguém escolheu ainda, "
                   "`rpg classe` para os jogadores existentes.")
 
+        # migração 8: slots de anel e colar
+        novas_acessorios = [c for c in COLUNAS_ACESSORIOS if c not in colunas]
+        if novas_acessorios:
+            for coluna in novas_acessorios:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ACESSORIOS[coluna]}"
+                )
+            print("Banco migrado: slots de anel e colar criados — ninguém equipado ainda.")
+
 
 # ---------------- jogadores ----------------
 def get_jogador(user_id):
@@ -244,6 +315,346 @@ def ranking(limite=10):
     return [dict(r) for r in rows]
 
 
+def contar_jogadores():
+    with conectar() as conn:
+        return conn.execute("SELECT COUNT(*) FROM jogadores").fetchone()[0]
+
+
+# ---------------- backup e reset de temporada ----------------
+def backup_banco():
+    """Copia o .db pra backups/ com timestamp no nome. Deixa a exceção
+    subir se falhar — quem chama decide se aborta o reset por causa disso."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    carimbo = time.strftime("%Y%m%d_%H%M%S")
+    destino = os.path.join(BACKUP_DIR, f"aincrad_{carimbo}.db")
+    shutil.copy2(DB_PATH, destino)
+    return destino
+
+
+def resetar_temporada():
+    """Reset completo de progresso — reutilizável, roda de novo em toda
+    temporada futura. Mantém a linha do jogador (ninguém refaz `rpg
+    comecar`), título equipado, títulos possuídos, `criado_em` e mortes.
+    Zera nível/XP/moedas/HP/mana/atributos/equipamento/classe/ofício e
+    apaga inventário, cooldowns e upgrades por inteiro.
+
+    Tudo dentro do `with conectar()` de baixo: se qualquer execute() aqui
+    lançar, o commit no fim do context manager nunca roda e o SQLite
+    descarta a transação inteira ao fechar a conexão sem commit — ou reseta
+    todo mundo, ou nada muda.
+    """
+    hp = at.hp_maximo(1, at.BASE)
+    mana = at.mana_maxima(1, at.BASE)
+    agora = time.time()
+    with conectar() as conn:
+        afetados = conn.execute("SELECT COUNT(*) FROM jogadores").fetchone()[0]
+        conn.execute(
+            """UPDATE jogadores SET
+                   nivel = 1, xp = 0, moedas = 0,
+                   hp = ?, mana = ?,
+                   forca = ?, destreza = ?, constituicao = ?, inteligencia = ?, pontos = 0,
+                   arma = NULL, armadura = NULL, anel = NULL, colar = NULL,
+                   classe = NULL,
+                   profissao = NULL, prof_nivel = 1, prof_xp = 0,
+                   andar = 1, andar_max = 1,
+                   hp_em = ?, combate_em = ?, mana_em = ?""",
+            (hp, mana, at.BASE, at.BASE, at.BASE, at.BASE, agora, agora, agora),
+        )
+        conn.execute("DELETE FROM inventario")
+        conn.execute("DELETE FROM cooldowns")
+        conn.execute("DELETE FROM upgrades")
+        conn.execute("DELETE FROM chefes_derrotados")
+    return afetados
+
+
+def resetar_classe_profissao(user_id):
+    """Zera classe e profissão (+ nível/XP de ofício) de UM jogador — não
+    mexe em nível, atributos, equipamento ou andar. Usado pra corrigir uma
+    escolha individual, não pra reset de temporada (ver resetar_temporada)."""
+    with conectar() as conn:
+        cur = conn.execute(
+            """UPDATE jogadores SET
+                   classe = NULL, profissao = NULL, prof_nivel = 1, prof_xp = 0
+               WHERE user_id = ?""",
+            (user_id,),
+        )
+    return cur.rowcount
+
+
+# ---------------- guildas ----------------
+def criar_guilda(nome, lider_id, andar_home, cargo_id, canal_id):
+    agora = time.time()
+    with conectar() as conn:
+        cur = conn.execute(
+            """INSERT INTO guildas (nome, lider_id, andar_home, cargo_id, canal_id, moedas, criada_em)
+               VALUES (?, ?, ?, ?, ?, 0, ?)""",
+            (nome, lider_id, andar_home, cargo_id, canal_id, agora),
+        )
+        guilda_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO guilda_membros (user_id, guilda_id, entrou_em, papel) VALUES (?, ?, ?, 'lider')",
+            (lider_id, guilda_id, agora),
+        )
+    return guilda_id
+
+
+def get_guilda(guilda_id):
+    with conectar() as conn:
+        row = conn.execute("SELECT * FROM guildas WHERE id = ?", (guilda_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_guilda_por_nome(nome):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT * FROM guildas WHERE nome = ? COLLATE NOCASE", (nome,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def guilda_do_membro(user_id):
+    """A guilda de um jogador, com o papel e a data de entrada dele juntos —
+    None se ele não está em nenhuma."""
+    with conectar() as conn:
+        row = conn.execute(
+            """SELECT guildas.*, guilda_membros.papel, guilda_membros.entrou_em
+               FROM guilda_membros JOIN guildas ON guildas.id = guilda_membros.guilda_id
+               WHERE guilda_membros.user_id = ?""",
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def viagem_gratis_guilda(user_id, andar_max, destino):
+    """Só é de graça se o destino é a home da guilda do jogador E ele já
+    destrancou até lá — checado por membro, não por guilda."""
+    guilda = guilda_do_membro(user_id)
+    return bool(guilda) and guilda["andar_home"] == destino and andar_max >= destino
+
+
+def membros_da_guilda(guilda_id):
+    with conectar() as conn:
+        rows = conn.execute(
+            "SELECT * FROM guilda_membros WHERE guilda_id = ? ORDER BY entrou_em", (guilda_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def contar_membros_guilda(guilda_id):
+    with conectar() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM guilda_membros WHERE guilda_id = ?", (guilda_id,)
+        ).fetchone()[0]
+
+
+def adicionar_membro_guilda(user_id, guilda_id):
+    with conectar() as conn:
+        conn.execute(
+            "INSERT INTO guilda_membros (user_id, guilda_id, entrou_em, papel) VALUES (?, ?, ?, 'membro')",
+            (user_id, guilda_id, time.time()),
+        )
+
+
+def remover_membro_guilda(user_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM guilda_membros WHERE user_id = ?", (user_id,))
+
+
+def transferir_lideranca_guilda(guilda_id, novo_lider_id):
+    with conectar() as conn:
+        conn.execute("UPDATE guildas SET lider_id = ? WHERE id = ?", (novo_lider_id, guilda_id))
+        conn.execute(
+            "UPDATE guilda_membros SET papel = 'membro' WHERE guilda_id = ? AND papel = 'lider'",
+            (guilda_id,),
+        )
+        conn.execute(
+            "UPDATE guilda_membros SET papel = 'lider' WHERE guilda_id = ? AND user_id = ?",
+            (guilda_id, novo_lider_id),
+        )
+
+
+def definir_home_guilda(guilda_id, andar):
+    with conectar() as conn:
+        conn.execute("UPDATE guildas SET andar_home = ? WHERE id = ?", (andar, guilda_id))
+
+
+def apagar_guilda(guilda_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM guildas WHERE id = ?", (guilda_id,))
+        conn.execute("DELETE FROM guilda_membros WHERE guilda_id = ?", (guilda_id,))
+        conn.execute("DELETE FROM guilda_bau WHERE guilda_id = ?", (guilda_id,))
+        conn.execute("DELETE FROM guilda_log WHERE guilda_id = ?", (guilda_id,))
+        conn.execute("DELETE FROM guilda_raide WHERE guilda_id = ?", (guilda_id,))
+        conn.execute("DELETE FROM guilda_convites WHERE guilda_id = ?", (guilda_id,))
+
+
+def guilda_add_moedas(guilda_id, valor):
+    with conectar() as conn:
+        conn.execute("UPDATE guildas SET moedas = moedas + ? WHERE id = ?", (valor, guilda_id))
+
+
+# ---------------- baú da guilda ----------------
+def bau_add_item(guilda_id, item, qtd):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO guilda_bau (guilda_id, item, qtd) VALUES (?, ?, ?)
+               ON CONFLICT(guilda_id, item) DO UPDATE SET qtd = qtd + excluded.qtd""",
+            (guilda_id, item, qtd),
+        )
+
+
+def bau_remove_item(guilda_id, item, qtd):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT qtd FROM guilda_bau WHERE guilda_id = ? AND item = ?", (guilda_id, item)
+        ).fetchone()
+        if not row or row["qtd"] < qtd:
+            return False
+        conn.execute(
+            "UPDATE guilda_bau SET qtd = qtd - ? WHERE guilda_id = ? AND item = ?",
+            (qtd, guilda_id, item),
+        )
+        conn.execute(
+            "DELETE FROM guilda_bau WHERE guilda_id = ? AND item = ? AND qtd <= 0", (guilda_id, item)
+        )
+    return True
+
+
+def get_bau(guilda_id):
+    with conectar() as conn:
+        rows = conn.execute(
+            "SELECT item, qtd FROM guilda_bau WHERE guilda_id = ? AND qtd > 0 ORDER BY item",
+            (guilda_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def guilda_log(guilda_id, user_id, acao, item=None, qtd=None):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO guilda_log (guilda_id, user_id, acao, item, qtd, quando)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (guilda_id, user_id, acao, item, qtd, time.time()),
+        )
+
+
+def get_guilda_log(guilda_id, limite=10):
+    with conectar() as conn:
+        rows = conn.execute(
+            "SELECT * FROM guilda_log WHERE guilda_id = ? ORDER BY quando DESC LIMIT ?",
+            (guilda_id, limite),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------- convites de guilda ----------------
+# Sem agendador: convite vencido é limpo na leitura, não por task de fundo
+# (ver decisoes.md § Convite de guilda). Toda função abaixo apaga o que já
+# venceu antes de olhar o resto da tabela.
+def _limpar_convites_vencidos(conn):
+    conn.execute("DELETE FROM guilda_convites WHERE expira_em <= ?", (time.time(),))
+
+
+def criar_ou_renovar_convite(guilda_id, user_id, convidado_por, segundos):
+    with conectar() as conn:
+        _limpar_convites_vencidos(conn)
+        conn.execute(
+            """INSERT INTO guilda_convites (guilda_id, user_id, convidado_por, expira_em)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(guilda_id, user_id) DO UPDATE SET
+                   convidado_por = excluded.convidado_por, expira_em = excluded.expira_em""",
+            (guilda_id, user_id, convidado_por, time.time() + segundos),
+        )
+
+
+def get_convite(guilda_id, user_id):
+    with conectar() as conn:
+        _limpar_convites_vencidos(conn)
+        row = conn.execute(
+            "SELECT * FROM guilda_convites WHERE guilda_id = ? AND user_id = ?",
+            (guilda_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def contar_convites_pendentes_guilda(guilda_id):
+    with conectar() as conn:
+        _limpar_convites_vencidos(conn)
+        return conn.execute(
+            "SELECT COUNT(*) FROM guilda_convites WHERE guilda_id = ?", (guilda_id,)
+        ).fetchone()[0]
+
+
+def convites_do_jogador(user_id):
+    """Convites pendentes de um jogador, com o nome da guilda já junto —
+    quem convidou pode ter saído da guilda nesse meio tempo, então o
+    convite mostra o id salvo mesmo que não seja mais membro."""
+    with conectar() as conn:
+        _limpar_convites_vencidos(conn)
+        rows = conn.execute(
+            """SELECT guilda_convites.*, guildas.nome AS guilda_nome
+               FROM guilda_convites JOIN guildas ON guildas.id = guilda_convites.guilda_id
+               WHERE guilda_convites.user_id = ?
+               ORDER BY guilda_convites.expira_em""",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def apagar_convite(guilda_id, user_id):
+    with conectar() as conn:
+        conn.execute(
+            "DELETE FROM guilda_convites WHERE guilda_id = ? AND user_id = ?", (guilda_id, user_id)
+        )
+
+
+def apagar_convites_do_jogador(user_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM guilda_convites WHERE user_id = ?", (user_id,))
+
+
+# ---------------- cooldown de raide (por guilda, não por jogador) ----------------
+def checar_cooldown_raide(guilda_id):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT expira_em FROM guilda_raide WHERE guilda_id = ?", (guilda_id,)
+        ).fetchone()
+    if row and row["expira_em"] > time.time():
+        return row["expira_em"] - time.time()
+    return 0.0
+
+
+def set_cooldown_raide(guilda_id, segundos):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO guilda_raide (guilda_id, expira_em) VALUES (?, ?)
+               ON CONFLICT(guilda_id) DO UPDATE SET expira_em = excluded.expira_em""",
+            (guilda_id, time.time() + segundos),
+        )
+
+
+# ---------------- chefes derrotados (andares 11+) ----------------
+# Material de chefe acima do andar 10 não usa a chance fixa do dict: a
+# primeira vitória garante o material (100%), da segunda em diante cai pra
+# 15% — ver combate.recompensar() e decisoes.md § Morte e reconquista.
+def vezes_derrotado_chefe(user_id, andar):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT vezes FROM chefes_derrotados WHERE user_id = ? AND andar = ?",
+            (user_id, andar),
+        ).fetchone()
+    return row["vezes"] if row else 0
+
+
+def registrar_vitoria_chefe(user_id, andar):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO chefes_derrotados (user_id, andar, vezes) VALUES (?, ?, 1)
+               ON CONFLICT(user_id, andar) DO UPDATE SET vezes = vezes + 1""",
+            (user_id, andar),
+        )
+
+
 # ---------------- inventário ----------------
 def add_item(user_id, item, qtd=1):
     with conectar() as conn:
@@ -279,6 +690,31 @@ def get_inventario(user_id):
             "SELECT item, qtd FROM inventario WHERE user_id = ? AND qtd > 0 ORDER BY item", (user_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------- upgrades de equipamento ----------------
+# Nivel de melhoria (+1/+2) fica preso ao par (user_id, item), nao ao slot
+# equipado nem a' quantidade em mochila — sobrevive a desequipar/reequipar.
+# Se o jogador tiver mais de uma copia do mesmo item, elas compartilham o
+# mesmo nivel (o jogo nao distingue copias individuais do mesmo equipamento).
+def get_upgrade(user_id, item):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT nivel FROM upgrades WHERE user_id = ? AND item = ?", (user_id, item)
+        ).fetchone()
+    return row["nivel"] if row else 0
+
+
+def set_upgrade(user_id, item, nivel):
+    with conectar() as conn:
+        if nivel <= 0:
+            conn.execute("DELETE FROM upgrades WHERE user_id = ? AND item = ?", (user_id, item))
+        else:
+            conn.execute(
+                """INSERT INTO upgrades (user_id, item, nivel) VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, item) DO UPDATE SET nivel = excluded.nivel""",
+                (user_id, item, nivel),
+            )
 
 
 # ---------------- cooldowns ----------------

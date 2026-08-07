@@ -195,22 +195,56 @@ ofício. Nível máximo 10.
 
 ### Receitas
 
+Curva de XP de ofício: `50 * nível` para subir de N pra N+1 (era `50 *
+nível^1.4`, trocada pra ficar mais rápida — vale pra Forja e Alquimia, as
+duas usam a mesma `xp_para_subir`).
+
 | Receita | Ofício | Nível | Materiais | Preço 🪙 | XP |
 |---|---|---|---|---|---|
-| 🥾 «Couro Batido» | Forja | 1 | Presa de Javali x5 | 700 | 35 |
-| ⛓️ «Malha Reforçada» | Forja | 3 | Osso Enferrujado x5 | 2400 | 120 |
-| 🔩 «Placas Polidas» | Forja | 5 | Núcleo Gelado x5 | 5200 | 260 |
-| 🜃 «Couraça de Cinzas» | Forja | 7 | Brasa Eterna x5 | 11000 | 550 |
-| 🌑 «Lâmina do Selo» | Forja | 9 | Fragmento do Selo x3 + Pena do Trovão x5 | 8000 | 900 |
-| 🌒 «Adaga do Selo» | Forja | 9 | Fragmento do Selo x3 + Pena do Trovão x5 | 7000 | 900 |
-| 🧿 «Manto do Selo» | Forja | 9 | Fragmento do Selo x3 + Pena do Trovão x5 | 7500 | 900 |
+| 🥾 «Couro Batido» | Forja | 1 | Presa de Javali x3 | 700 | 20 |
+| ⛓️ «Malha Reforçada» | Forja | 3 | Osso Enferrujado x3 | 2400 | 45 |
+| 🔩 «Placas Polidas» | Forja | 3 | Núcleo Gelado x3 | 5200 | 80 |
+| 🜃 «Couraça de Cinzas» | Forja | 5 | Brasa Eterna x3 | 11000 | 130 |
+| 🌑 «Lâmina do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 8000 | 180 |
+| 🌒 «Adaga do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 7000 | 180 |
+| 🌑 «Cajado do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 8000 | 180 |
+| 🌒 «Manoplas do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 7000 | 180 |
+| 🧿 «Manto do Selo» | Forja | 8 | Fragmento do Selo x2 + Pena do Trovão x3 | 7500 | 180 |
 | 🌿 «Elixir de Ervas» | Alquimia | 1 | Seda Sussurrante x3 | 200 | 20 |
 | 🍷 «Elixir Vermelho» | Alquimia | 4 | Cristal de Sal x3 | 900 | 90 |
+| 🟣 «Elixir de Mana» | Alquimia | 4 | Cristal de Sal x3 | 900 | 90 |
 | 🍯 «Néctar da Torre» | Alquimia | 7 | Fragmento de Sino x3 | 2600 | 300 |
 
-As três receitas de nível 9 da Forja competem pelo mesmo material
-(Fragmento do Selo, que só dropa de chefe) — só dá pra fazer as três se a
+As cinco receitas de nível 7/8 da Forja competem pelo mesmo material
+(Fragmento do Selo, que só dropa de chefe) — só dá pra fazer todas se a
 party farmar chefe várias vezes.
+
+### Melhoria e desmanche (`rpg melhorar`, `rpg desmanchar`)
+
+Qualquer jogador pode tentar melhorar a arma ou armadura que tem equipada,
+no ferreiro de qualquer andar (`rpg melhorar arma` / `rpg melhorar
+armadura`) — Forjador paga 25% a menos de material e moeda. O nível de
+melhoria fica preso ao par (jogador, item), não ao slot — sobrevive a
+desequipar e reequipar, mas some se a peça for desmanchada. Se o jogador
+tiver duas cópias do mesmo item, as duas "compartilham" o nível salvo (não
+há distinção por cópia individual).
+
+| Tentativa | Custo | Sucesso | Ganho |
+|---|---|---|---|
+| +1 | material do andar x2 + 40% do preço da peça | garantido | +12% do stat base (atk/def) |
+| +2 | material do andar x3 + 100% do preço da peça | 70% (85% Forjador) | +12% adicional — teto em +2 |
+
+Falha no +2 consome material e moeda mas nunca quebra nem rebaixa a peça.
+XP de ofício do upgrade (+1 = 25, +2 = 50) só é concedido a quem **é**
+Forjador — qualquer jogador pode pagar pra melhorar, mas só sobe nível de
+Forja quem exerce o ofício.
+
+`rpg desmanchar <item>` funde equipamento não-equipado de volta em
+material: devolve 50% do material da receita (arredondado pra baixo,
+mínimo 1) + 1 por nível de melhoria que a peça tinha, e zera esse nível.
+Dá 40% do XP de craft daquela peça — de novo, só se o jogador for Forjador.
+Peça comprada em loja (sem receita própria, ex. Espada de Ferro) desmancha
+pelo material do andar dela, com a mesma conta de 50%.
 
 ## Efeitos temporários (`rpg efeitos`)
 
