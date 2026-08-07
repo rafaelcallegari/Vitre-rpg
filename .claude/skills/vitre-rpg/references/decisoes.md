@@ -1705,3 +1705,46 @@ isolar o que quebrou se algo desse errado em produção.
  suíte automatizada no projeto ainda (cartão seguinte) — `rpg trade` de
  ponta a ponta entre duas contas reais e a sequência completa do checklist
  (item 1 da Definition of Done) dependem de rodar no servidor de verdade.
+
+## Cartão 3 — suíte pytest e os cinco primeiros testes
+
+Parte B do cartão "Acesso ao banco bloqueia o event loop" (`asyncio.to_thread`)
+mexe no mesmo lugar que a conexão longa (cartão 2) de novo — daí a suíte vir
+agora, não antes: WAL e conexão longa foram os dois verificados só à mão. Sem
+mudança de comportamento de jogo neste cartão; um bug real apareceu no meio do
+trabalho e foi anotado, não consertado (ver abaixo).
+
+- **Isolamento — por que `":memory:"` só passou a funcionar depois da conexão
+  longa**: com conexão-por-chamada (antes do cartão 2), cada `conectar()`
+  abria um `sqlite3.connect(":memory:")` novo — um banco em memória vazio,
+  sozinho, que morria no fim da própria chamada. Nada persistia entre duas
+  chamadas dentro do mesmo teste. Agora que `database._conn` é uma conexão de
+  módulo reaberta preguiçosamente e nunca fechada em uso normal, o banco em
+  memória sobrevive durante o teste inteiro — a mesma razão pela qual o WAL
+  passou a valer a pena.
+- **Fixture `banco_de_teste` (`tests/conftest.py`), `autouse=True`**: antes de
+  cada teste chama `db.fechar_conexao()` (descarta qualquer conexão/estado do
+  teste anterior), aponta `db.DB_PATH = ":memory:"`, e roda `db.init_db()` do
+  zero. Depois do teste, `fechar_conexao()` de novo — sem isso o próximo
+  teste herdaria a conexão (e o banco em memória) do anterior, já que a
+  conexão agora é de módulo, não por chamada. `_garantir_nao_e_producao()`
+  falha alto se `db.DB_PATH` alguma hora apontar pro `aincrad.db` real
+  (comparação por caminho absoluto) — trava de segurança, nunca deveria
+  disparar com `":memory:"` fixo, mas cobre um fixture futuro que troque para
+  `tmp_path`/arquivo real por engano.
+- **Bug real encontrado, anotado e não corrigido**
+  (`tests/test_profissoes.py::test_refund_desmanche_nao_deveria_exceder_material_raro_de_chefe`,
+  marcado `xfail(strict=True)` de propósito pra suíte continuar limpa):
+  `profissoes.refund_desmanche()` soma `+nivel_upgrade` a **cada** material
+  da receita, sem checar se aquele material específico foi realmente gasto na
+  melhoria (`custo_melhorar` sempre gasta `ANDAR_MATERIAL[item.andar_min]`,
+  um material só). Para peças cujo material de craft é diferente do material
+  de melhoria — caso das armas do Selo, que craftam com `fragmento_selo`
+  (drop de chefe, capado) **e** `pena_do_trovao`, mas melhoram só com
+  `pena_do_trovao` — desmanchar uma peça +2 devolve mais `fragmento_selo` (3)
+  do que foi gasto no craft (2). Ciclo craftar → melhorar duas vezes →
+  desmanchar sai com +1 `fragmento_selo` de graça: lava material raro de
+  chefe através da melhoria. Não afeta itens onde craft e melhoria comem o
+  mesmo material (ex. `couro_batido`, testado à parte e continua correto:
+  refund nunca passa da base do craft). Vira cartão separado no Kanban —
+  ainda não criado, avisar o Rafael antes de abrir.

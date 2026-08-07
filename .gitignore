@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 backups/
 *.zip
+.pytest_cache/
