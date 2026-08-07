@@ -7,8 +7,10 @@ import time
 
 import discord
 
+import andares_altos
 import database as db
 import paginacao
+import travas
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO
 
 H = {}
@@ -19,6 +21,7 @@ CATEGORIA_GUILDAS = "Guildas"
 COR_GUILDA = 0xC9A227
 EXPIRA_CONVITE_SEGUNDOS = 24 * 3600
 LIMITE_CONVITES_GUILDA = 5    # convites pendentes ao mesmo tempo, por guilda — não é spam
+COOLDOWN_HOME_SEGUNDOS = 3 * 3600   # 1 troca de home a cada 3h, por guilda
 
 
 # ---------------------------------------------------------- Discord: cargo e canal
@@ -121,6 +124,8 @@ async def acao_status(ctx, j):
 
 
 async def acao_criar(ctx, j, nome):
+    if await travas.bloqueado(ctx):
+        return
     if ctx.guild is None:
         await ctx.send("Esse comando só funciona dentro de um servidor.")
         return
@@ -456,6 +461,10 @@ async def acao_home(ctx, j, argumento):
     if guilda["lider_id"] != j["user_id"]:
         await ctx.send("Só o líder muda a home.")
         return
+    restante = db.checar_cooldown_home(guilda["id"])
+    if restante > 0:
+        await ctx.send(f"⏳ A home dessa guilda só troca de novo em **{H['fmt_tempo'](restante)}**.")
+        return
     argumento = argumento.strip()
     if not argumento.isdigit():
         await ctx.send(f"Uso: `rpg guilda home <andar>`. Home atual: andar {guilda['andar_home']}.")
@@ -464,10 +473,17 @@ async def acao_home(ctx, j, argumento):
     if andar < 1 or andar > ANDAR_MAXIMO:
         await ctx.send(f"Andar inválido. A torre vai de 1 a {ANDAR_MAXIMO}.")
         return
+    if andar > andares_altos.ANDAR_ACIMA_DO_SELO:
+        await ctx.send(
+            f"Home não pode passar do andar {andares_altos.ANDAR_ACIMA_DO_SELO} — "
+            "acima do Selo não tem loja nem ferreiro, guilda não mora lá."
+        )
+        return
     if andar > j["andar_max"]:
         await ctx.send(f"Você (o líder) ainda não destrancou o andar {andar}.")
         return
     db.definir_home_guilda(guilda["id"], andar)
+    db.set_cooldown_home(guilda["id"], COOLDOWN_HOME_SEGUNDOS)
     await ctx.send(f"Home da guilda **{guilda['nome']}** agora é o andar {andar} — {ANDARES[andar]['nome']}.")
 
 
@@ -494,6 +510,8 @@ async def acao_bau(ctx, j, argumento=""):
 
 
 async def acao_depositar(ctx, j, argumento):
+    if await travas.bloqueado(ctx):
+        return
     guilda = db.guilda_do_membro(j["user_id"])
     if not guilda:
         await ctx.send("Você não está em uma guilda.")
@@ -514,6 +532,8 @@ async def acao_depositar(ctx, j, argumento):
 
 
 async def acao_sacar(ctx, j, argumento):
+    if await travas.bloqueado(ctx):
+        return
     guilda = db.guilda_do_membro(j["user_id"])
     if not guilda:
         await ctx.send("Você não está em uma guilda.")

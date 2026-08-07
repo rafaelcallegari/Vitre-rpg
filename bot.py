@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 import andares_altos
 import atributos as at
 import database as db
+import habilidades as hab
 import paginacao
+import travas
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario,
 )
@@ -32,6 +34,13 @@ COOLDOWN_EXPLORAR = 180
 COOLDOWN_BOSS = 900
 COOLDOWN_DESCANSAR = 2 * 60 * 60
 CUSTO_DESCANSAR = 150
+
+GUIA_A_CADA_ACOES = 3   # acima do Selo, a Guia comenta a cada N comandos fora de luta
+
+# `rpg viajar` nunca alcança acima disso, mesmo com andar_max maior — andar
+# 12+ só se chega lutando pra cima a partir do 11, nunca de teleporte. Ver
+# decisoes.md § Teto de viajar acima do Selo.
+LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1
 
 ICONES_NPC = {"mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬", "taverneiro": "🍺", "guia": "🕯️"}
 
@@ -293,7 +302,9 @@ async def bloqueado_por_cooldown(ctx, comando, segundos):
 def processar_morte(j, s):
     """Penalidade normal (20% das moedas, volta com 30% do HP) + reconquista:
     morrer acima do andar 10 zera andar_max pra 10 — o andar 11+ inteiro
-    precisa ser reconquistado do zero. Ver decisoes.md § Morte e reconquista."""
+    precisa ser reconquistado do zero. `chefes_derrotados` NÃO zera aqui —
+    a torre esquece onde o jogador estava, nunca quem ele matou (ver
+    decisoes.md § Morte e reconquista / Roguelike acima do Selo)."""
     perda = int(j["moedas"] * 0.20)
     campos = {
         "hp": int(s["hp_max"] * 0.3),
@@ -323,10 +334,34 @@ async def on_ready():
 async def on_command_error(ctx, erro):
     if isinstance(erro, commands.CommandNotFound):
         return
+    if isinstance(erro, travas.EmLutaDeChefe):
+        await ctx.send(travas.MENSAGEM_BLOQUEIO)
+        return
     if isinstance(erro, commands.BadArgument):
         await ctx.send("Não entendi os argumentos. Confere `rpg ajuda`.")
         return
     raise erro
+
+
+@bot.after_invoke
+async def falar_guia_acima_do_selo(ctx):
+    """A cada GUIA_A_CADA_ACOES comandos executados enquanto o jogador está
+    acima do Selo, a Guia comenta — só fora de luta de chefe, porque os
+    cliques de botão do PainelLuta são interações do discord.ui, não passam
+    por comando nenhum (nem por aqui). Ver decisoes.md § A Guia."""
+    if ctx.command_failed:
+        return
+    j = db.get_jogador(ctx.author.id)
+    if not j or j["andar"] <= andares_altos.ANDAR_ACIMA_DO_SELO:
+        return
+    acoes = (j["acoes_andar_alto"] or 0) + 1
+    if acoes < GUIA_A_CADA_ACOES:
+        db.atualizar_jogador(ctx.author.id, acoes_andar_alto=acoes)
+        return
+    db.atualizar_jogador(ctx.author.id, acoes_andar_alto=0)
+    fala = andares_altos.fala_da_guia(j["andar"], j["mortes"])
+    if fala:
+        await ctx.send(f"🕯️ *A Guia:* \"{fala}\"")
 
 
 # ==================== progressão ====================
@@ -440,6 +475,7 @@ async def perfil(ctx, membro: discord.Member = None):
 
 
 @bot.command(name="cacar", aliases=["hunt", "h", "caçar"])
+@travas.fora_de_luta()
 async def cacar(ctx):
     j = await pegar_jogador(ctx)
     if not j:
@@ -495,6 +531,7 @@ async def cacar(ctx):
 
 
 @bot.command(name="explorar", aliases=["adventure", "adv", "aventura"])
+@travas.fora_de_luta()
 async def explorar(ctx):
     j = await pegar_jogador(ctx)
     if not j:
@@ -677,6 +714,7 @@ def custo_e_motivo_viagem(j, destino, gratis_carroca):
 
 
 @bot.command(name="viajar", aliases=["ir", "travel"])
+@travas.fora_de_luta()
 async def viajar(ctx, destino: int = 0):
     j = await pegar_jogador(ctx)
     if not j:
@@ -687,13 +725,19 @@ async def viajar(ctx, destino: int = 0):
 
     if not destino:
         linhas = []
-        for n in range(1, j["andar_max"] + 1):
+        teto_viagem = min(j["andar_max"], LIMITE_VIAJAR)
+        for n in range(1, teto_viagem + 1):
             if n == j["andar"]:
                 linhas.append(f"**{n}. {ANDARES[n]['nome']}** — você está aqui")
             else:
                 custo, motivo = custo_e_motivo_viagem(j, n, gratis_carroca)
                 preco = f"grátis ({motivo})" if motivo else f"{custo} 🪙"
                 linhas.append(f"`{n}.` {ANDARES[n]['nome']} — {preco}")
+        if j["andar"] > teto_viagem:
+            linhas.append(
+                f"**{j['andar']}. {ANDARES[j['andar']]['nome']}** — você está aqui, "
+                f"mas `rpg viajar` não alcança daqui pra lá de novo depois que sair."
+            )
         e = discord.Embed(title="Para onde?", description="\n".join(linhas), color=0xA8DADC)
         e.set_footer(text="rpg viajar <número> · você tem "
                           f"{j['moedas']} moedas")
@@ -705,6 +749,12 @@ async def viajar(ctx, destino: int = 0):
         return
     if destino > j["andar_max"]:
         await ctx.send(f"Você ainda não destrancou o andar {destino}. Derrote o chefe do andar {j['andar_max']} primeiro.")
+        return
+    if destino > LIMITE_VIAJAR:
+        await ctx.send(
+            f"`rpg viajar` só chega até o andar {LIMITE_VIAJAR}. Andar {destino} só se alcança "
+            f"lutando pra cima a partir do {LIMITE_VIAJAR} — não tem teleporte de volta pra lá."
+        )
         return
     if destino == j["andar"]:
         await ctx.send("Você já está aqui.")
@@ -737,6 +787,7 @@ async def viajar(ctx, destino: int = 0):
 
 
 @bot.command(name="carroca", aliases=["carroça", "bramm"])
+@travas.fora_de_luta()
 async def carroca(ctx):
     j = await pegar_jogador(ctx)
     if not j:
@@ -799,6 +850,7 @@ async def listar_npcs(ctx):
 
 
 @bot.command(name="falar", aliases=["conversar", "talk"])
+@travas.fora_de_luta()
 async def falar(ctx, *, quem: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -904,6 +956,7 @@ async def inventario(ctx, pagina: int = 1):
 
 
 @bot.command(name="loja", aliases=["shop", "store"])
+@travas.fora_de_luta()
 async def loja(ctx, pagina: int = 1):
     j = await pegar_jogador(ctx)
     if not j:
@@ -958,6 +1011,7 @@ async def loja(ctx, pagina: int = 1):
 
 
 @bot.command(name="comprar", aliases=["buy"])
+@travas.fora_de_luta()
 async def comprar(ctx, *, argumento: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1002,6 +1056,7 @@ async def comprar(ctx, *, argumento: str = ""):
 
 
 @bot.command(name="vender", aliases=["sell"])
+@travas.fora_de_luta()
 async def vender(ctx, *, argumento: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1030,6 +1085,7 @@ async def vender(ctx, *, argumento: str = ""):
 
 
 @bot.command(name="usar", aliases=["use", "u"])
+@travas.fora_de_luta()
 async def usar(ctx, *, texto: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1068,6 +1124,7 @@ async def usar(ctx, *, texto: str = ""):
 
 
 @bot.command(name="equipar", aliases=["equip", "e"])
+@travas.fora_de_luta()
 async def equipar(ctx, *, texto: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1133,6 +1190,7 @@ async def status(ctx):
 
 
 @bot.command(name="upar", aliases=["up", "distribuir", "gastar"])
+@travas.fora_de_luta()
 async def upar(ctx, *, argumento: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1172,6 +1230,7 @@ async def upar(ctx, *, argumento: str = ""):
 
 
 @bot.command(name="respec", aliases=["redistribuir", "resetar"])
+@travas.fora_de_luta()
 async def respec(ctx, confirmacao: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
@@ -1259,10 +1318,45 @@ async def titulo(ctx, *, argumento: str = ""):
     )
 
 
+def embed_info_classe(chave):
+    """Prévia das 2 habilidades base de uma classe, sem exigir que o jogador
+    já seja dela — é o que falta pra `rpg classe <classe>` não ser uma
+    escolha às cegas (a escolha trava, sem troca depois)."""
+    dados = CLASSES[chave]
+    e = discord.Embed(
+        title=f"{dados['emoji']} {dados['nome']} — habilidades base",
+        description=dados["desc"],
+        color=0x6A4C93,
+    )
+    for skill in hab.habilidades_da_classe(chave).values():
+        requisito = ""
+        if "requisito" in skill:
+            atributo, minimo = skill["requisito"]
+            requisito = f" (requer {minimo} {at.ATRIBUTOS[atributo]['sigla']})"
+        e.add_field(
+            name=f"{skill['emoji']} {skill['nome']} — {skill['custo']} "
+                 f"{hab.NOME_RECURSO[skill['recurso']]}{requisito}",
+            value=skill["desc"],
+            inline=False,
+        )
+    e.set_footer(text=f"Prévia — `rpg classe {chave}` ainda trava a escolha, sem troca depois.")
+    return e
+
+
 @bot.command(name="classe", aliases=["class", "vocacao", "vocação"])
 async def classe_cmd(ctx, *, argumento: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+
+    partes = argumento.strip().split()
+    pedir_info = len(partes) >= 2 and normalizar(partes[-1]) == "info"
+    if pedir_info:
+        alvo = encontrar_classe(" ".join(partes[:-1]))
+        if not alvo:
+            await ctx.send("Não conheço essa classe. `rpg classe` mostra as opções.")
+            return
+        await ctx.send(embed=embed_info_classe(alvo))
         return
 
     if j["classe"]:
@@ -1276,15 +1370,16 @@ async def classe_cmd(ctx, *, argumento: str = ""):
         e = discord.Embed(
             title="Escolha uma classe",
             description=(
-                "Travada assim que escolher — não tem troca. `rpg ascencao` mostra "
-                "no que cada uma vira mais pra frente."
+                "Travada assim que escolher — não tem troca. `rpg classe <classe> info` mostra "
+                "as habilidades base antes de decidir. `rpg ascencao` mostra no que cada uma "
+                "vira mais pra frente."
             ),
             color=ANDARES[j["andar"]]["cor"],
         )
         for chave, dados in CLASSES.items():
             e.add_field(
                 name=f"{dados['emoji']} {dados['nome']}",
-                value=f"{dados['desc']}\n`rpg classe {chave}`",
+                value=f"{dados['desc']}\n`rpg classe {chave}` · `rpg classe {chave} info`",
                 inline=False,
             )
         await ctx.send(embed=e)

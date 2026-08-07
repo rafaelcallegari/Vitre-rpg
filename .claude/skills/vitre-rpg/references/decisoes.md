@@ -1262,3 +1262,267 @@ continua liberado** — só usar (equipar) trava. Testado isolado: item
 recebido acima do `andar_max` entra na mochila sem erro, `rpg equipar`
 recusa citando o andar certo, e destrancando o andar o mesmo comando passa a
 funcionar sem mudar mais nada.
+
+## Chefes 11-15 acertaram fraco demais, e guildas estavam morando acima do Selo
+
+Contexto: jogadores batendo ~200 de dano por golpe nos chefes do andar 11+,
+esvaziando o HP calibrado no Pacote 2 (que assumia uma build nível 20) rápido
+demais. No mesmo período, líderes de guilda estavam usando `rpg guilda home`
+pra fixar a home acima do andar 10 — andar sem loja/ferreiro/carroça, então
+"morar" lá não tinha razão de ser e provavelmente era exploit de viagem
+grátis.
+
+- **HP do chefe 11-15 triplicou** (ex.: andar 11 foi de 1380 pra 4140).
+ Só o campo `hp` — `atk`/`def` seguem a curva dobrada que o Pacote 2 já
+ tinha estabelecido, não mexi de novo nisso.
+- **ATK do chefe 11-15 subiu +75 uniforme em todos os 5 andares (+ fase2 do
+ 15)**, pra garantir que um golpe normal (não carregado) contra o jogador
+ mais bem equipado possível acima do Selo (sem armadura nova lá — teto é
+ `manto_selo`, def 54) sempre passe de ~150 de dano médio. Simulei os 5
+ andares com a fórmula real de `combate.dano_do_chefe` (penetração por
+ andar incluída): andar 11 fica mais justo (~154 de dano médio), 12-15
+ sobram bem acima (174 → 262 na fase 2 do 15) porque a penetração cresce
+ com o andar e o alvo de defesa é fixo — mesmo padrão de "fica mais forte
+ andar a andar pro mesmo personagem" que o Pacote 2 já usava. Golpe
+ carregado (×3 de dano, +25% de penetração) já passava de 150 antes disso,
+ não precisou de ajuste. **Só ATK, não DEF** — o problema era o chefe
+ morrendo rápido/batendo fraco, não o jogador acertando pouco.
+- **`rpg guilda home` agora recusa andar acima de `andares_altos.
+ ANDAR_ACIMA_DO_SELO` (10)** — mesma checagem que já existia pra andar
+ inválido/não destrancado, em `guildas.acao_home`. Migração 10 em
+ `database.init_db()` zera qualquer `andar_home` de guilda já preso acima
+ do Selo de volta pro andar 1 (padrão de guilda nova) — sem isso, quem já
+ tinha fixado lá continuaria com viagem grátis pro topo depois do fix.
+- **A Guia agora fala periodicamente, não só quando o jogador fala com
+ ela.** A cada `GUIA_A_CADA_ACOES` (3) comandos executados enquanto
+ `andar > ANDAR_ACIMA_DO_SELO`, um `bot.after_invoke` global
+ (`falar_guia_acima_do_selo`) reusa `andares_altos.fala_da_guia` e manda a
+ fala como mensagem avulsa, contador zera e recomeça. **De propósito só
+ fora de luta de chefe**: os botões do `PainelLuta` são interações do
+ `discord.ui`, não passam por `@bot.command` nenhum, então nunca chegam
+ nesse hook — uma luta de 5-7 turnos não ganha uma fala extra por clique.
+ O contador (`jogadores.acoes_andar_alto`, migração 9) persiste no banco,
+ não em memória, pra sobreviver a restart do bot. `rpg falar guia` continua
+ com o comportamento antigo (teleporta na hora); como isso já baixa
+ `andar` pra 10 antes do hook rodar, o after_invoke vê `andar <=
+ ANDAR_ACIMA_DO_SELO` e não dispara — não precisou de exceção explícita.
+
+## Comando de texto travado durante luta de chefe
+
+Contexto: a luta de chefe é por turnos com botão (Atacar/Defender/Habilidade/
+Mochila/Fugir na View), mas o canal continuava aceitando comando de texto
+normalmente — dava pra `rpg comprar`, `rpg upar`, `rpg equipar` etc. no meio da
+luta, o que anula o planejamento de recurso que é o ponto do turno. Furo real
+em produção, ~10 jogadores.
+
+- **Módulo novo, `travas.py`, registro em memória** (`user_id -> timestamp`),
+ não coluna no banco. Motivo: a `Luta`/`PainelLuta` também só existem em RAM
+ — se o bot cair no meio de uma luta, ela já não sobrevive ao restart, e uma
+ trava sobrevivendo sozinha soft-lockaria quem estava lutando quando o bot
+ caiu. Sem migração, sem tabela nova.
+- **`commands.check` (`travas.fora_de_luta()`) em cada comando travado**, não
+ `if travas.em_luta(...)` espalhado por dentro de cada função — o pedido
+ explícito foi decorator, porque a lista de comandos vai crescer e um `if`
+ por comando é fácil de esquecer de adicionar num comando novo. O predicado
+ levanta `travas.EmLutaDeChefe` (subclasse de `commands.CheckFailure`), que
+ `bot.on_command_error` já pega e responde com a mensagem padrão — um ponto
+ só pra editar o texto do bloqueio no futuro.
+- **`rpg guilda` não entrou como decorator** — é um único `@bot.command` que
+ despacha várias sub-ações por string (`criar`, `bau`, `log`, `depositar`...),
+ e só 3 delas de fato movem recurso: `criar` (gasta 5000 moedas pessoais),
+ `depositar` e `sacar` (movem item entre mochila e baú). Decorar o comando
+ inteiro travaria também `rpg guilda log`/`bau`/`status`, que são só leitura.
+ Pra essas 3, `travas.bloqueado(ctx)` é chamado manualmente na primeira linha
+ da função da ação — mesma checagem por baixo do capô, só que aplicada por
+ sub-ação em vez de por comando.
+- **Trava em todo mundo que entra na luta, no momento em que ela começa**
+ (`travas.travar_todos([c.id for c in combatentes])`, logo no topo de
+ `combate.iniciar_luta` e `raide.iniciar_raide`) — cobre solo, party (quem
+ hospeda e quem só ajuda) e raide de guilda, porque os três passam pelas
+ mesmas duas funções. Quem só está na sala de espera (`SalaDeEspera`, antes
+ de clicar Começar) não está travado ainda — a trava é da luta, não da fila.
+- **Liberação em 4 pontos, não só um** — não dá pra usar `try/finally` porque
+ a luta atravessa vários cliques assíncronos ao longo de minutos, não é uma
+ chamada síncrona só:
+  1. `PainelLuta.encerrar()` — libera todo mundo que ainda estava na luta.
+     Cobre vitória, derrota e abandono (todos os caminhos que passam por
+     `registrar_acao` → `fim_da_luta` → `encerrar`), incluindo o caso de
+     `encerrar_sem_donos` (raide/party sem quem convocou).
+  2. `PainelLuta.on_timeout()`, no branch que resolve a última rodada e a
+     luta termina de vez — **não** passa por `encerrar()` (tem o próprio
+     `travar()` + `mensagem.edit()`, refino já documentado em "Refino em
+     combate.py..." acima), então precisou do próprio `destravar_todos()`.
+  3. Botão Fugir, só no sucesso — libera só quem fugiu, na hora, sem esperar
+     a luta acabar pros outros.
+  4. `on_timeout()`, no loop que marca `c.saiu = True` (quem não clicou na
+     rodada) — libera só esse jogador, também sem esperar o resto da party.
+  Os 4 pontos são idempotentes (`destravar`/`destravar_todos` só faz `pop`
+  com default) — não tem problema um `user_id` já ter sido liberado
+  individualmente (pontos 3/4) quando o release em grupo (pontos 1/2) roda
+  depois pra ele de novo.
+- **`PainelRaide` (raide.py) não precisou de nenhum dos 4 pontos próprios** —
+ é subclasse de `PainelLuta` e só sobrescreve `fim_da_luta()`; herda
+ `encerrar()`, `on_timeout()` e o botão Fugir como estão.
+- **Expiração de segurança, 20 minutos** (`travas.EXPIRACAO_SEGUNDOS`) — bem
+ acima do pior caso plausível (`TIMEOUT_RODADA` de 60s × poucas dezenas de
+ rodadas). É rede de segurança, não o caminho normal de saída: só entra em
+ jogo se uma View morrer por exceção não tratada no meio de um callback, sem
+ passar por nenhum dos 4 pontos de liberação acima.
+- **Testado** com um harness que sobe o `bot.py` inteiro (módulos instalados,
+ sem conectar no Discord) contra uma cópia do banco: trava aparece assim que
+ `iniciar_luta` roda, some depois de `encerrar()` forçando vitória, fuga
+ bem-sucedida libera só quem fugiu (o outro combatente continua travado), e
+ os 18 comandos da lista aparecem com o check anexado (`Command.checks`)
+ depois do wiring completo — os não-listados (`perfil`, `status`, `party`,
+ `raide`, `descansar` etc.) confirmadamente continuam sem o check.
+
+### `rpg descansar` ficou de fora da lista, de propósito (por enquanto)
+
+Não travei — não estava na lista que o pedido enumerou. Mas vale registrar o
+risco pra decisão futura: `descansar` escreve `hp`/`mana` direto no banco
+(`db.atualizar_jogador`), e durante uma luta o HP "de verdade" do jogador só
+existe em `Combatente.hp` (RAM), sincronizado pro banco em pontos específicos
+(`salvar_estado()`). Descansar no meio de uma luta ativa desincroniza os dois:
+o banco mostra HP cheio, mas a `Combatente.hp` da luta em andamento continua
+com o valor de antes, e é ela que decide quem cai. Se isso aparecer como furo
+na prática, a correção é a mesma receita: `@travas.fora_de_luta()` em cima do
+`@bot.command(name="descansar", ...)`.
+
+### Loja/comprar acima do andar 10: já bloqueado, não era um bug de código
+
+O pedido também descrevia "a loja funciona acima do andar 10" como furo ativo.
+Conferido no código atual: `loja()`, `comprar()` e `descansar()` (`bot.py`) já
+têm a checagem `if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO: recusa` —
+implementada no Pacote 2 (commit `ed82aa6`, já na branch antes desta sessão).
+Não achei nenhum caminho de compra que escape dela. Se o furo ainda aparece no
+servidor real, o suspeito mais provável é o processo do bot rodando uma cópia
+anterior ao commit `ed82aa6` — um restart depois do deploy mais recente resolve
+sem precisar de código novo.
+
+## Cooldown de troca de home da guilda
+
+`rpg guilda home <andar>` mudava a home na hora, sem limite — dava pra trocar
+toda hora. Agora é **1 troca a cada 3h, por guilda** (`COOLDOWN_HOME_SEGUNDOS`
+em `guildas.py`), não por jogador — faz sentido junto com "só o líder muda a
+home": é uma propriedade da guilda, não de quem está no comando dela num dado
+momento.
+
+- **Tabela nova, `guilda_home_cooldown(guilda_id PK, expira_em)`**, mesmo
+ padrão de `guilda_raide` (cooldown por guilda já existente pra `rpg raide`)
+ em vez de reaproveitar a tabela genérica `cooldowns` (que é chaveada por
+ `user_id`, não `guilda_id`) ou generalizar as duas num table só — só duas
+ instâncias desse padrão até agora, cedo pra abstrair.
+ `checar_cooldown_home`/`set_cooldown_home` espelham
+ `checar_cooldown_raide`/`set_cooldown_raide` linha a linha.
+- **Não entra em `resetar_temporada()`** — mesma linha que `guilda_raide` já
+ seguia: estado de guilda não é zerado no reset de temporada de jogador,
+ só progresso individual (inventário, cooldown pessoal, upgrades, chefes
+ derrotados).
+- **A primeira troca depois de fundar a guilda não é bloqueada** — a home
+ nasce em andar 1 direto em `criar_guilda()`, não passa por `acao_home`,
+ então não existe linha em `guilda_home_cooldown` até a primeira troca de
+ verdade. O cooldown só entra em jogo a partir da segunda.
+
+## `rpg classe <classe> info` — prévia das habilidades base antes de escolher
+
+Faltava jeito de ver as 2 habilidades base de uma classe sem escolher — e a
+escolha trava pra sempre, sem troca depois (`classe_cmd` em `bot.py`), então
+era escolha às cegas de verdade.
+
+- **Entrou no `rpg classe` que já existia**, não em `rpg habilidades` (que só
+ mostra as SUAS skills já destravadas) nem em 4 comandos novos por classe —
+ opção escolhida entre as três justamente por ficar junto de onde o jogador
+ já vai olhar antes de decidir. `rpg classe <classe> info` funciona **mesmo
+ pra quem já tem classe** (o check de "info" vem antes do check de "você já
+ é X" em `classe_cmd`) — é só consulta, não escolhe nem troca nada.
+- **`embed_info_classe()` reaproveita `habilidades.habilidades_da_classe()`
+ e `habilidades.NOME_RECURSO`** (import novo, `import habilidades as hab` no
+ topo de `bot.py`) em vez de duplicar a lógica de filtrar `HABILIDADES` por
+ classe — já existia em `habilidades.py`, sem risco de circular (esse módulo
+ não importa nada de volta de `bot.py`).
+- **Parsing é só `split()` e checar se a última palavra é "info"** — nomes de
+ classe são todos de uma palavra só, não precisou de parser mais esperto.
+
+## Teto de `rpg viajar` acima do Selo — 11 é o único andar 11+ que se viaja
+
+Pedido explícito, contra o que o Pacote 2 tinha decidido ("todo o motor de
+`rpg viajar` já existente funciona nos andares novos sem tocar em uma linha")
+— revertido de propósito por instrução direta: **`rpg viajar` nunca alcança
+acima do andar 11, mesmo que `andar_max` já esteja em 12, 13, 14 ou 15.**
+Andar 12+ só se chega **lutando pra cima a partir do 11**, nunca de
+teleporte — nem tendo derrotado aquele chefe antes.
+
+- **`LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1` (11)** em
+ `bot.py`, checado em `viajar()` depois do check de `andar_max` (que
+ continua existindo — quem não destrancou nem o 11 ainda vê a mensagem de
+ "não destrancou", não a de teto).
+- **Consequência que o pedido implica e vale registrar**: se o jogador sai
+ do andar 12+ (viaja pra baixo, ou fala com a Guia, que já teleporta pra 10)
+ sem morrer, ele **não recupera** o andar onde parou via `viajar` — só
+ chegando lá de novo lutando, andar por andar, a partir do 11. `andar_max`
+ continua marcando até onde ele já chegou (não é penalidade de progresso,
+ só de acesso rápido) — diferente de morrer acima do andar 10, que já reseta
+ `andar_max` pra 10 (ver "Morte e reconquista acima do andar 10"). Isso
+ também tranca `rpg boss`/`rpg party` de reabrir no andar de origem: exige
+ `andar == andar_max` pra hospedar (`checar_sala_do_chefe`), e sem `viajar`
+ chegando lá, essa igualdade só volta subindo de novo a pé.
+- **A listagem de `rpg viajar` sem argumento também respeita o teto** — só
+ lista até `min(andar_max, 11)`. Se o jogador estiver fisicamente acima
+ disso (chegou lá lutando, ainda não desceu), o andar atual aparece no fim
+ da lista com uma nota, não como destino comprável — evita listar como
+ "grátis (guilda)"/"X moedas" um andar que na real não dá pra comprar de
+ volta.
+
+## Roguelike acima do Selo — morte e vitória no 15 resetam a posição, não o histórico
+
+Pedido explícito: os andares 11-15 viram uma "corrida" — nem morrer nem
+terminar o andar 15 deixa vantagem de **posição** acumulada pra próxima
+tentativa. `andar`/`andar_max` voltam pro andar 10 nos dois casos (morte
+acima do 10, já documentado em "Morte e reconquista acima do andar 10"; e
+agora também vencer o chefe do 15, que antes deixava o jogador parado lá em
+cima sem fazer nada).
+
+**`chefes_derrotados` (contagem de vitórias por andar, controla a chance de
+material — 100% na primeira vez, 15% nas repetições) NÃO reseta em nenhum
+dos dois casos.** Regra: a torre esquece onde o jogador estava, nunca quem
+ele matou. Os 100% são únicos na vida da conta, por chefe — o farm longo
+depois disso é intencional, é o late game.
+
+- **Versão anterior desta decisão zerava os dois** (`db.
+ resetar_chefes_andares_altos`, chamada em `processar_morte()` e
+ `recompensar()`) — **errada, corrigida na mesma sessão antes de qualquer
+ jogador real ser afetado**. Zerar o histórico junto com a posição fazia
+ toda escalada nova recomeçar "como se fosse a primeira vez" pra todo
+ chefe — o material caía sempre a 100%, e a faixa de 15% da repetição
+ virava código inalcançável (nenhum jogador chegaria nela, porque nenhuma
+ conta jamais teria uma segunda vitória registrada num chefe 11+). A
+ correção foi só remover as duas chamadas e apagar a função — nenhuma
+ mudança de schema, `chefes_derrotados` nunca devia ter sido tocada por
+ esse reset.
+- **Vencer o chefe do 15 força `novo_andar`/`novo_max` pro andar 10** em vez
+ do avanço normal (`min(andar+1, ANDAR_MAXIMO)`, que pro 15 ficava parado
+ ali sem fazer nada) — variável `completou_torre` em
+ `combate.recompensar()`, mesmo destino da morte, mas continua **passando
+ por `registrar_vitoria_chefe()` normalmente** antes disso (a vitória do 15
+ conta pro histórico como qualquer outra).
+- **Só afeta o `dono` da luta** — mesma regra de sempre (`combatente.dono`):
+ quem entrou só de ajuda não perde posição nem histórico, só quem é dono é
+ que sofre o reset de posição. Testado com uma party dono+ajuda: o dono
+ morre no andar 12, o ajudante mantém andar/andar_max e histórico intactos.
+- **`finalizar_vitoria()` tinha texto de flavor errado desde o Pacote 2** —
+ o campo "🌑 Décimo Selo" ("a porta abre, tem uma escada que não acaba")
+ era de quando `ANDAR_MAXIMO` era 10; ficou órfão apontando pro andar
+ errado depois que o 15 virou o topo. Texto novo ("🌌 O topo, outra vez")
+ é explícito nas duas metades da regra: a torre **guarda** as vitórias
+ (por isso o material cai na chance baixa a partir daqui), e **não guarda**
+ a posição (por isso `andar`/`andar_max` voltam pro 10 e a escalada
+ recomeça em `rpg viajar 11`).
+- **Achado no caminho, não mexido**: `bot.py` ainda tem um `@bot.command(name="boss", ...)`
+ inteiro (resolução instantânea, motor de `simular_combate`, o mesmo de
+ `cacar`/`explorar`) que faz sua própria conta de `novo_andar`/XP/drop e
+ também cita "Décimo Selo". É código morto — `combate.instalar()` chama
+ `bot.remove_command("boss")` antes de registrar o `boss` de verdade (por
+ turnos), então esse daqui nunca roda. Não tem risco funcional (nunca é
+ chamado, não precisou de reset roguelike nele), mas é lixo que vale uma
+ limpeza separada — não mexi de novo porque não foi pedido e não faz
+ diferença nenhuma rodando.

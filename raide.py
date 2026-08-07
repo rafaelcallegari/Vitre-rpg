@@ -13,6 +13,7 @@ import atributos as at
 import combate
 import condicoes
 import database as db
+import travas
 from game_data import (
     ITENS, RAIDE_CHEFE, ANDAR_MINIMO_RAIDE, ANDAR_REFERENCIA_RAIDE,
     RECOMPENSA_MOEDAS_RAIDE, QTD_ACESSORIOS_RAIDE, COOLDOWN_RAIDE_SEGUNDOS,
@@ -215,6 +216,7 @@ async def iniciar_raide(destino, ids, guilda_id, iniciador_id, editar=False):
     """destino é um ctx (comando) ou uma interaction (botão Começar) — mesmo
     contrato de combate.iniciar_luta."""
     combatentes = await combate.montar_combatentes(ids)
+    travas.travar_todos([c.id for c in combatentes])
     luta = combate.Luta(combatentes, RAIDE_CHEFE, ANDAR_REFERENCIA_RAIDE)
 
     db.set_cooldown_raide(guilda_id, COOLDOWN_RAIDE_SEGUNDOS)
@@ -239,6 +241,7 @@ async def iniciar_raide(destino, ids, guilda_id, iniciador_id, editar=False):
     if not luta.ativos:
         painel.travar()
         embed = await combate.finalizar_derrota(luta)
+        travas.destravar_todos([c.id for c in combatentes])
         if editar:
             await combate.responder(destino, embed, painel)
         else:

@@ -8,6 +8,7 @@
 import discord
 
 import database as db
+import travas
 from game_data import ANDARES, ITENS
 
 H = {}
@@ -374,6 +375,7 @@ def instalar(bot, contexto):
     H.update(contexto)
 
     @bot.command(name="pix", aliases=["enviar", "pay"])
+    @travas.fora_de_luta()
     async def pix(ctx, *, argumento: str = ""):
         j = await H["pegar_jogador"](ctx)
         if not j:
@@ -441,6 +443,7 @@ def instalar(bot, contexto):
         await ctx.send(f"✅ Pix de **{valor}** 🪙 enviado pra {alvo.display_name}.")
 
     @bot.command(name="trade", aliases=["trocar", "troca"])
+    @travas.fora_de_luta()
     async def trade(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:

@@ -6,6 +6,7 @@ import time
 from contextlib import contextmanager
 
 import atributos as at
+from andares_altos import ANDAR_ACIMA_DO_SELO
 
 DB_PATH = "aincrad.db"
 BACKUP_DIR = "backups"
@@ -89,6 +90,10 @@ CREATE TABLE IF NOT EXISTS guilda_raide (
     guilda_id INTEGER PRIMARY KEY,
     expira_em REAL
 );
+CREATE TABLE IF NOT EXISTS guilda_home_cooldown (
+    guilda_id INTEGER PRIMARY KEY,
+    expira_em REAL
+);
 CREATE TABLE IF NOT EXISTS chefes_derrotados (
     user_id INTEGER,
     andar   INTEGER,
@@ -142,6 +147,12 @@ COLUNAS_HABILIDADES = {
 COLUNAS_ACESSORIOS = {
     "anel": "TEXT",
     "colar": "TEXT",
+}
+
+COLUNAS_GUIA = {
+    # conta ações fora de luta de chefe enquanto acima do Selo — a cada 3,
+    # a Guia comenta e o contador zera (ver andares_altos.fala_da_guia)
+    "acoes_andar_alto": "INTEGER DEFAULT 0",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -257,6 +268,27 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ACESSORIOS[coluna]}"
                 )
             print("Banco migrado: slots de anel e colar criados — ninguém equipado ainda.")
+
+        # migração 9: contador da fala da Guia acima do Selo
+        novas_guia = [c for c in COLUNAS_GUIA if c not in colunas]
+        if novas_guia:
+            for coluna in novas_guia:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_GUIA[coluna]}"
+                )
+            print("Banco migrado: contador da Guia criado.")
+
+        # migração 10: home de guilda acima do Selo nunca devia ter sido
+        # permitida — acima do andar 10 não tem loja/ferreiro/carroça, uma
+        # guilda "morando" lá não fazia sentido (ver decisoes.md § Andares 11-15)
+        presas = conn.execute(
+            "SELECT COUNT(*) AS n FROM guildas WHERE andar_home > ?", (ANDAR_ACIMA_DO_SELO,)
+        ).fetchone()["n"]
+        if presas:
+            conn.execute(
+                "UPDATE guildas SET andar_home = 1 WHERE andar_home > ?", (ANDAR_ACIMA_DO_SELO,)
+            )
+            print(f"Banco migrado: {presas} guilda(s) com home acima do Selo voltaram pro andar 1.")
 
 
 # ---------------- jogadores ----------------
@@ -628,6 +660,26 @@ def set_cooldown_raide(guilda_id, segundos):
     with conectar() as conn:
         conn.execute(
             """INSERT INTO guilda_raide (guilda_id, expira_em) VALUES (?, ?)
+               ON CONFLICT(guilda_id) DO UPDATE SET expira_em = excluded.expira_em""",
+            (guilda_id, time.time() + segundos),
+        )
+
+
+# ---------------- cooldown de troca de home (por guilda) ----------------
+def checar_cooldown_home(guilda_id):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT expira_em FROM guilda_home_cooldown WHERE guilda_id = ?", (guilda_id,)
+        ).fetchone()
+    if row and row["expira_em"] > time.time():
+        return row["expira_em"] - time.time()
+    return 0.0
+
+
+def set_cooldown_home(guilda_id, segundos):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO guilda_home_cooldown (guilda_id, expira_em) VALUES (?, ?)
                ON CONFLICT(guilda_id) DO UPDATE SET expira_em = excluded.expira_em""",
             (guilda_id, time.time() + segundos),
         )

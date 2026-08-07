@@ -8,6 +8,7 @@ import discord
 
 import database as db
 import paginacao
+import travas
 from game_data import ITENS, ANDARES
 
 H = {}
@@ -438,6 +439,7 @@ def instalar(bot, contexto):
         )
 
     @bot.command(name="craftar", aliases=["craft", "forjar", "fabricar"])
+    @travas.fora_de_luta()
     async def craftar(ctx, *, argumento: str = ""):
         j = await H["pegar_jogador"](ctx)
         if not j:
@@ -524,6 +526,7 @@ def instalar(bot, contexto):
         await ctx.send(embed=e)
 
     @bot.command(name="melhorar", aliases=["upgrade", "aprimorar"])
+    @travas.fora_de_luta()
     async def melhorar(ctx, *, argumento: str = ""):
         j = await H["pegar_jogador"](ctx)
         if not j:
@@ -613,6 +616,7 @@ def instalar(bot, contexto):
         await ctx.send(embed=e)
 
     @bot.command(name="desmanchar", aliases=["desmontar", "sucatear"])
+    @travas.fora_de_luta()
     async def desmanchar(ctx, *, argumento: str = ""):
         j = await H["pegar_jogador"](ctx)
         if not j:

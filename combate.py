@@ -10,6 +10,7 @@ import atributos as at
 import condicoes
 import database as db
 import habilidades as hab
+import travas
 from andares_altos import ANDAR_ACIMA_DO_SELO
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
@@ -470,9 +471,14 @@ async def recompensar(luta, combatente):
     o material de chefe (só pra dono) usa chefes_derrotados em vez da
     chance fixa do dict: 100% na primeira vez, 15% nas repetições — senão
     morrer de propósito vira o jeito mais eficiente de farmar material (ver
-    decisoes.md)."""
+    decisoes.md). Derrotar o chefe do andar 15 é roguelike: reseta andar/
+    andar_max pro 10 pro dono, igual à morte lá em cima. `chefes_derrotados`
+    NÃO reseta em nenhum dos dois casos — os 100% de chance são únicos na
+    vida da conta, por chefe; sem isso os 15% de repetição nunca seriam
+    alcançados (ver decisoes.md § Roguelike acima do Selo)."""
     j, s, chefe = combatente.jogador, combatente.s, luta.chefe
     fator = 1.0 if combatente.dono else fator_recompensa_ajuda(j["andar_max"], luta.andar_num)
+    completou_torre = combatente.dono and luta.andar_num == ANDAR_MAXIMO
 
     if combatente.dono:
         if luta.andar_num > ANDAR_ACIMA_DO_SELO:
@@ -492,8 +498,12 @@ async def recompensar(luta, combatente):
     hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
 
     if combatente.dono:
-        novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
-        novo_max = max(j["andar_max"], novo_andar)
+        if completou_torre:
+            novo_andar = ANDAR_ACIMA_DO_SELO
+            novo_max = ANDAR_ACIMA_DO_SELO
+        else:
+            novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
+            novo_max = max(j["andar_max"], novo_andar)
     else:
         novo_andar = j["andar"]
         novo_max = j["andar_max"]
@@ -529,8 +539,14 @@ async def finalizar_vitoria(luta):
     e.add_field(name="Recompensas", value="\n".join(linhas) or "Ninguém sobrou de pé.", inline=False)
     if luta.andar_num == ANDAR_MAXIMO:
         e.add_field(
-            name="🌑 Décimo Selo",
-            value="A porta abre. Do outro lado tem uma escada que continua subindo — e ela não acaba.",
+            name="🌌 O topo, outra vez",
+            value=(
+                f"Vocês bateram o último andar. A torre guarda cada chefe que já caiu — não é "
+                f"a primeira vez pra nenhum deles, então o material de todos agora cai na "
+                f"chance baixa, não garantido. O que ela não guarda é onde vocês pararam: quem "
+                f"é dono do andar volta pro andar {ANDAR_ACIMA_DO_SELO}. Pra tentar de novo, "
+                f"começa pelo `rpg viajar {ANDAR_ACIMA_DO_SELO + 1}`."
+            ),
             inline=False,
         )
     elif vencedores:
@@ -947,6 +963,7 @@ class PainelLuta(discord.ui.View):
 
     async def encerrar(self, interaction, embed):
         self.travar()
+        travas.destravar_todos([c.id for c in self.luta.participantes])
         await responder(interaction, embed, self)
 
     def _continuar(self, luta):
@@ -1075,6 +1092,7 @@ class PainelLuta(discord.ui.View):
         if random.random() < chance:
             c.fugiu = True
             c.salvar_estado()
+            travas.destravar(c.id)
             self.luta.registrar(f"🏃 {c.nome} escapou da sala.")
             fim = await self.fim_da_luta()
             if fim:
@@ -1094,6 +1112,7 @@ class PainelLuta(discord.ui.View):
             if c.acao is None:
                 c.saiu = True
                 c.salvar_estado()
+                travas.destravar(c.id)
                 luta.registrar(f"⏱️ {c.nome} sumiu e saiu da luta.")
 
         if luta.ativos:
@@ -1129,6 +1148,7 @@ class PainelLuta(discord.ui.View):
             return
 
         self.travar()
+        travas.destravar_todos([c.id for c in luta.participantes])
         await self.mensagem.edit(embed=embed, view=self)
 
 
@@ -1263,6 +1283,7 @@ async def montar_combatentes(ids):
 async def iniciar_luta(destino, ids, andar_num, editar=False):
     """destino e' um ctx (comando) ou uma interaction (botao Começar)."""
     combatentes = await montar_combatentes(ids)
+    travas.travar_todos([c.id for c in combatentes])
     chefe = ANDARES[andar_num]["boss"]
     donos_ids = [c.id for c in combatentes if c.jogador["andar_max"] == andar_num]
     luta = Luta(combatentes, chefe, andar_num, donos_ids=donos_ids)
@@ -1289,6 +1310,7 @@ async def iniciar_luta(destino, ids, andar_num, editar=False):
     if not luta.ativos:
         painel.travar()
         embed = await finalizar_derrota(luta)
+        travas.destravar_todos([c.id for c in combatentes])
         if editar:
             await responder(destino, embed, painel)
         else:
@@ -1336,6 +1358,7 @@ def instalar(bot, contexto):
         return True
 
     @bot.command(name="boss", aliases=["chefe"])
+    @travas.fora_de_luta()
     async def boss(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:
