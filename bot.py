@@ -340,6 +340,11 @@ async def on_command_error(ctx, erro):
     if isinstance(erro, commands.BadArgument):
         await ctx.send("Não entendi os argumentos. Confere `rpg ajuda`.")
         return
+    # Caso não mapeado (ex.: "database is locked"): sem isso o traceback ia
+    # só pro console e o jogador achava que o bot travou e repetia o comando.
+    # `raise erro` continua depois do send — é o que já manda o traceback
+    # completo pro console via on_error padrão do discord.py.
+    await ctx.send("🗼 A Torre engasgou processando esse comando. Tenta de novo em alguns segundos.")
     raise erro
 
 

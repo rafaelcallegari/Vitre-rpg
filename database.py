@@ -1,6 +1,5 @@
 # database.py
 import os
-import shutil
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -162,6 +161,14 @@ HANZO_USER_ID = 330816605963681792
 @contextmanager
 def conectar():
     conn = sqlite3.connect(DB_PATH)
+    # journal_mode é persistente no arquivo (bastaria rodar uma vez), mas
+    # busy_timeout e synchronous são por conexão — têm que ser setados toda
+    # abertura, por isso os três ficam aqui e não num script de migração.
+    # Sem isso, a primeira escrita concorrente (agenda de backup + comando de
+    # jogador, ou raide de 3 pessoas) tomava "database is locked" na hora.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -353,13 +360,33 @@ def contar_jogadores():
 
 
 # ---------------- backup e reset de temporada ----------------
+def backup_banco_para(destino):
+    """Copia o banco pro caminho `destino` usando a API de backup do próprio
+    SQLite (`Connection.backup`) — atômica e consistente, funciona mesmo com
+    outras conexões escrevendo ao mesmo tempo. Com WAL ligado, `shutil.copy2`
+    deixou de ser seguro: dado já commitado pode estar só no `.db-wal`, então
+    copiar só o `.db` pode faltar transação recente ou pegar o arquivo em
+    estado inconsistente se houver escrita em andamento durante a cópia.
+    Deixa a exceção subir se falhar — quem chama decide o que fazer."""
+    origem = sqlite3.connect(DB_PATH)
+    try:
+        destino_conn = sqlite3.connect(destino)
+        try:
+            with destino_conn:
+                origem.backup(destino_conn)
+        finally:
+            destino_conn.close()
+    finally:
+        origem.close()
+
+
 def backup_banco():
     """Copia o .db pra backups/ com timestamp no nome. Deixa a exceção
     subir se falhar — quem chama decide se aborta o reset por causa disso."""
     os.makedirs(BACKUP_DIR, exist_ok=True)
     carimbo = time.strftime("%Y%m%d_%H%M%S")
     destino = os.path.join(BACKUP_DIR, f"aincrad_{carimbo}.db")
-    shutil.copy2(DB_PATH, destino)
+    backup_banco_para(destino)
     return destino
 
 

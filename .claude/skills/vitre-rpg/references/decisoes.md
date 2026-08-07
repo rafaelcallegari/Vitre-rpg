@@ -1526,3 +1526,104 @@ depois disso é intencional, é o late game.
  chamado, não precisou de reset roguelike nele), mas é lixo que vale uma
  limpeza separada — não mexi de novo porque não foi pedido e não faz
  diferença nenhuma rodando.
+
+## Ciclo 1 — "o banco fica seguro": WAL, backup de verdade, escada 3/1/1
+
+Fechou os dois cartões Críticos do Kanban num pacote só, de propósito: os
+dois mexem no mesmo `conectar()`/`backup_banco()` e resolvem a mesma
+categoria de risco (perda ou corrupção silenciosa de save). Não mexeu em
+`asyncio.to_thread` nem em conexão longa — isso fica pro próximo cartão, pra
+não misturar "o banco resiste a colisão" com "o banco não trava o bot".
+
+- **`conectar()` ganhou três `PRAGMA`**, sempre nessa ordem, entre o
+ `connect` e o `row_factory`: `journal_mode=WAL`, `busy_timeout=5000`,
+ `synchronous=NORMAL`. Motivo: modo `DELETE` (padrão do SQLite) não dá
+ nenhuma folga pra uma escrita concorrente — a primeira colisão (raide de 3
+ escrevendo quase junto, ou o backup automático lendo enquanto alguém
+ escreve) já devolve `database is locked` na hora. WAL deixa leitor e
+ escritor trabalharem ao mesmo tempo; `busy_timeout` dá 5s de espera antes
+ de falhar; `synchronous=NORMAL` é o ajuste recomendado pra WAL (mais
+ rápido que `FULL`, ainda seguro porque o WAL é append-only). `journal_mode`
+ é persistente no arquivo, mas `busy_timeout`/`synchronous` são por conexão
+ — os três ficam em `conectar()`, não num script de migração à parte, pra
+ valer em toda abertura sem exceção (são 48 pontos de chamada, nenhum
+ precisou mudar de assinatura).
+- **Verificado empiricamente que o `aincrad.db-wal` é transiente com o
+ padrão de conexão deste projeto** (abre e fecha uma conexão nova por
+ chamada): o arquivo `-wal` só existe enquanto pelo menos uma conexão está
+ aberta; quando a última fecha, o SQLite faz checkpoint automático e o
+ `-wal` some de novo. Isso é comportamento normal do SQLite, não bug — só
+ significa que "olhar se `aincrad.db-wal` existe" no checklist de
+ verificação é uma foto de um instante, não um estado permanente. O que
+ importa (e foi testado) é `PRAGMA journal_mode` respondendo `wal` e
+ `PRAGMA busy_timeout` respondendo `5000` depois de qualquer `conectar()`.
+- **`backup_banco()` trocou `shutil.copy2` pela API de backup do próprio
+ SQLite** (`sqlite3.Connection.backup`), numa função nova,
+ `backup_banco_para(destino)`, que `backup_banco()` (o backup manual do
+ `rpg resetartemporada`) e o backup automático (`agenda.py`) chamam os
+ dois. Motivo: com WAL ligado, uma cópia crua do arquivo `.db` pode
+ simplesmente não conter uma transação que já foi confirmada (ela pode
+ estar só no `.db-wal` ainda) — um backup assim falha silenciosamente, o
+ que é pior que não ter backup, porque alguém confia nele. Testado direto:
+ com uma conexão mantendo uma escrita fora do checkpoint, `conn.backup()`
+ sempre trouxe o dado; a cópia crua só teria essa garantia por sorte de
+ timing. O contrato de `backup_banco()` não mudou — ainda deixa a exceção
+ subir, ainda devolve o caminho do arquivo; `rpg resetartemporada`
+ (`admin.py`) não precisou de nenhuma alteração.
+- **Backup automático em escada 3/1/1, não 5 cópias iguais de 2 em 2h.**
+ 5 cópias todas de 2 em 2h dariam só ~10h de profundidade — se alguém só
+ percebe um problema (corrupção silenciosa, escolha errada, bug de
+ economia) um dia depois, as 5 já rotacionaram e o estado bom já foi
+ sobrescrito. A escada troca alcance por densidade: `recente_1/2/3.db`
+ cobrem as últimas ~6h com granularidade fina, `diario.db` estende a
+ cobertura até 24h, `semanal.db` até 7 dias — sem multiplicar o número de
+ arquivos gravados a cada disparo (ainda são no máximo 3 backups por
+ disparo, geralmente 1).
+- **Rotação decidida pelo `mtime` do arquivo em `backups/`, nunca por
+ estado no banco ou em memória do processo.** Um contador em memória (ou
+ uma tabela nova) se perderia — ou pior, ficaria dessincronizado do que
+ realmente está em disco — se o bot reiniciasse no meio do ciclo. Lendo o
+ `mtime` de disco, o esquema se autocorrige sozinho depois de qualquer
+ reinício, sem precisar de tabela nova nem de código de recuperação.
+ Testado com ciclos simulados (`agenda._rotacionar_backups()` chamado
+ repetidamente com mtimes manipulados): os três slots `recente_*` giram
+ round-robin (preenche o que falta primeiro, depois sempre sobrescreve o
+ mais velho dos três), e `diario`/`semanal` só regravam quando o arquivo
+ existente passa de 24h/7 dias.
+- **Task de backup registrada em `agenda.instalar()` antes do `return`
+ antecipado por falta de `CANAL_TORRE_ID`.** Esse `return` já existia pra
+ desligar o aviso da carroça quando o `.env` não tem canal configurado —
+ mas o backup não depende de canal nenhum, então ficar depois do `return`
+ faria um servidor sem `CANAL_TORRE_ID` rodar sem proteção de banco
+ nenhuma, silenciosamente. `instalar()` agora registra os dois loops
+ (`backup_automatico` e, condicionalmente, `avisar_carroca`); `iniciar()`
+ dá `start()` nos dois.
+- **Falha de backup automático loga e segue** (`try/except Exception` em
+ volta de `_rotacionar_backups()`), mesmo raciocínio já comentado em
+ `avisar_carroca`: se uma falha derrubasse a task inteira, os disparos
+ seguintes (inclusive o `diario`/`semanal` do dia certo) também sumiriam.
+- **Backup automático ainda roda de forma síncrona dentro do loop
+ assíncrono** (sem `asyncio.to_thread`) — de propósito, é o próximo
+ cartão. Isso significa que o disparo do backup bloqueia o event loop
+ pelo tempo da cópia; não é ideal, mas misturar essa mudança aqui tornaria
+ impossível isolar o que quebrou se algo der errado em produção.
+- **Caso default de `on_command_error` agora responde ao jogador** (mensagem
+ curta, sem stack trace) além de continuar deixando o traceback subir pro
+ console — hoje isso passa por `raise erro` (que já era a única linha do
+ caso default) e o `on_error` padrão do discord.py que já imprimia o
+ traceback antes dessa mudança; só ganhou o `await ctx.send(...)` na
+ frente, sem trocar o mecanismo de log. É a diferença entre o jogador ver
+ "a Torre engasgou, tenta de novo" e achar que o bot travou — motivo
+ direto de entrar nesse ciclo: um `database is locked` sem essa mudança
+ ficava completamente invisível pra quem jogou o comando.
+- **Testado sem subir o bot inteiro**: cópia isolada do `aincrad.db` real
+ (13 jogadores) num diretório à parte — `conectar()` respondendo
+ `journal_mode=wal`/`busy_timeout=5000`; `backup_banco()`/
+ `backup_banco_para()` produzindo cópias com a mesma contagem de
+ `jogadores` que o banco vivo; `agenda._rotacionar_backups()` chamado em
+ sequência simulando vários disparos de 2h (com `os.utime` forçando
+ arquivos "velhos") pra confirmar o giro round-robin dos 3 recentes e o
+ refresh de `diario`/`semanal` só quando vencem. Não existe suíte
+ automatizada no projeto (nenhum `pytest`/`unittest` hoje) — a verificação
+ real com tráfego de Discord de verdade (raide simultânea, backup
+ disparando no meio de um comando) ainda depende do checklist manual.
