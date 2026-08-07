@@ -1,6 +1,7 @@
 # database.py
 import os
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 
@@ -158,23 +159,65 @@ COLUNAS_GUIA = {
 HANZO_USER_ID = 330816605963681792
 
 
+# Conexão única de módulo, reaberta nunca — abrir/fechar uma conexão por
+# chamada (48x por fluxo) fazia o SQLite rodar checkpoint completo do WAL
+# toda vez que "a última conexão" fechava, e com uma conexão de cada vez
+# isso era sempre. Pagávamos o custo do WAL sem ganhar a concorrência que
+# ele promete. Ver decisoes.md § Conexão longa.
+_conn = None
+_lock = threading.RLock()
+
+
+def _conexao():
+    global _conn
+    if _conn is None:
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # PRAGMAs são por conexão — agora só rodam uma vez, na criação,
+        # porque só existe uma conexão pra rodar neles.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.row_factory = sqlite3.Row
+        _conn = conn
+    return _conn
+
+
 @contextmanager
 def conectar():
-    conn = sqlite3.connect(DB_PATH)
-    # journal_mode é persistente no arquivo (bastaria rodar uma vez), mas
-    # busy_timeout e synchronous são por conexão — têm que ser setados toda
-    # abertura, por isso os três ficam aqui e não num script de migração.
-    # Sem isso, a primeira escrita concorrente (agenda de backup + comando de
-    # jogador, ou raide de 3 pessoas) tomava "database is locked" na hora.
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+    """RLock (não Lock) segurado durante todo o corpo do `with` — hoje não
+    existe `conectar()` aninhado (as chamadas internas de convite recebem
+    `conn` por parâmetro em vez de reabrir), mas um aninhamento acidental
+    futuro vira deadlock silencioso com Lock comum: o bot trava inteiro,
+    sem erro, sem log. RLock deixa a mesma thread reentrar sem travar — o
+    custo de usar RLock em vez de Lock é zero.
+
+    `rollback()` explícito na exceção é o ponto que importa de verdade: com
+    conexão por chamada, um erro no meio de um `with` era descartado de
+    graça pelo `close()` no `finally` — cada chamada tinha conexão própria,
+    então a próxima já começava limpa. Com conexão compartilhada isso deixa
+    de valer: sem o rollback aqui, a transação suja de uma operação que
+    falhou ficaria pendente na conexão e a PRÓXIMA chamada — de outro
+    comando, outro jogador — herdaria e poderia commitar escrita parcial
+    junto da dela. Numa economia com troca entre jogadores isso é o pior
+    bug possível."""
+    with _lock:
+        conn = _conexao()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def fechar_conexao():
+    """Desligamento limpo — chamada no encerramento do bot, nunca durante
+    uso normal (`conectar()` não fecha a conexão em nenhum caminho)."""
+    global _conn
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
 
 
 def init_db():

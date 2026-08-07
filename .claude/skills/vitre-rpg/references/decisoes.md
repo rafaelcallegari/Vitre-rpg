@@ -1627,3 +1627,81 @@ não misturar "o banco resiste a colisão" com "o banco não trava o bot".
  automatizada no projeto (nenhum `pytest`/`unittest` hoje) — a verificação
  real com tráfego de Discord de verdade (raide simultânea, backup
  disparando no meio de um comando) ainda depende do checklist manual.
+
+## Cartão 2 — conexão longa em vez de conexão por chamada
+
+Parte A do cartão "Acesso ao banco bloqueia o event loop" (o ciclo 1, WAL +
+backup, foi o commit anterior). Escopo travado de propósito: só a conexão
+compartilhada. **Não** entrou `asyncio.to_thread` nem mudança em nenhum
+chamador — isso é a parte B, decidida separadamente, porque misturar "o
+banco não perde escrita" com "o banco não trava o bot" tornaria impossível
+isolar o que quebrou se algo desse errado em produção.
+
+- **Por que conexão longa**: com WAL ligado, o SQLite faz checkpoint
+ completo e apaga o `-wal` quando a *última* conexão do banco fecha. Como
+ `conectar()` abria e fechava uma conexão nova a cada chamada, toda
+ chamada *era* a última conexão — então todo `conectar()` terminava em
+ checkpoint completo. Pagávamos o custo de manter o WAL sem receber o
+ ganho de concorrência que é o motivo dele existir. Uma conexão de módulo
+ (`database._conn`, criada preguiçosamente no primeiro uso, nunca
+ fechada em uso normal) resolve isso e também tira o custo de abrir/fechar
+ arquivo ~47 vezes por fluxo de comando.
+- **`check_same_thread=False`** porque a conexão passa a ser acessada por
+ chamadas vindas de contextos diferentes (comandos, a task de backup do
+ `agenda.py`) — sem isso o sqlite3 recusa qualquer uso fora da thread que
+ criou a conexão.
+- **Por que `RLock` e não `Lock`**: verificado antes de trocar — hoje não
+ existe `conectar()` aninhado em lugar nenhum do projeto (grep confirmou
+ um único `with db.conectar()` fora de `database.py`, em `trocas.py:143`,
+ nível único; as quatro chamadas internas de convite de guilda recebem
+ `conn` por parâmetro em vez de reabrir). Mesmo assim, `RLock` custa zero
+ a mais que `Lock` comum e transforma um `conectar()` aninhado acidental
+ futuro (fácil de escrever sem perceber, ex. uma função nova que chama
+ outra função de `database.py` já dentro de um `with conectar()`) de
+ "deadlock silencioso — o bot trava inteiro, sem erro, sem log" pra
+ "funciona, porque é a mesma thread reentrando". Testado: uma reentrância
+ forçada (`with conectar(): with conectar():`) devolve a mesma instância
+ de conexão e não trava.
+- **O `rollback()` explícito no `except` é a mudança que mais importa desta
+ entrega.** Com conexão por chamada, um erro no meio de um `with
+ conectar()` era descartado de graça: o `finally: conn.close()` fechava a
+ conexão suja e a *próxima* chamada abria uma conexão nova, sem histórico
+ nenhum da transação que falhou. Com conexão compartilhada isso deixa de
+ ser verdade — não existe mais "fechar e abrir de novo" entre chamadas.
+ Sem `rollback()` explícito, uma exceção no meio de uma função que escreve
+ duas coisas (o padrão de `trocas._commitar_troca`, `resetar_temporada`, e
+ qualquer futuro `with conectar()` de múltiplas escritas) deixaria a
+ transação parcial pendurada na conexão, e a *próxima* chamada — de outro
+ comando, de outro jogador — herdaria e poderia commitar a escrita parcial
+ junto da dela. Numa economia com troca direta entre contas (`rpg trade`),
+ isso é o pior bug possível: dinheiro ou item pode nascer ou sumir sem
+ nenhuma das duas pontas da troca ter completado de verdade. Testado
+ direto: uma função que escreve dois `UPDATE` na mesma conexão e depois
+ levanta uma exceção não deixou nenhum dos dois valores mudar, e a escrita
+ seguinte (chamada normal, sem relação com a que falhou) funcionou sem
+ herdar nada — sem esse teste passar, a entrega não estava pronta.
+- **`backup_banco_para()` continua abrindo conexões próprias** (origem e
+ destino), não a `_conn` compartilhada — de propósito, `Connection.backup()`
+ já funciona entre conexões distintas e isso mantém o backup independente
+ do lock da conexão principal. Testado com a conexão longa aberta ao mesmo
+ tempo: a cópia sai com a mesma contagem de `jogadores` do banco vivo.
+- **`fechar_conexao()`** — nova função, chamada só no encerramento
+ (`bot.py`, `try/finally` em volta de `bot.run(TOKEN)`), fecha a `_conn` e
+ zera a referência. `conectar()` em si nunca fecha nada em nenhum caminho
+ — normal, exceção, ou `return` antecipado dentro do `with` (que só
+ encerra o generator sem exceção, então ainda passa pelo `commit()`, igual
+ já acontecia antes).
+- **`init_db()`, `resetar_temporada()` e o `_commitar_troca` de
+ `trocas.py`** não precisaram de nenhuma mudança de código — os três já
+ faziam todas as escritas dentro de um único `with conectar()`, sem
+ aninhar. Passam a rodar na conexão compartilhada e sob o lock automaticamente,
+ só por usarem `conectar()` como sempre usaram.
+- **Testado sem subir o bot inteiro**, mesma cópia isolada do `aincrad.db`
+ real (13 jogadores): mesma instância de conexão devolvida entre chamadas
+ sucessivas; PRAGMAs corretos (`wal`/`5000`/`1`) lidos da conexão única;
+ o teste do rollback descrito acima; reentrância de `RLock` sem travar;
+ `backup_banco_para()` íntegro com a conexão longa aberta; `fechar_conexao()`
+ zerando `_conn` e uma chamada seguinte reabrindo sozinha. Não existe
+ suíte automatizada no projeto ainda (cartão seguinte) — `rpg trade` de
+ ponta a ponta entre duas contas reais e a sequência completa do checklist
+ (item 1 da Definition of Done) dependem de rodar no servidor de verdade.

@@ -1625,4 +1625,9 @@ import admin
 
 admin.instalar(bot)
 
-bot.run(TOKEN)
+try:
+    bot.run(TOKEN)
+finally:
+    # conexão única de módulo (database.py) — precisa ser fechada explicitamente
+    # agora que ninguém mais fecha ela por chamada.
+    db.fechar_conexao()
