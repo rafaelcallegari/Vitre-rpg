@@ -1,4 +1,5 @@
 # database.py
+import asyncio
 import os
 import sqlite3
 import threading
@@ -856,3 +857,47 @@ def set_cooldown(user_id, comando, segundos):
             "INSERT OR REPLACE INTO cooldowns (user_id, comando, expira_em) VALUES (?, ?, ?)",
             (user_id, comando, time.time() + segundos),
         )
+
+
+# ---------------- wrappers assincronos ----------------
+# `asyncio.to_thread` em volta das funcoes sincronas de sempre, so' pras
+# chamadas que ja rodam dentro de `async def` no caminho quente do combate.
+# Nao existe versao async das 47 funcoes do arquivo -- so' cria wrapper quem
+# migra de verdade, e a funcao sincrona continua sendo a fonte da verdade
+# (e' o que os 20 testes chamam direto). Com a conexao unica + RLock da
+# parte A, isso NAO paraleliza consulta -- o ganho e' o event loop ficar
+# livre enquanto a thread espera o lock. Ver decisoes.md § Cartao 3 - parte B.
+async def a_get_jogador(*args, **kwargs):
+    return await asyncio.to_thread(get_jogador, *args, **kwargs)
+
+
+async def a_atualizar_jogador(*args, **kwargs):
+    return await asyncio.to_thread(atualizar_jogador, *args, **kwargs)
+
+
+async def a_marcar_combate(*args, **kwargs):
+    return await asyncio.to_thread(marcar_combate, *args, **kwargs)
+
+
+async def a_vezes_derrotado_chefe(*args, **kwargs):
+    return await asyncio.to_thread(vezes_derrotado_chefe, *args, **kwargs)
+
+
+async def a_registrar_vitoria_chefe(*args, **kwargs):
+    return await asyncio.to_thread(registrar_vitoria_chefe, *args, **kwargs)
+
+
+async def a_add_item(*args, **kwargs):
+    return await asyncio.to_thread(add_item, *args, **kwargs)
+
+
+async def a_remove_item(*args, **kwargs):
+    return await asyncio.to_thread(remove_item, *args, **kwargs)
+
+
+async def a_checar_cooldown(*args, **kwargs):
+    return await asyncio.to_thread(checar_cooldown, *args, **kwargs)
+
+
+async def a_set_cooldown(*args, **kwargs):
+    return await asyncio.to_thread(set_cooldown, *args, **kwargs)

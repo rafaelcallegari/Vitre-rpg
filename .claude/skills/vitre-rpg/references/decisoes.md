@@ -1778,19 +1778,77 @@ trabalho e foi anotado, não consertado (ver abaixo).
   (comparação por caminho absoluto) — trava de segurança, nunca deveria
   disparar com `":memory:"` fixo, mas cobre um fixture futuro que troque para
   `tmp_path`/arquivo real por engano.
-- **Bug real encontrado, anotado e não corrigido**
-  (`tests/test_profissoes.py::test_refund_desmanche_nao_deveria_exceder_material_raro_de_chefe`,
-  marcado `xfail(strict=True)` de propósito pra suíte continuar limpa):
-  `profissoes.refund_desmanche()` soma `+nivel_upgrade` a **cada** material
-  da receita, sem checar se aquele material específico foi realmente gasto na
+- **Bug real encontrado e anotado aqui, corrigido depois** (não neste
+  cartão — o `xfail(strict=True)` original em
+  `tests/test_profissoes.py::test_refund_desmanche_nao_deveria_exceder_material_raro_de_chefe`
+  foi removido e o teste passa de verdade agora):
+  `profissoes.refund_desmanche()` somava `+nivel_upgrade` a **cada** material
+  da receita, sem checar se aquele material específico era realmente gasto na
   melhoria (`custo_melhorar` sempre gasta `ANDAR_MATERIAL[item.andar_min]`,
   um material só). Para peças cujo material de craft é diferente do material
   de melhoria — caso das armas do Selo, que craftam com `fragmento_selo`
   (drop de chefe, capado) **e** `pena_do_trovao`, mas melhoram só com
-  `pena_do_trovao` — desmanchar uma peça +2 devolve mais `fragmento_selo` (3)
-  do que foi gasto no craft (2). Ciclo craftar → melhorar duas vezes →
-  desmanchar sai com +1 `fragmento_selo` de graça: lava material raro de
-  chefe através da melhoria. Não afeta itens onde craft e melhoria comem o
-  mesmo material (ex. `couro_batido`, testado à parte e continua correto:
-  refund nunca passa da base do craft). Vira cartão separado no Kanban —
-  ainda não criado, avisar o Rafael antes de abrir.
+  `pena_do_trovao` — desmanchar uma peça +2 devolvia mais `fragmento_selo` (3)
+  do que foi gasto no craft (2). Ver § Correção — desmanche furava o gate de
+  escassez, melhorar elemental estourava KeyError, mais abaixo, pro conserto.
+
+## Cartão 4 — `asyncio.to_thread` no caminho quente do combate (parte B)
+
+Parte B do cartão "Acesso ao banco bloqueia o event loop" (parte A — conexão
+longa + `RLock` + rollback — subiu no commit `d26767a`). As chamadas ao
+banco dentro de corrotinas de comando são síncronas: enquanto uma consulta
+roda, o event loop inteiro para — heartbeat do gateway, cliques de botão e
+comandos de outros jogadores incluídos.
+
+- **Wrappers `a_*` em vez de converter as 47 funções de `database.py`.**
+  Cada wrapper é só `async def a_x(*a, **k): return await
+  asyncio.to_thread(x, *a, **k)`, adicionado ao lado da função síncrona, que
+  continua existindo sem mudar uma linha. Três motivos, nessa ordem de peso:
+  os 20 testes da suíte chamam as funções síncronas direto — convertê-las
+  quebraria a suíte inteira só pra migrar oito call sites; a migração fica
+  incremental, dá pra parar no meio (ou reverter um bloco) sem deixar nada
+  quebrado; `agenda.py` e o backup automático não são corrotina de comando e
+  continuam chamando a versão síncrona sem cerimônia nenhuma. Criei wrapper
+  só pras 9 funções que o combate usa (`get_jogador`, `atualizar_jogador`,
+  `marcar_combate`, `vezes_derrotado_chefe`, `registrar_vitoria_chefe`,
+  `add_item`, `remove_item`, `checar_cooldown`, `set_cooldown`), não pras 47.
+- **O ganho é o event loop livre, não paralelismo de consulta — e isso
+  precisa ficar registrado porque é contraintuitivo.** Com a conexão única
+  e o `RLock` do cartão 2, as operações de banco continuam serializadas
+  entre si: `to_thread` não faz duas consultas rodarem ao mesmo tempo.
+  O que muda é que a *espera* por esse lock acontece numa thread do
+  executor, não no event loop — então o heartbeat do gateway, outro clique
+  de botão, outro comando, continuam sendo processados enquanto uma
+  consulta está parada esperando a vez dela. Não dá pra medir isso como
+  "consulta mais rápida" (não fica); o sintoma que desaparece é o bot
+  engasgar/o discord.py logar `heartbeat blocked` durante luta com party.
+- **Combate primeiro, e nada mais nesta etapa.** É onde mais dói: cada
+  rodada de `rpg boss`/`rpg party` lê e escreve enquanto os outros
+  participantes (e o resto do servidor) esperam. Migrei só as chamadas que
+  já estão dentro de `async def` em `combate.py` — `recompensar`,
+  `encerrar_por_abandono`, `BotaoPocao.callback`, `SalaDeEspera.validar`/
+  `entrar`, `montar_combatentes`, `iniciar_luta`, os comandos `boss`/`party`.
+- **Três helpers síncronos ficaram de fora de propósito**: `salvar_estado`
+  (chama `atualizar_jogador`), `embed` ×2 (chama `get_jogador`) e
+  `pocoes_na_mochila` (chama `get_inventario`). Converter qualquer um deles
+  obriga a converter todos os chamadores — `embed` é chamado a cada render
+  de painel de luta, então é provavelmente o que mais paga, mas é também o
+  que mais mexe em código. Fica anotado pro próximo cartão, não misturado
+  com este.
+- **`trocas.py` não foi tocado.** `_commitar_troca` faz toda a revalidação e
+  escrita dentro de um único `with db.conectar()` — se fosse migrado, teria
+  que ir inteiro pra dentro de um `to_thread` só (uma thread segurando o
+  lock do início ao fim), nunca pedaço por pedaço. Migrar as consultas de
+  dentro dele separadamente destruiria a atomicidade que o teste de
+  condição de corrida cobre. Não entrou nesta etapa — nem risco de tentar.
+- **Risco anotado, não observado**: com a migração parcial, uma chamada que
+  continua síncrona (os três helpers acima, ou qualquer código fora do
+  combate) pode ficar esperando o `RLock` que uma thread do `to_thread`
+  está seguranco — e essa espera *bloqueia* o event loop, o oposto do que a
+  mudança busca. Com operações sub-milissegundo o risco é baixo, mas é por
+  isso que a migração foi por bloco coerente (combate inteiro de uma vez),
+  não função solta aqui e ali — mistura de síncrono e assíncrono no mesmo
+  fluxo é onde esse risco realmente aparece.
+- **Nenhum teste mudou.** Os 20 testes continuam chamando as funções
+  síncronas de sempre — é o próprio sinal de que a migração ficou restrita
+  aos wrappers e não vazou pra dentro de `database.py`.

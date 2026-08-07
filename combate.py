@@ -482,15 +482,15 @@ async def recompensar(luta, combatente):
 
     if combatente.dono:
         if luta.andar_num > ANDAR_ACIMA_DO_SELO:
-            vezes = db.vezes_derrotado_chefe(j["user_id"], luta.andar_num)
+            vezes = await db.a_vezes_derrotado_chefe(j["user_id"], luta.andar_num)
             chance_material = 1.0 if vezes == 0 else 0.15
             for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
                 if random.random() < chance_material:
-                    db.add_item(j["user_id"], item)
-            db.registrar_vitoria_chefe(j["user_id"], luta.andar_num)
+                    await db.a_add_item(j["user_id"], item)
+            await db.a_registrar_vitoria_chefe(j["user_id"], luta.andar_num)
         else:
             for item in H["rolar_drops"](chefe):
-                db.add_item(j["user_id"], item)
+                await db.a_add_item(j["user_id"], item)
 
     xp_ganho = int(chefe["xp"] * fator)
     moedas_ganho = int(chefe["moedas"] * fator)
@@ -508,7 +508,7 @@ async def recompensar(luta, combatente):
         novo_andar = j["andar"]
         novo_max = j["andar_max"]
 
-    db.atualizar_jogador(
+    await db.a_atualizar_jogador(
         j["user_id"], hp=hp_cheio, mana=s["mana_max"], xp=xp, nivel=nivel,
         pontos=H["pontos_por_subir"](j, subiu),
         moedas=j["moedas"] + moedas_ganho, andar=novo_andar, andar_max=novo_max,
@@ -629,7 +629,7 @@ async def encerrar_por_abandono(luta):
     e.add_field(name="Sem vencedor", value="\n".join(partes) or "—", inline=False)
     for c in luta.participantes:
         if c.fugiu:
-            db.set_cooldown(c.id, "boss", 0)
+            await db.a_set_cooldown(c.id, "boss", 0)
     return e
 
 
@@ -665,7 +665,7 @@ class BotaoPocao(discord.ui.Button):
         await interaction.response.defer()
         painel = self.view.painel
         c = self.view.combatente
-        if not db.remove_item(c.id, self.chave, 1):
+        if not await db.a_remove_item(c.id, self.chave, 1):
             await responder(interaction, painel.luta.embed(), painel)
             return
         dado = ITENS[self.chave]
@@ -1202,7 +1202,7 @@ class SalaDeEspera(discord.ui.View):
                 ephemeral=True,
             )
             return False
-        if db.checar_cooldown(j["user_id"], "boss") > 0:
+        if await db.a_checar_cooldown(j["user_id"], "boss") > 0:
             await interaction.response.send_message(
                 "Seu cooldown de chefe ainda não voltou.", ephemeral=True
             )
@@ -1220,7 +1220,7 @@ class SalaDeEspera(discord.ui.View):
         if len(self.inscritos) >= MAX_PARTY:
             await interaction.response.send_message("A sala está cheia.", ephemeral=True)
             return
-        j = db.get_jogador(interaction.user.id)
+        j = await db.a_get_jogador(interaction.user.id)
         if not j:
             await interaction.response.send_message(
                 "Você ainda não entrou na torre. Manda `rpg comecar`.", ephemeral=True
@@ -1273,7 +1273,7 @@ class SalaDeEspera(discord.ui.View):
 async def montar_combatentes(ids):
     combatentes = []
     for uid in ids:
-        j = db.get_jogador(uid)
+        j = await db.a_get_jogador(uid)
         if not j:
             continue
         combatentes.append(Combatente(j, H["stats"](j)))
@@ -1289,8 +1289,8 @@ async def iniciar_luta(destino, ids, andar_num, editar=False):
     luta = Luta(combatentes, chefe, andar_num, donos_ids=donos_ids)
 
     for c in combatentes:
-        db.set_cooldown(c.id, "boss", H["COOLDOWN_BOSS"])
-        db.marcar_combate(c.id)
+        await db.a_set_cooldown(c.id, "boss", H["COOLDOWN_BOSS"])
+        await db.a_marcar_combate(c.id)
 
     # iniciativa: o chefe pode abrir a luta batendo em alguem — desligado
     # com RODADA_1_SEM_CHEFE, senão o chefe "agiria" antes da rodada 1 nem
@@ -1365,7 +1365,7 @@ def instalar(bot, contexto):
             return
         if not await checar_sala_do_chefe(ctx, j):
             return
-        restante = db.checar_cooldown(ctx.author.id, "boss")
+        restante = await db.a_checar_cooldown(ctx.author.id, "boss")
         if restante > 0:
             await ctx.send(f"⏳ `rpg boss` volta em **{H['fmt_tempo'](restante)}**.")
             return
@@ -1378,7 +1378,7 @@ def instalar(bot, contexto):
             return
         if not await checar_sala_do_chefe(ctx, j, party=True):
             return
-        restante = db.checar_cooldown(ctx.author.id, "boss")
+        restante = await db.a_checar_cooldown(ctx.author.id, "boss")
         if restante > 0:
             await ctx.send(f"⏳ Seu cooldown de chefe volta em **{H['fmt_tempo'](restante)}**.")
             return
