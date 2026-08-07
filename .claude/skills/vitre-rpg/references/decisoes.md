@@ -329,6 +329,52 @@ Decisões de quem ganha o quê, fechadas na conversa:
   receitas pós-corte), 50% de volta. XP de craft nesse caso é 0 — a peça
   nunca foi craftada, não tem XP de craft pra devolver 40% de nada.
 
+## Correção — desmanche furava o gate de escassez, melhorar elemental estourava KeyError
+
+Dois bugs no mesmo par de funções (`custo_melhorar`/`refund_desmanche`,
+`profissoes.py`), corrigidos juntos porque a correção de um exigia a mesma
+mudança de arquitetura que o outro precisava pra existir.
+
+- **`refund_desmanche` somava `+ nivel_upgrade` a *todos* os materiais da
+  receita**, mas `custo_melhorar` só cobra **um** material por melhoria
+  (`ANDAR_MATERIAL[andar_min]`). Nas peças do Selo, que têm dois materiais
+  (`fragmento_selo` do chefe + `pena_do_trovao` do andar), isso fazia
+  craftar → +1 → +2 → desmanchar devolver *mais* `fragmento_selo` do que o
+  craft gastou — convertendo material farmável do andar 9 em material de
+  chefe capado (100% na primeira vitória, 15% depois) a taxa fixa. Furava o
+  próprio gate de escassez que o fragmento existe pra impor.
+- **Correção: extraí `material_de_upgrade(item_chave)`**, fonte única que
+  as duas funções chamam — `custo_melhorar` já usava essa lógica
+  (`ANDAR_MATERIAL[ITENS[item_chave]["andar_min"]]`), só faltava
+  `refund_desmanche` consultar a mesma chave em vez de reimplementar a
+  expressão. `refund_desmanche` agora só soma `nivel_upgrade` ao material
+  que bate com `material_de_upgrade` — os outros materiais da receita
+  (material de chefe, nas peças de dois materiais) recebem só o refund de
+  50% do craft, nunca o bônus de upgrade. Duplicar a expressão nos dois
+  lugares foi o que criou o bug; um helper compartilhado impede o próximo
+  item com dois materiais de reabrir o mesmo buraco sem ninguém perceber —
+  é exatamente o que o teste `test_nenhuma_receita_tem_saldo_positivo_*`
+  (`tests/test_profissoes.py`) trava.
+- **`ANDAR_MATERIAL` só tinha chave pros andares 1/3/5/7/9** (só onde tem
+  ferreiro). As 24 armas elementais (Pacote 2) têm `andar_min` 11-15;
+  `rpg melhorar` numa delas levantava `KeyError` direto — ninguém tinha
+  sentido ainda porque a receita é nível 9 de Forja + 10.000 moedas +
+  material de chefe, provavelmente nenhuma tinha sido forjada. Corrigido
+  adicionando as 5 chaves que faltavam: `pluma_eterea` (11),
+  `farpa_eletrica` (12), `estilhaco_gelido` (13), `cinza_quente` (14),
+  `po_de_estrela` (15) — o **drop de chão do próprio andar da arma**, não
+  o material de chefe que já é o gargalo do craft dela. Mantém o padrão
+  "material do andar melhora equipamento do andar" que já valia de 1 a 9;
+  os índices são consecutivos (11-15) e não só ímpares porque acima do
+  Selo não tem ferreiro — cada andar tem exatamente um drop de chão, sem
+  precisar pular nenhum.
+- Com as duas correções juntas, uma arma elemental cai no mesmo formato
+  das peças do Selo — dois materiais, e só o de chão (o `material_de_upgrade`)
+  participa da melhoria/desmanche. Testado (`test_custo_melhorar_e_refund_desmanche_funcionam_para_todo_equipavel`,
+  cobre os 24 itens elementais + todo o resto de `ITENS` com
+  `tipo in ("arma", "armadura")`) e nenhuma receita do catálogo sobra saldo
+  positivo no ciclo craft→+2→desmanchar.
+
 ## Pacote 1 — Acessórios, Guildas, Taverna e Raide
 
 Quatro sistemas de um pedido só, implementados nessa ordem porque a raide

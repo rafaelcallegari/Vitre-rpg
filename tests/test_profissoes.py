@@ -1,9 +1,8 @@
 # tests/test_profissoes.py
 # Tabelas e cálculo de melhoria/desmanche — sem tocar no sorteio (`random`
 # é do Python, não é nosso).
-import pytest
-
 import profissoes
+from game_data import ITENS
 
 
 def test_chance_upgrade_tabelas():
@@ -46,20 +45,51 @@ def test_refund_desmanche_devolve_metade_e_nunca_mais_que_a_base_do_craft():
     assert xp0 == int(profissoes.RECEITAS["couro_batido"]["xp"] * 0.40)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Bug real encontrado por este cartão, não corrigido de propósito "
-        "(ver decisoes.md secao 'Suite de testes'): refund_desmanche soma "
-        "+nivel_upgrade a cada material da receita sem checar se aquele "
-        "material especifico foi gasto na melhoria. Para itens cujo material "
-        "de craft (fragmento_selo, drop de chefe) difere do material de "
-        "melhoria (pena_do_trovao, ANDAR_MATERIAL do andar), desmanchar uma "
-        "peca +2 devolve MAIS fragmento_selo (3) do que foi gasto no craft "
-        "(2) -- melhorar+desmanchar vira forma de lavar material raro de chefe."
-    ),
-)
 def test_refund_desmanche_nao_deveria_exceder_material_raro_de_chefe():
     base = profissoes.RECEITAS["lamina_selo"]["materiais"]["fragmento_selo"]  # 2
     materiais, _ = profissoes.refund_desmanche("lamina_selo", 2)
     assert materiais["fragmento_selo"] <= base
+
+
+def _itens_equipaveis():
+    return [k for k, v in ITENS.items() if v["tipo"] in ("arma", "armadura")]
+
+
+def test_nenhuma_receita_tem_saldo_positivo_no_ciclo_craft_upgrade_desmanche():
+    """Para todo material de toda receita: o que o desmanche mais generoso
+    (+2, sem desconto de Forjador) devolve nunca pode passar do que craft +
+    upgrade juntos gastaram. Sem isso, um item novo com dois materiais pode
+    reabrir o mesmo buraco do fragmento_selo sem ninguém notar."""
+    receitas_equipaveis = {
+        k: v for k, v in profissoes.RECEITAS.items() if ITENS[k]["tipo"] in ("arma", "armadura")
+    }
+    for chave, receita in receitas_equipaveis.items():
+        material_upgrade = profissoes.material_de_upgrade(chave)
+        materiais_refund, _ = profissoes.refund_desmanche(chave, profissoes.NIVEL_MAX_UPGRADE)
+        for mat, qtd_craft in receita["materiais"].items():
+            gasto_upgrade = (
+                sum(profissoes.CUSTO_MATERIAL_UPGRADE.values())
+                if mat == material_upgrade else 0
+            )
+            assert materiais_refund[mat] <= qtd_craft + gasto_upgrade, (
+                f"{chave}/{mat}: refund {materiais_refund[mat]} > "
+                f"craft {qtd_craft} + upgrade {gasto_upgrade}"
+            )
+
+
+def test_custo_melhorar_e_refund_desmanche_funcionam_para_todo_equipavel():
+    """Cobre os andares 11-15 (armas elementais) -- o Bug 2: ANDAR_MATERIAL
+    só tinha chave pros andares ímpares 1-9, então melhorar uma arma elemental
+    estourava KeyError na primeira chamada."""
+    for chave in _itens_equipaveis():
+        for alvo_nivel in (1, 2):
+            for eh_forjador in (False, True):
+                profissoes.custo_melhorar(chave, alvo_nivel, eh_forjador)
+        for nivel_upgrade in (0, 1, 2):
+            profissoes.refund_desmanche(chave, nivel_upgrade)
+
+
+def test_material_de_upgrade_e_o_mesmo_nas_duas_funcoes():
+    for chave in _itens_equipaveis():
+        material_custo, _, _ = profissoes.custo_melhorar(chave, 1, eh_forjador=False)
+        assert material_custo == profissoes.material_de_upgrade(chave)

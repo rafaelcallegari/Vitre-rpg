@@ -17,9 +17,13 @@ CUSTO_TROCA = 1000        # moedas para trocar de profissao (zera o nivel)
 NIVEL_MAXIMO = 10
 
 # ---- melhoria (+1/+2) e desmanche ----
-ANDAR_MATERIAL = {           # material do andar, so' existe ferreiro nos impares
+ANDAR_MATERIAL = {           # material do andar, so' existe ferreiro nos impares ate' o 9
     1: "presa_javali", 3: "osso_enferrujado", 5: "nucleo_gelado",
     7: "brasa_eterna", 9: "pena_do_trovao",
+    # 11-15: sem ferreiro, mas arma elemental melhora com o drop de chao do
+    # proprio andar (ver decisoes.md) -- consecutivos, nao so' impares.
+    11: "pluma_eterea", 12: "farpa_eletrica", 13: "estilhaco_gelido",
+    14: "cinza_quente", 15: "po_de_estrela",
 }
 NIVEL_MAX_UPGRADE = 2
 PCT_STAT_POR_UPGRADE = 0.12
@@ -272,10 +276,18 @@ def entradas_receitas(j, apenas_prontas):
 
 # ------------------------------------------------------------ melhoria/desmanche
 
+def material_de_upgrade(item_chave):
+    """O material do andar que custo_melhorar cobra para essa peca. Fonte
+    unica pras duas funcoes -- refund_desmanche precisa saber exatamente essa
+    chave pra so' bonificar, no desmanche, o material que a melhoria de fato
+    gasta (ver decisoes.md, o bug do fragmento_selo)."""
+    return ANDAR_MATERIAL[ITENS[item_chave]["andar_min"]]
+
+
 def custo_melhorar(item_chave, alvo_nivel, eh_forjador):
     """(material, qtd, moedas) para tentar +1 ou +2 nesse item."""
     item = ITENS[item_chave]
-    material = ANDAR_MATERIAL[item["andar_min"]]
+    material = material_de_upgrade(item_chave)
     qtd = CUSTO_MATERIAL_UPGRADE[alvo_nivel]
     moedas = int(item["preco"] * CUSTO_PRECO_UPGRADE[alvo_nivel])
     if eh_forjador:
@@ -287,15 +299,16 @@ def custo_melhorar(item_chave, alvo_nivel, eh_forjador):
 def refund_desmanche(item_chave, nivel_upgrade):
     """(materiais devolvidos, xp de oficio devolvido) ao desmanchar uma peca."""
     receita = RECEITAS.get(item_chave)
+    material_upgrade = material_de_upgrade(item_chave)
     if receita:
         materiais_base = receita["materiais"]
         xp = int(receita["xp"] * PCT_XP_DESMANCHE)
     else:
-        item = ITENS[item_chave]
-        materiais_base = {ANDAR_MATERIAL[item["andar_min"]]: 3}
+        materiais_base = {material_upgrade: 3}
         xp = 0
     materiais = {
-        mat: max(1, int(qtd * PCT_REFUND_DESMANCHE)) + nivel_upgrade
+        mat: max(1, int(qtd * PCT_REFUND_DESMANCHE))
+             + (nivel_upgrade if mat == material_upgrade else 0)
         for mat, qtd in materiais_base.items()
     }
     return materiais, xp
