@@ -1,4 +1,5 @@
 # bot.py
+import asyncio
 import os
 import random
 import time
@@ -318,6 +319,10 @@ def processar_morte(j, s):
     return perda
 
 
+async def a_processar_morte(*args, **kwargs):
+    return await asyncio.to_thread(processar_morte, *args, **kwargs)
+
+
 def conheceu_bramm(j):
     return j["andar_max"] >= ANDAR_DESBLOQUEIA_CARROCA
 
@@ -525,7 +530,7 @@ async def cacar(ctx):
             )
         e.set_footer(text=f"HP: {max(0, hp_final)}/{at.hp_maximo(nivel, s['atribs']['constituicao'])}")
     else:
-        perda = processar_morte(j, s)
+        perda = await a_processar_morte(j, s)
         e.color = 0x8B0000
         e.add_field(
             name="Você caiu",
@@ -568,7 +573,7 @@ async def explorar(ctx):
     e.description = "\n".join(linhas)
 
     if caiu:
-        perda = processar_morte(j, s)
+        perda = await a_processar_morte(j, s)
         e.color = 0x8B0000
         e.add_field(name="Você caiu", value=f"Perdeu **{perda}** 🪙. As recompensas foram perdidas.", inline=False)
     else:
@@ -669,7 +674,7 @@ async def boss(ctx):
                 inline=False,
             )
     else:
-        perda = processar_morte(j, s)
+        perda = await a_processar_morte(j, s)
         e.color = 0x8B0000
         e.add_field(name="Derrota", value=f"O chefe continua no lugar. Você perdeu **{perda}** 🪙.", inline=False)
     await ctx.send(embed=e)

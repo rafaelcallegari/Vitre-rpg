@@ -575,7 +575,7 @@ async def encerrar_sem_donos(luta):
     perdas = []
     for c in luta.participantes:
         if c.dono and c.caiu:
-            perda = H["processar_morte"](c.jogador, c.s)
+            perda = await H["a_processar_morte"](c.jogador, c.s)
             perdas.append(f"**{c.nome}** perdeu {perda} 🪙")
     e = luta.embed(
         titulo=f"A luta acabou sem o dono do andar — {luta.chefe['nome']}",
@@ -596,7 +596,7 @@ async def finalizar_derrota(luta):
     perdas = []
     for c in luta.participantes:
         if c.caiu:
-            perda = H["processar_morte"](c.jogador, c.s)
+            perda = await H["a_processar_morte"](c.jogador, c.s)
             perdas.append(f"**{c.nome}** perdeu {perda} 🪙")
     e = luta.embed(
         titulo=f"A party caiu — {luta.chefe['nome']}",

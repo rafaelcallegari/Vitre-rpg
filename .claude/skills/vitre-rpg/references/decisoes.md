@@ -1852,3 +1852,44 @@ comandos de outros jogadores incluídos.
 - **Nenhum teste mudou.** Os 20 testes continuam chamando as funções
   síncronas de sempre — é o próprio sinal de que a migração ficou restrita
   aos wrappers e não vazou pra dentro de `database.py`.
+
+### Sobra do Cartão 4 — `processar_morte`
+
+O cartão fechou sem migrar `processar_morte(j, s)` (`bot.py`), que é síncrona
+e chama `db.atualizar_jogador` síncrono, chamada de dentro de corrotina em
+cinco lugares: `cacar`, `explorar`, `boss` (bot.py) e `encerrar_sem_donos`/
+`finalizar_derrota` (combate.py). Morte em caçada é o caminho mais frequente
+dos cinco — caçada é o comando mais usado do jogo.
+
+- **`a_processar_morte` mora em `bot.py`, não em `database.py`.** É o único
+  wrapper `a_*` fora de `database.py`, porque `processar_morte` em si não é
+  uma função de banco — é lógica de penalidade que só termina com um
+  `db.atualizar_jogador`. Mesmo padrão (`async def a_x(*a, **k): return
+  await asyncio.to_thread(x, *a, **k)`), lugar diferente.
+- **A armadilha do `H["processar_morte"]` era real.** `combate.py` acessa a
+  função pelo dicionário de injeção `H`, montado em `combate.instalar(bot,
+  globals())` — `H.update(contexto)` copia o namespace de `bot.py` no
+  momento da chamada. Registrar só `a_processar_morte` em `bot.py` bastou:
+  como `H` guarda os dois nomes, `combate.py` passou a chamar `await
+  H["a_processar_morte"](...)` em vez de `H["processar_morte"](...)` sem
+  esperar. Errar essa troca quebra em runtime (primeira morte em `rpg boss`
+  ou `rpg party`), não na subida do bot — é o custo conhecido desse padrão.
+- **Teste novo em `tests/test_morte.py`, e ele precisou importar `bot.py`
+  pela primeira vez na suíte.** Nenhum teste tinha feito isso até agora
+  porque `bot.py` chama `bot.run(TOKEN)` no nível do módulo, sem guarda de
+  `__main__` — um import direto tentaria abrir uma conexão de verdade com o
+  Discord. A saída foi trocar `commands.Bot.run` por um no-op (via
+  `unittest.mock.patch.object`) só durante o import, e cachear o módulo
+  importado em `sys.modules["bot"]` pra qualquer teste futuro reusar sem
+  reimportar. Registro de comando (`combate.instalar()` e companhia) roda
+  normalmente nesse import — só não toca rede porque `on_ready` (onde
+  `agenda.iniciar()` liga os loops de fundo) nunca dispara. Se algum
+  `instalar()` novo passar a tocar banco ou rede no nível do módulo em vez
+  de só registrar, esse import quebra silenciosamente virando falso
+  positivo — vale checar isso antes de outra função de `bot.py` precisar
+  do mesmo tratamento.
+- **Trava os quatro invariantes de morte**: 20% das moedas, HP a 30% do
+  máximo, contador de mortes, e o `andar`/`andar_max` caindo pro 10 quando a
+  morte foi acima do Selo sem zerar `chefes_derrotados` (tabela separada,
+  por andar — testado via `db.registrar_vitoria_chefe`/
+  `vezes_derrotado_chefe`, não uma coluna de `jogadores`). 25 testes agora.
