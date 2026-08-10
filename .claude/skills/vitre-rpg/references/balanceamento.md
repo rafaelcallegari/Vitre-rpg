@@ -204,11 +204,21 @@ rebalanceamento pendente.
  por craft — o ofício estava mais lento que a torre em si.
 - **Preço de craft não precisa ser o `preco` cheio do item — só não pode
  cair abaixo da metade dele.** Equipamento revende por `preco * 0.5`
- (`bot.py:vender`); craft abaixo disso vira impressora de moeda. «Couro
- Batido» é a exceção conhecida: 450 moedas contra um item de 700 (revenda
- 350) — 100 de margem acima do piso, de propósito, pra igualar o custo por
- XP da receita de entrada da Forja ao da Alquimia (ver decisoes.md § Baratear
- a entrada da Forja). Vale a mesma checagem em qualquer receita nova.
+ (`bot.py:vender`); craft abaixo disso vira impressora de moeda. As quatro
+ receitas de subida da Forja (Couro Batido → Couraça de Cinzas) custam hoje
+ abaixo do `preco` cheio de propósito, cada uma com folga acima do piso de
+ revenda: 400/700 (piso 350), 1400/2400 (piso 1200), 3000/5200 (piso 2600),
+ 6200/11000 (piso 5500) — ver decisoes.md § Rebalancear a escada da Forja.
+ Vale a mesma checagem em qualquer receita nova.
+- **XP por moeda das quatro receitas de subida da Forja é igual (~0,055).**
+ Antes a receita mais barata rendia mais XP/moeda que a mais cara — o
+ caminho ótimo era martelar só a de entrada, «Couraça de Cinzas» era uma
+ armadilha matemática. Agora XP e moeda escalam juntos
+ (`aplicar_xp_profissao`/`xp_para_subir` continuam `50 * nível`, só
+ `RECEITAS[...]["moedas"/"xp"]` mudou) — subir rápido com peça barata ou
+ devagar com peça cara custa o mesmo total, a escolha é sobre o item, não
+ sobre eficiência. Alquimia não entrou nessa equalização (fora do escopo do
+ cartão) e continua com XP/moeda levemente desigual entre as três receitas.
 
 ### Melhoria (`rpg melhorar`) e desmanche (`rpg desmanchar`)
 

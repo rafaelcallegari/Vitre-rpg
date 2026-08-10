@@ -56,13 +56,13 @@ APELIDOS = {
 # nivel, materiais, moedas e xp de cada receita
 RECEITAS = {
     # ---- Forja
-    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 450, "xp": 25,
+    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 400, "xp": 22,
                      "materiais": {"presa_javali": 3}},
-    "malha_reforcada": {"profissao": "forja", "nivel": 3, "moedas": 2400, "xp": 45,
+    "malha_reforcada": {"profissao": "forja", "nivel": 3, "moedas": 1400, "xp": 75,
                         "materiais": {"osso_enferrujado": 3}},
-    "placas_polidas": {"profissao": "forja", "nivel": 3, "moedas": 5200, "xp": 80,
+    "placas_polidas": {"profissao": "forja", "nivel": 3, "moedas": 3000, "xp": 165,
                        "materiais": {"nucleo_gelado": 3}},
-    "couraca_cinzas": {"profissao": "forja", "nivel": 5, "moedas": 11000, "xp": 130,
+    "couraca_cinzas": {"profissao": "forja", "nivel": 5, "moedas": 6200, "xp": 340,
                        "materiais": {"brasa_eterna": 3}},
     "lamina_selo": {"profissao": "forja", "nivel": 7, "moedas": 8000, "xp": 180,
                     "materiais": {"fragmento_selo": 2, "pena_do_trovao": 3}},

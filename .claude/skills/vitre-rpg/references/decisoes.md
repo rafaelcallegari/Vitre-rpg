@@ -1896,6 +1896,12 @@ dos cinco — caçada é o comando mais usado do jogo.
 
 ## Baratear a entrada da Forja
 
+**Superado pelo cartão seguinte, § Rebalancear a escada da Forja + devolutiva
+aos jogadores** — o ajuste abaixo só mexeu em «Couro Batido» e deixou as
+outras três receitas de subida como armadilha de XP/moeda; o cartão seguinte
+equalizou as quatro e pagou a diferença pra quem já tinha subido. Fica aqui
+como histórico do primeiro passo.
+
 A escada de craft+desmanche (só quem é Forjador desmancha com XP de volta,
 40% do XP + metade do material) até o nível 9 custava 47.600 moedas / 68
 crafts na Forja contra 21.200 / 58 na Alquimia — 2,2x mais caro pra chegar
@@ -1923,3 +1929,63 @@ entrada que domina o custo total porque é a mais martelada.
   «Couraça de Cinzas» mesmo antes deste ajuste. O caminho ótimo sempre foi
   martelar a receita de entrada do zero ao nível 9; a mudança aqui barateia
   esse caminho ótimo pra Forja, não cria um novo.
+
+## Rebalancear a escada da Forja + devolutiva aos jogadores
+
+O ajuste anterior (§ Baratear a entrada da Forja) só resolveu o preço de
+«Couro Batido» — deixou o defeito estrutural intacto: `xp_para_subir` é
+linear (`50 * nível`) mas o XP de cada receita não acompanhava o preço
+dela. «Couro Batido» rendia 0,029 XP/moeda, «Couraça de Cinzas» rendia
+0,012 — a receita cara era **matematicamente pior** pra subir de nível, não
+só mais cara. O caminho ótimo sempre foi martelar o mesmo sapato de couro
+68 vezes; nenhuma peça mais forte compensava fabricá-la em vez disso.
+Confirmação no banco em 10/08: ninguém passou do nível 6 de Forja, e 2 dos
+5 forjadores nunca fabricaram nada (nível 1, 0 XP).
+
+- **Princípio: as quatro receitas de subida rendem o mesmo XP por moeda
+  (~0,055).** `couro_batido` 700→400 moedas / 20→22 XP, `malha_reforcada`
+  2400→1400 / 45→75, `placas_polidas` 5200→3000 / 80→165, `couraca_cinzas`
+  11000→6200 / 130→340. Materiais de cada receita intocados — o ajuste é só
+  em moedas e XP. Nível 7/8 (peças do Selo), nível 9 (armas elementais) e
+  as três receitas de Alquimia ficam de fora: o gargalo do Selo é
+  Fragmento do Selo e material de chefe, moeda não compra isso, e Alquimia
+  não fazia parte do escopo do cartão (continua com XP/moeda levemente
+  desigual entre as três receitas dela). Escada 1→9 cai de 47.600 para
+  ~25.200 moedas — quem quer subir rápido faz muita peça barata, quem quer
+  a armadura boa faz poucas peças caras e paga o mesmo total; o
+  diferencial vira o item, não a eficiência.
+- **Piso: craft nunca abaixo de 50% do `preco` do item no `ITENS`.**
+  Equipamento revende por `preco * 0.5` (`bot.py:vender`) — craft abaixo
+  disso vira impressora de moeda (fabrica e desfaz em loop, lucro puro,
+  nunca equipa nada). As quatro receitas ficam com folga: 400/700 (piso
+  350), 1400/2400 (piso 1200), 3000/5200 (piso 2600), 6200/11000 (piso
+  5500). Checar essa mesma margem em qualquer receita nova — ver
+  `balanceamento.md` § Profissões e craft.
+- **Devolutiva: `devolutiva_forja.py`, script one-off separado do bot.**
+  Só quem tem `profissao = 'forja'` recebe — Alquimia não mudou. Fórmula:
+  `(25 * prof_nivel * (prof_nivel - 1) + prof_xp) * 12` por jogador — o
+  termo `25*N*(N-1)` é o XP das levas já completadas até o nível atual
+  (soma de `50*k` pra k=1..N-1, que é exatamente `xp_para_subir`), somado
+  ao `prof_xp` em progresso no nível corrente; `12` é a diferença de custo
+  por ponto de XP entre o modelo velho (25 moedas/XP) e o novo (13). É
+  **XP acumulado desde o nível 1**, não só o progresso do nível atual — quem
+  já subiu mais níveis recebe proporcionalmente mais, por ter pago o preço
+  velho mais vezes. Roda direto com `sqlite3` (mesmo padrão de
+  `reset_boss.py`), sem passar pelo `database.py` do bot — não precisa
+  estar rodando. **Sem flag só mostra o preview**; só credita moedas de
+  verdade com `--aplicar`. Rodar `--aplicar` duas vezes paga duas vezes —
+  não existe tabela de controle de migração neste projeto, a proteção é
+  puramente operacional (rodar uma vez, depois de backup do `aincrad.db`).
+  Valores conferidos no banco em 10/08 batem exatamente com a fórmula:
+  Cauê nv6/818 XP acumulado → 9.816, mands nv3/286 → 3.432, Positions
+  nv3/249 → 2.988, Russo e Léozin nv1/0 → 0. TOTAL 16.236.
+  **Execução: 10/08/2026, `devolutiva_forja.py --aplicar`, backup prévio em
+  `backups/pre_devolutiva_forja_20260810.db`. Cauê +9.816 (10.047→19.863),
+  mands +3.432 (2.214→5.646), Positions +2.988 (35.717→38.705), Russo e
+  Léozin +0 (nível 1, sem XP). TOTAL pago: 16.236 moedas.**
+- **Guia da Torre corrigido no mesmo cartão.** A frase "receita mais cara
+  dá mais XP — não adianta martelar a mais barata" virou "as quatro
+  receitas de subida da Forja rendem o mesmo XP por moeda — a escolha é
+  sobre qual armadura você quer, não sobre qual dá nível mais rápido" (e a
+  tabela de custo das quatro receitas foi atualizada). Página "Tabela de
+  Itens" também atualizada (mesma tabela + callout do piso de revenda).

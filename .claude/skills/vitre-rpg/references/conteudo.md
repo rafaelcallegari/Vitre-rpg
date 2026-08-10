@@ -201,10 +201,10 @@ duas usam a mesma `xp_para_subir`).
 
 | Receita | Ofício | Nível | Materiais | Preço 🪙 | XP |
 |---|---|---|---|---|---|
-| 🥾 «Couro Batido» | Forja | 1 | Presa de Javali x3 | 450 | 25 |
-| ⛓️ «Malha Reforçada» | Forja | 3 | Osso Enferrujado x3 | 2400 | 45 |
-| 🔩 «Placas Polidas» | Forja | 3 | Núcleo Gelado x3 | 5200 | 80 |
-| 🜃 «Couraça de Cinzas» | Forja | 5 | Brasa Eterna x3 | 11000 | 130 |
+| 🥾 «Couro Batido» | Forja | 1 | Presa de Javali x3 | 400 | 22 |
+| ⛓️ «Malha Reforçada» | Forja | 3 | Osso Enferrujado x3 | 1400 | 75 |
+| 🔩 «Placas Polidas» | Forja | 3 | Núcleo Gelado x3 | 3000 | 165 |
+| 🜃 «Couraça de Cinzas» | Forja | 5 | Brasa Eterna x3 | 6200 | 340 |
 | 🌑 «Lâmina do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 8000 | 180 |
 | 🌒 «Adaga do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 7000 | 180 |
 | 🌑 «Cajado do Selo» | Forja | 7 | Fragmento do Selo x2 + Pena do Trovão x3 | 8000 | 180 |
