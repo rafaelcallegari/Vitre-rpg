@@ -10,6 +10,7 @@ import discord
 import andares_altos
 import database as db
 import paginacao
+import pronomes
 import travas
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO
 
@@ -450,7 +451,8 @@ async def acao_expulsar(ctx, j):
             except discord.Forbidden:
                 pass
     db.guilda_log(guilda["id"], j["user_id"], "expulsou")
-    await ctx.send(f"{alvo.display_name} foi expulso da guilda **{guilda['nome']}**.")
+    expulso = pronomes.concordar("foi expuls{o|a}", db.get_jogador(alvo.id)["pronome"])
+    await ctx.send(f"{alvo.display_name} {expulso} da guilda **{guilda['nome']}**.")
 
 
 async def acao_home(ctx, j, argumento):

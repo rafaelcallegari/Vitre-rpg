@@ -6,6 +6,7 @@
 import database as db
 import dialogos
 import npcs
+import pronomes
 
 NPCS_CONVERSA = [
     n for andar in npcs.NPCS.values() for n in andar if n["tipo"] == "conversa"
@@ -107,3 +108,38 @@ def test_npc_nao_conversa_nao_ganhou_campo_dialogo():
     assert outros
     for n in outros:
         assert "dialogo" not in n, f"{n['nome']} ({n['tipo']}) ganhou 'dialogo' fora do escopo"
+
+
+def test_todo_dialogo_tem_saida_propria():
+    """Os 9 de hoje ganharam linha de saída própria -- o fallback existe pro
+    NPC futuro que ainda não tiver a dele (ver test_saida_cai_no_fallback)."""
+    for chave, dado in dialogos.DIALOGOS.items():
+        assert dado.get("saida"), f"{chave} sem linha de saída"
+
+
+def test_sair_nao_e_mais_uma_opcao_solta():
+    """Sair virou botão fixo da DialogoView (bot.py), não item de `opcoes`
+    -- não pode voltar a existir como opção duplicada em dialogos.py."""
+    for chave, dado in dialogos.DIALOGOS.items():
+        labels = {o["label"].lower() for o in dado.get("opcoes", [])}
+        assert "sair" not in labels, f"{chave} ainda tem 'Sair' dentro de opcoes"
+
+
+def test_saida_cai_no_fallback_quando_npc_nao_tem_a_propria(monkeypatch):
+    fixture = {"npc_sem_saida": {"abertura": "abertura", "opcoes": []}}
+    monkeypatch.setattr(dialogos, "DIALOGOS", fixture)
+    saida = dialogos.DIALOGOS["npc_sem_saida"].get("saida") or dialogos.SAIDA_PADRAO
+    assert saida == dialogos.SAIDA_PADRAO
+
+
+def test_marcador_de_concordancia_em_dialogo_real_resolve_certo():
+    """Pip fala de 'subir e contar sozinho/sozinha' sobre quem está jogando
+    -- é o exemplo real de concordância que entrou nesta varredura."""
+    resposta = next(
+        o["resposta"] for o in dialogos.DIALOGOS["pip"]["opcoes"]
+        if "parou" in o["label"]
+    )
+    assert "{o|a}" in resposta   # ainda não resolvido no dado bruto
+    assert "sozinho" in pronomes.concordar(resposta, "ele")
+    assert "sozinha" in pronomes.concordar(resposta, "ela")
+    assert "sozinho" in pronomes.concordar(resposta, "elu")

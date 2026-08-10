@@ -2056,3 +2056,81 @@ o contrato de dado importa mais que o conteúdo.
   sem apagar a mensagem) — discord.py não conecta de verdade sem subir o
   bot, então isso não virou teste automatizado; falta rodar no Discord real
   pra ver os 8 passos do checklist do card de ponta a ponta.
+
+## Pronomes do jogador + botão Sair do diálogo
+
+### Pronomes
+
+- **Default `'elu'`, não `'ele'` nem uma escolha forçada.** A coluna nasce
+  `NOT NULL DEFAULT 'elu'` pelos 13 jogadores que já existiam antes dela —
+  eles não escolheram nada, e `'ele'` como default atribuiria gênero
+  masculino por omissão pra gente que nunca decidiu isso. `'elu'` é o único
+  dos três que não é a escolha de ninguém em particular; lê com terminação
+  em "o" (mesma concordância de `'ele'`) até que a pessoa troque com `rpg
+  pronome`.
+- **Concordância resolve em DOIS, não em três.** `'ele'` e `'elu'` usam a
+  mesma terminação ("cansado", "pronto") — só `'ela'` diverge ("cansada",
+  "pronta"). Não existe uma terceira forma gramatical neutra em português
+  que não seja já uma dessas duas (ou uma reescrita de frase inteira, fora
+  de escopo aqui); marcar um terceiro slot no `{opcao|opcao}` seria dado
+  morto em todo marcador do jogo. Onde os três pronomes SÃO todos
+  diferentes é no de terceira pessoa — `sujeito()`/`possessivo()` sujeito
+  ele/ela/elu e dele/dela/delu, os três valores literais da coluna.
+- **`pronomes.py` é função pura, sem banco nem discord** — cabe teste
+  completo (`tests/test_pronomes.py`, 13 casos: marcador simples nos dois
+  sentidos, marcador no fim da palavra, vários marcadores na mesma string,
+  marcador vazio antes da barra, texto sem marcador, três variações de
+  marcador malformado, pronome/texto `None`, os dois resolvedores de
+  terceira pessoa com fallback pro default).
+- **O exemplo do card tinha um erro de digitação, corrigido no código.** O
+  card escreveu `"Você foi o{|a} únic{o|a} a sair de pé."` — com "o"
+  literal colado antes do marcador vazio. Resolvendo isso literalmente (uma
+  troca simples de `{opcao1|opcao2}` por uma das duas opções, sem lógica
+  extra) dá `"...oa única..."` pra `'ela'` — errado. A regra em prosa do
+  card ("primeira opção pra ele/elu, segunda pra ela", sem menção a apagar
+  caractere nenhum) é a que faz sentido, e é a que o resolvedor implementa;
+  o exemplo certo é `"Você foi {o|a} únic{o|a} a sair de pé."`, sem o "o"
+  solto — é o que está em `tests/test_pronomes.py` e é o padrão a seguir em
+  texto novo (nunca escrever letra literal colada bem antes de um marcador
+  com primeira opção vazia).
+- **Marcador nunca entra dentro de f-string.** `{opcao|opcao}` colide com a
+  sintaxe de interpolação do Python (`f"cansad{o|a}"` tentaria avaliar `o|a`
+  como expressão e quebraria). Todo texto marcado neste cartão foi escrito
+  como string comum, resolvido via `pronomes.concordar(texto, j["pronome"])`
+  ANTES de entrar em qualquer f-string com valor dinâmico (HP, nome de NPC
+  etc.) — ver `bot.py` (`rpg boss`/`rpg party`, `rpg descansar`),
+  `combate.py` (`checar_sala_do_chefe`, `Combatente.barra()`).
+- **Varredura cobriu `bot.py`, `combate.py`, `dialogos.py` — não achei nada
+  pra marcar em `npcs.py`, `andares_altos.py` nem `raide.py`** (texto de
+  NPC sobre si mesmo, não sobre o jogador, ou sem adjetivo que varie por
+  gênero). Achei também um caso fora da lista de arquivos do card:
+  `guildas.py`, "`{alvo.display_name} foi expulso da guilda`" — terceira
+  pessoa sobre OUTRO jogador (quem foi expulso), resolvido com o pronome
+  dELE, não do líder que expulsou. Entrou porque bate exatamente com "log
+  de guilda" citado no card como um dos lugares onde pronome de terceira
+  pessoa aparece — provavelmente um esquecimento na lista de arquivos, não
+  uma exclusão de propósito.
+- **`rpg pronome` é PROVISÓRIO — está escrito no código (docstring da
+  `PronomeView`) pra não virar comando permanente por esquecimento.** Some
+  quando o novo início do jogo (patch 0.3, carta própria) nascer e a
+  escolha migrar pra lá. Até lá é o único jeito de trocar o default, então
+  precisa existir.
+
+### Botão Sair do diálogo
+
+- **Sair deixou de ser uma opção de `dialogos.py` e virou botão fixo da
+  `DialogoView`**, acrescentado por conta própria depois das opções do NPC
+  (`bot.py`, não mais dado). Motivo: antes, clicar em Sair só rodava a
+  mesma lógica de qualquer opção — trocava a descrição pela resposta e
+  deixava os botões ativos, como se a conversa continuasse. Agora
+  `BotaoSairDialogo` troca a descrição pela linha de despedida E desabilita
+  todos os botões (`self.view.stop()` + `item.disabled = True` em cada um)
+  — mesmo efeito visual do timeout, só que com texto em vez de silêncio.
+- **`saida` é campo novo em cada NPC de `dialogos.py`**, com
+  `SAIDA_PADRAO` como fallback pra quem não tiver (nenhum NPC de hoje cai
+  nesse caso — os 9 ganharam a própria linha, migrada do que já era a
+  opção "Sair"/"Ir embora" de cada um). O fallback existe pro próximo NPC
+  que nascer sem `saida` escrita ainda, não travar o diálogo dele.
+- **Resto da `DialogoView` intocado**, como pedido: `interaction_check`,
+  timeout de 120s, opções normais continuando a conversa — só o
+  comportamento do Sair mudou.

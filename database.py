@@ -162,6 +162,12 @@ COLUNAS_GUIA = {
     "acoes_andar_alto": "INTEGER DEFAULT 0",
 }
 
+COLUNAS_PRONOME = {
+    # default 'elu' de propósito -- não atribui gênero a ninguém que já
+    # jogava antes da coluna existir (ver decisoes.md § pronomes do jogador)
+    "pronome": "TEXT NOT NULL DEFAULT 'elu'",
+}
+
 # grant histórico e único — não é reconcedido em migrações futuras
 HANZO_USER_ID = 330816605963681792
 
@@ -346,6 +352,15 @@ def init_db():
                 "UPDATE guildas SET andar_home = 1 WHERE andar_home > ?", (ANDAR_ACIMA_DO_SELO,)
             )
             print(f"Banco migrado: {presas} guilda(s) com home acima do Selo voltaram pro andar 1.")
+
+        # migração 11: pronome do jogador -- default 'elu' pra quem já jogava
+        novas_pronome = [c for c in COLUNAS_PRONOME if c not in colunas]
+        if novas_pronome:
+            for coluna in novas_pronome:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_PRONOME[coluna]}"
+                )
+            print("Banco migrado: pronome adicionado (default 'elu' pra quem já jogava).")
 
 
 # ---------------- jogadores ----------------

@@ -10,7 +10,7 @@ COLUNAS_ESPERADAS = {
     "arma", "armadura", "forca", "destreza", "constituicao", "inteligencia", "pontos",
     "mortes", "profissao", "prof_nivel", "prof_xp", "hp_em", "combate_em", "criado_em",
     "respec_gratis", "titulo", "titulos_possuidos", "classe", "habilidades_extras",
-    "mana_em", "anel", "colar", "acoes_andar_alto",
+    "mana_em", "anel", "colar", "acoes_andar_alto", "pronome",
 }
 
 

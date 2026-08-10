@@ -15,6 +15,7 @@ import database as db
 import dialogos
 import habilidades as hab
 import paginacao
+import pronomes
 import travas
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario,
@@ -619,8 +620,9 @@ async def boss(ctx):
 
     s = stats(j)
     if j["hp"] < s["hp_max"] * 0.4:
+        machucado = pronomes.concordar("Você está machucad{o|a} demais", j["pronome"])
         await ctx.send(
-            f"Você está machucado demais ({max(0, j['hp'])}/{s['hp_max']}). "
+            f"{machucado} ({max(0, j['hp'])}/{s['hp_max']}). "
             f"Manda `rpg usar pocao pequena` antes."
         )
         return
@@ -871,7 +873,26 @@ class BotaoOpcaoDialogo(discord.ui.Button):
 
     async def callback(self, interaction):
         e = interaction.message.embeds[0]
-        e.description = f"*{self.resposta}*"
+        e.description = f"*{pronomes.concordar(self.resposta, self.view.pronome)}*"
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class BotaoSairDialogo(discord.ui.Button):
+    """Não é uma opção de `dialogos.py` — a DialogoView acrescenta esse
+    botão sozinha, sempre por último. Sair troca a descrição pela linha de
+    despedida do NPC e trava a view (desabilita tudo), igual ao timeout mas
+    com texto em vez de silêncio."""
+
+    def __init__(self, saida):
+        super().__init__(label="Sair", style=discord.ButtonStyle.secondary)
+        self.saida = saida
+
+    async def callback(self, interaction):
+        e = interaction.message.embeds[0]
+        e.description = f"*{pronomes.concordar(self.saida, self.view.pronome)}*"
+        for item in self.view.children:
+            item.disabled = True
+        self.view.stop()
         await interaction.response.edit_message(embed=e, view=self.view)
 
 
@@ -881,12 +902,14 @@ class DialogoView(discord.ui.View):
     recebe recusa ephemeral. Nada aqui é consumido: `rpg falar` de novo
     mostra as mesmas opções, sempre."""
 
-    def __init__(self, autor_id, opcoes):
+    def __init__(self, autor_id, pronome, opcoes, saida):
         super().__init__(timeout=120)
         self.autor_id = autor_id
+        self.pronome = pronome
         self.mensagem = None
         for opcao in opcoes:
             self.add_item(BotaoOpcaoDialogo(opcao))
+        self.add_item(BotaoSairDialogo(saida))
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.autor_id:
@@ -932,9 +955,11 @@ async def falar(ctx, *, quem: str = ""):
     if n["tipo"] == "conversa" and n.get("dialogo"):
         dado = dialogos.DIALOGOS[n["dialogo"]]
         opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
-        e = discord.Embed(description=f"*{dado['abertura']}*", color=ANDARES[j["andar"]]["cor"])
+        abertura = pronomes.concordar(dado["abertura"], j["pronome"])
+        e = discord.Embed(description=f"*{abertura}*", color=ANDARES[j["andar"]]["cor"])
         e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
-        view = DialogoView(ctx.author.id, opcoes)
+        saida = dado.get("saida") or dialogos.SAIDA_PADRAO
+        view = DialogoView(ctx.author.id, j["pronome"], opcoes, saida)
         view.mensagem = await ctx.send(embed=e, view=view)
         return
 
@@ -947,6 +972,60 @@ async def falar(ctx, *, quem: str = ""):
     elif n["tipo"] == "taverneiro":
         e.set_footer(text="rpg descansar")
     await ctx.send(embed=e)
+
+
+class PronomeView(discord.ui.View):
+    """Só o autor escolhe o próprio pronome — resto do canal fica de fora,
+    diferente da DialogoView (que é pública de propósito). PROVISÓRIO: este
+    comando é um jeito de escolher enquanto o novo início do jogo (patch
+    0.3) não existe. Quando ele nascer, a escolha muda pra lá e `rpg
+    pronome` deixa de fazer sentido como comando solto — não esquecer de
+    tirar. Ver decisoes.md § pronomes do jogador."""
+
+    def __init__(self, autor_id):
+        super().__init__(timeout=60)
+        self.autor_id = autor_id
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message(
+                "Essa escolha não é sua. Manda `rpg pronome` você mesmo.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def _escolher(self, interaction, pronome):
+        db.atualizar_jogador(interaction.user.id, pronome=pronome)
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            content=f"Pronome definido: **{pronome}**.", view=self
+        )
+
+    @discord.ui.button(label="ele / dele", style=discord.ButtonStyle.primary)
+    async def ele(self, interaction, button):
+        await self._escolher(interaction, "ele")
+
+    @discord.ui.button(label="ela / dela", style=discord.ButtonStyle.primary)
+    async def ela(self, interaction, button):
+        await self._escolher(interaction, "ela")
+
+    @discord.ui.button(label="elu / delu", style=discord.ButtonStyle.primary)
+    async def elu(self, interaction, button):
+        await self._escolher(interaction, "elu")
+
+
+@bot.command(name="pronome")
+async def pronome_cmd(ctx):
+    """PROVISÓRIO — ver PronomeView."""
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    await ctx.send(
+        f"Pronome atual: **{j['pronome']}**. Escolhe um (afeta concordância de "
+        f"gênero nos textos, não muda nada mecânico):",
+        view=PronomeView(ctx.author.id),
+    )
 
 
 @bot.command(name="descansar", aliases=["rest", "descanso"])
@@ -971,10 +1050,12 @@ async def descansar(ctx):
     falta_hp = max(0, s["hp_max"] - max(0, j["hp"]))
     falta_mana = max(0, s["mana_max"] - max(0, j["mana"]))
     if falta_hp == 0 and falta_mana == 0:
-        await ctx.send(
-            f"*{nome_npc} olha pra você.* \"Já está inteiro. Volta quando estiver acabado.\""
-            if npc else "Você já está inteiro. Não precisa descansar agora."
+        fala = pronomes.concordar(
+            "Já está inteir{o|a}. Volta quando estiver acabad{o|a}."
+            if npc else "Você já está inteir{o|a}. Não precisa descansar agora.",
+            j["pronome"],
         )
+        await ctx.send(f"*{nome_npc} olha pra você.* \"{fala}\"" if npc else fala)
         return
 
     restante = db.checar_cooldown(j["user_id"], "descansar")
@@ -990,9 +1071,10 @@ async def descansar(ctx):
 
     db.set_cooldown(j["user_id"], "descansar", COOLDOWN_DESCANSAR)
     db.atualizar_jogador(j["user_id"], hp=s["hp_max"], mana=s["mana_max"], moedas=j["moedas"] - CUSTO_DESCANSAR)
-    descricao = (
+    descricao = pronomes.concordar(
         f"*{nome_npc} empurra um prato na sua frente e não pergunta nada.*" if npc
-        else "*Você monta acampamento, cuida dos ferimentos e descansa até se sentir inteiro de novo.*"
+        else "*Você monta acampamento, cuida dos ferimentos e descansa até se sentir inteir{o|a} de novo.*",
+        j["pronome"],
     )
     e = discord.Embed(title="🛏️ Descanso", description=descricao, color=ANDARES[j["andar"]]["cor"])
     e.add_field(name="Recuperado", value=f"HP +{falta_hp} · Mana +{falta_mana}", inline=False)

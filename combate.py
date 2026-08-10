@@ -10,6 +10,7 @@ import atributos as at
 import condicoes
 import database as db
 import habilidades as hab
+import pronomes
 import travas
 from andares_altos import ANDAR_ACIMA_DO_SELO
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO
@@ -208,7 +209,7 @@ class Combatente:
         elif self.saiu:
             estado = " — saiu da luta"
         elif self.acao:
-            estado = " — pronto"
+            estado = pronomes.concordar(" — pront{o|a}", self.jogador["pronome"])
         linha = (f"{H['barra_hp'](self.hp, self.s['hp_max'])} "
                  f"{max(0, self.hp)}/{self.s['hp_max']}{estado}")
         classe = self.jogador["classe"]
@@ -1350,8 +1351,9 @@ def instalar(bot, contexto):
             return False
         s = H["stats"](j)
         if j["hp"] < s["hp_max"] * HP_MINIMO_PARA_ENTRAR:
+            machucado = pronomes.concordar("Você está machucad{o|a} demais", j["pronome"])
             await ctx.send(
-                f"Você está machucado demais ({max(0, j['hp'])}/{s['hp_max']}). "
+                f"{machucado} ({max(0, j['hp'])}/{s['hp_max']}). "
                 f"Manda `rpg usar pocao pequena` antes."
             )
             return False
