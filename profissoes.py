@@ -56,7 +56,7 @@ APELIDOS = {
 # nivel, materiais, moedas e xp de cada receita
 RECEITAS = {
     # ---- Forja
-    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 700, "xp": 20,
+    "couro_batido": {"profissao": "forja", "nivel": 1, "moedas": 450, "xp": 25,
                      "materiais": {"presa_javali": 3}},
     "malha_reforcada": {"profissao": "forja", "nivel": 3, "moedas": 2400, "xp": 45,
                         "materiais": {"osso_enferrujado": 3}},

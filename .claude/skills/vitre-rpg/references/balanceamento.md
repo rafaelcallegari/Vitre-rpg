@@ -202,6 +202,13 @@ rebalanceamento pendente.
 - **Gates de nível caíram** (Placas Polidas 5→3, Couraça 7→5, armas do
  Selo 9→7, Manto do Selo 9→8) e **material de andar caiu de x5 pra x3**
  por craft — o ofício estava mais lento que a torre em si.
+- **Preço de craft não precisa ser o `preco` cheio do item — só não pode
+ cair abaixo da metade dele.** Equipamento revende por `preco * 0.5`
+ (`bot.py:vender`); craft abaixo disso vira impressora de moeda. «Couro
+ Batido» é a exceção conhecida: 450 moedas contra um item de 700 (revenda
+ 350) — 100 de margem acima do piso, de propósito, pra igualar o custo por
+ XP da receita de entrada da Forja ao da Alquimia (ver decisoes.md § Baratear
+ a entrada da Forja). Vale a mesma checagem em qualquer receita nova.
 
 ### Melhoria (`rpg melhorar`) e desmanche (`rpg desmanchar`)
 

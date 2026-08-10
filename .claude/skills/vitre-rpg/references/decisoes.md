@@ -1893,3 +1893,33 @@ dos cinco — caçada é o comando mais usado do jogo.
   morte foi acima do Selo sem zerar `chefes_derrotados` (tabela separada,
   por andar — testado via `db.registrar_vitoria_chefe`/
   `vezes_derrotado_chefe`, não uma coluna de `jogadores`). 25 testes agora.
+
+## Baratear a entrada da Forja
+
+A escada de craft+desmanche (só quem é Forjador desmancha com XP de volta,
+40% do XP + metade do material) até o nível 9 custava 47.600 moedas / 68
+crafts na Forja contra 21.200 / 58 na Alquimia — 2,2x mais caro pra chegar
+no mesmo lugar, mesmo com material parecido nas duas. A causa era a receita
+de entrada: «Couro Batido» cobrava 700 moedas por 20 XP, «Elixir de Ervas»
+cobra 200 por 20 XP — mesma XP, preço bem diferente, e é a receita de
+entrada que domina o custo total porque é a mais martelada.
+
+- **«Couro Batido»: 700 → 450 moedas, 20 → 25 XP.** As 3 Presas de Javali
+  não mudam — o gargalo era moeda, não material. Resultado: 24.750 moedas /
+  55 crafts até o nível 9, ao lado da Alquimia. Nível 7 (peças do Selo) e
+  nível 9 (armas elementais) ficam intocados — o gargalo deles é Fragmento
+  do Selo e material de chefe, moeda não compra isso.
+- **O piso é 350, não pode ir mais baixo sem mexer no preço do item
+  junto.** «Couro Batido» vale 700 no `ITENS` e equipamento revende por
+  metade (`bot.py:vender`, `preco * 0.5`). Se o craft caísse abaixo de 350,
+  fabricar e vender viraria lucro puro — impressora de moeda, o jogador
+  fabrica e desfaz em loop sem nunca equipar nada. 450 deixa 100 de margem
+  acima desse piso. Qualquer ajuste futuro nessa receita (ou em qualquer
+  outra de armadura/arma) precisa checar essa mesma margem antes de descer
+  o preço — ver `balanceamento.md` § Profissões e craft.
+- **A frase do Guia da Torre estava errada, corrigida no mesmo cartão.**
+  "Receita mais cara dá mais XP — não adianta martelar a mais barata" nunca
+  foi verdade: «Couro Batido» rendia 0,029 XP por moeda contra 0,012 de
+  «Couraça de Cinzas» mesmo antes deste ajuste. O caminho ótimo sempre foi
+  martelar a receita de entrada do zero ao nível 9; a mudança aqui barateia
+  esse caminho ótimo pra Forja, não cria um novo.
