@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS guilda_convites (
     expira_em     REAL,
     PRIMARY KEY (guilda_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS sidequests (
+    user_id  INTEGER NOT NULL,
+    quest_id TEXT    NOT NULL,
+    estado   TEXT    NOT NULL,          -- 'ativa' | 'concluida'
+    UNIQUE (user_id, quest_id)
+);
 """
 
 COLUNAS_ATRIBUTO = {
@@ -776,6 +782,23 @@ def registrar_vitoria_chefe(user_id, andar):
                ON CONFLICT(user_id, andar) DO UPDATE SET vezes = vezes + 1""",
             (user_id, andar),
         )
+
+
+# ---------------- sidequests ----------------
+# Nenhuma quest existe ainda -- esta funcao e' o alicerce que o diálogo com
+# NPC consulta pra decidir qual bloco de opcoes mostrar (ver dialogos.py e
+# npcs.opcoes_do_dialogo). Tabela vazia = todo mundo em 'antes'.
+def estado_sidequest(user_id, quest_id):
+    """'antes' sem linha na tabela, senao traduz o estado salvo ('ativa'/
+    'concluida') pro vocabulario do dialogo ('durante'/'depois')."""
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT estado FROM sidequests WHERE user_id = ? AND quest_id = ?",
+            (user_id, quest_id),
+        ).fetchone()
+    if not row:
+        return "antes"
+    return {"ativa": "durante", "concluida": "depois"}[row["estado"]]
 
 
 # ---------------- inventário ----------------

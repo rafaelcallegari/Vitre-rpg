@@ -21,7 +21,13 @@ bot.py        núcleo: conexão Discord, comandos de jogador (perfil, caçar,
   │                ASCENSOES, TITULOS, HABILIDADES, RAIDE_CHEFE,
   │                CONDICOES_ELEMENTO, xp_necessario()
   ├─ npcs.py       NPCs por andar, loja, ferreiro, taverneiro, guia, carroça
-  │                do Bramm, custo de viagem
+  │                do Bramm, custo de viagem; opcoes_do_dialogo() resolve
+  │                opcoes+opcoes_por_estado pros NPCs de tipo "conversa"
+  │                (importa dialogos.py e database.py)
+  ├─ dialogos.py   sem instalar() — só DADO: dict DIALOGOS (abertura +
+  │                opcoes/opcoes_por_estado) dos NPCs de tipo "conversa".
+  │                DialogoView/BotaoOpcaoDialogo (a UI) moram em bot.py,
+  │                perto do comando `falar` que as usa
   ├─ andares_altos.py  sem instalar() — conteúdo/regra dos andares 11-15
   │                (fala da Guia por mortes, ANDAR_ACIMA_DO_SELO); importado
   │                direto por bot.py e combate.py, não por último

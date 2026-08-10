@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import andares_altos
 import atributos as at
 import database as db
+import dialogos
 import habilidades as hab
 import paginacao
 import travas
@@ -23,6 +24,7 @@ from npcs import (
     agora, carroca_ativa, proxima_carroca, custo_viagem,
     consumiveis_disponiveis, equipamentos_do_andar,
     npcs_do_andar, ferreiro_do_andar, taverneiro_do_andar, guia_do_andar, encontrar_npc,
+    opcoes_do_dialogo,
 )
 
 load_dotenv()
@@ -859,6 +861,51 @@ async def listar_npcs(ctx):
     await ctx.send(embed=e)
 
 
+class BotaoOpcaoDialogo(discord.ui.Button):
+    """Um botão por opção de fala — a `resposta` é dado (dialogos.py), o
+    botão só existe pra mostrar ela e continuar a conversa aberta."""
+
+    def __init__(self, opcao):
+        super().__init__(label=opcao["label"], style=discord.ButtonStyle.secondary)
+        self.resposta = opcao["resposta"]
+
+    async def callback(self, interaction):
+        e = interaction.message.embeds[0]
+        e.description = f"*{self.resposta}*"
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class DialogoView(discord.ui.View):
+    """Mandada pública com `ctx.send` de propósito — o Rafael quer que o
+    canal veja que existe conteúdo. Só o autor consegue clicar; o resto
+    recebe recusa ephemeral. Nada aqui é consumido: `rpg falar` de novo
+    mostra as mesmas opções, sempre."""
+
+    def __init__(self, autor_id, opcoes):
+        super().__init__(timeout=120)
+        self.autor_id = autor_id
+        self.mensagem = None
+        for opcao in opcoes:
+            self.add_item(BotaoOpcaoDialogo(opcao))
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message(
+                "Essa conversa não é sua. Manda `rpg falar` você mesmo.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        """Desabilita os botões em vez de somem com eles — conversa não é
+        combate, não tem pressa pra limpar a tela."""
+        if self.mensagem is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        await self.mensagem.edit(view=self)
+
+
 @bot.command(name="falar", aliases=["conversar", "talk"])
 @travas.fora_de_luta()
 async def falar(ctx, *, quem: str = ""):
@@ -880,6 +927,15 @@ async def falar(ctx, *, quem: str = ""):
         e.set_author(name=f"{ICONES_NPC['guia']} {nome}")
         e.set_footer(text=f"Ela te leva de volta pro andar {destino}. De graça — subir é que nunca é.")
         await ctx.send(embed=e)
+        return
+
+    if n["tipo"] == "conversa" and n.get("dialogo"):
+        dado = dialogos.DIALOGOS[n["dialogo"]]
+        opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
+        e = discord.Embed(description=f"*{dado['abertura']}*", color=ANDARES[j["andar"]]["cor"])
+        e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
+        view = DialogoView(ctx.author.id, opcoes)
+        view.mensagem = await ctx.send(embed=e, view=view)
         return
 
     e = discord.Embed(description=f"*{n['fala']}*", color=ANDARES[j["andar"]]["cor"])

@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import database as db
+from dialogos import DIALOGOS
 from game_data import ITENS
 
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -76,7 +78,7 @@ NPCS = {
          "fala": "Poção é poção. Bebe rápido que o gosto passa."},
         {"nome": "Torv", "titulo": "o Ferreiro Aposentado", "tipo": "ferreiro",
          "fala": "Aposentado uma ova. Ninguém mais desce pra me render."},
-        {"nome": "Pip", "titulo": "o Menino que Conta", "tipo": "conversa",
+        {"nome": "Pip", "titulo": "o Menino que Conta", "tipo": "conversa", "dialogo": "pip",
          "fala": "Já contei os degraus até em cima. Deu um número que não cabe na boca."},
         {"nome": "Sera", "titulo": "a Taverneira", "tipo": "taverneiro",
          "fala": "Aqui ninguém pergunta o motivo do cansaço. Só cobra por ele."},
@@ -84,7 +86,7 @@ NPCS = {
     2: [
         {"nome": "Irmã Vell", "titulo": "da Tenda de Musgo", "tipo": "mercador",
          "fala": "Se a árvore repetir o que você falou, não responde. Elas aprendem."},
-        {"nome": "O Lenhador", "titulo": "que não corta", "tipo": "conversa",
+        {"nome": "O Lenhador", "titulo": "que não corta", "tipo": "conversa", "dialogo": "lenhador",
          "fala": "Machado é bom pra apontar. Cortar, aí já é briga."},
     ],
     3: [
@@ -98,7 +100,7 @@ NPCS = {
     4: [
         {"nome": "Ysra", "titulo": "da Caravana", "tipo": "mercador",
          "fala": "Água eu não vendo. Água aqui é o que separa vivo de estátua."},
-        {"nome": "O Homem de Sal", "titulo": "", "tipo": "conversa",
+        {"nome": "O Homem de Sal", "titulo": "", "tipo": "conversa", "dialogo": "homem_de_sal",
          "fala": "..."},
     ],
     5: [
@@ -106,13 +108,13 @@ NPCS = {
          "fala": "Compra a poção grande. Não é venda, é conselho."},
         {"nome": "Hjalmar", "titulo": "o Sopro Frio", "tipo": "ferreiro",
          "fala": "Têmpera no lago. A lâmina grita e depois nunca mais reclama."},
-        {"nome": "A Pescadora", "titulo": "silenciosa", "tipo": "conversa",
+        {"nome": "A Pescadora", "titulo": "silenciosa", "tipo": "conversa", "dialogo": "pescadora",
          "fala": "(Ela aponta pro buraco no gelo. Tem algo olhando de volta.)"},
     ],
     6: [
         {"nome": "Bico", "titulo": "do Vagão 7", "tipo": "mercador",
          "fala": "Lamparina acesa não quer dizer que tem gente. Quer dizer que teve."},
-        {"nome": "Recado do Capataz", "titulo": "", "tipo": "conversa",
+        {"nome": "Recado do Capataz", "titulo": "", "tipo": "conversa", "dialogo": "capataz",
          "fala": "«Turno cancelado. Não descer. Assinado: ninguém.»"},
     ],
     7: [
@@ -120,13 +122,13 @@ NPCS = {
          "fala": "Sacode a roupa antes de entrar. A cinza aqui pega carona."},
         {"nome": "Ignatia", "titulo": "a Bigorna Viva", "tipo": "ferreiro",
          "fala": "Não forjo com fogo. Forjo com o que sobrou dele."},
-        {"nome": "O Cavaleiro", "titulo": "que espera", "tipo": "conversa",
+        {"nome": "O Cavaleiro", "titulo": "que espera", "tipo": "conversa", "dialogo": "cavaleiro",
          "fala": "Vou subir amanhã. Falo isso há bastante tempo."},
     ],
     8: [
         {"nome": "Irmão Cael", "titulo": "", "tipo": "mercador",
          "fala": "Reze se quiser. Mas paga a poção primeiro."},
-        {"nome": "A Corista", "titulo": "sem voz", "tipo": "conversa",
+        {"nome": "A Corista", "titulo": "sem voz", "tipo": "conversa", "dialogo": "corista",
          "fala": "(Ela move os lábios. O som chega três segundos depois, de outro lugar.)"},
     ],
     9: [
@@ -134,7 +136,7 @@ NPCS = {
          "fala": "Não olha pra baixo. Não por medo — é que não tem baixo."},
         {"nome": "Selen", "titulo": "a Última Forja", "tipo": "ferreiro",
          "fala": "O que eu faço aqui, ninguém faz mais acima. Escolhe com calma."},
-        {"nome": "O Cartógrafo", "titulo": "do Vazio", "tipo": "conversa",
+        {"nome": "O Cartógrafo", "titulo": "do Vazio", "tipo": "conversa", "dialogo": "cartografo",
          "fala": "Mapeei os dez. O décimo primeiro se recusa a ficar no papel."},
     ],
     10: [
@@ -142,7 +144,7 @@ NPCS = {
          "fala": "Eu já te vendi isso. Você já me pagou. Nós dois já esquecemos."},
         {"nome": "Eco de uma Taverneira", "titulo": "", "tipo": "taverneiro",
          "fala": "Descansa. Não vai ajudar, mas descansa."},
-        {"nome": "A Porta", "titulo": "", "tipo": "conversa",
+        {"nome": "A Porta", "titulo": "", "tipo": "conversa", "dialogo": "porta",
          "fala": "(Não é um NPC. Mas responde quando você fala com ela.)"},
     ],
 
@@ -207,3 +209,18 @@ def encontrar_npc(andar, texto):
         if alvo in n["nome"].lower() or (n["titulo"] and alvo in n["titulo"].lower()):
             return n
     return None
+
+
+# ---------------- diálogo ----------------
+def opcoes_do_dialogo(chave_npc, user_id):
+    """Opções soltas (`opcoes`) aparecem sempre. Se o NPC tiver
+    `opcoes_por_estado`, soma o bloco do estado atual da quest dele —
+    'antes' (padrão, nenhuma quest existe ainda), 'durante' ou 'depois'.
+    NPC sem quest, a maioria hoje, nunca chama estado_sidequest."""
+    dado = DIALOGOS[chave_npc]
+    opcoes = list(dado.get("opcoes", []))
+    por_estado = dado.get("opcoes_por_estado")
+    if por_estado:
+        estado = db.estado_sidequest(user_id, dado["quest_id"])
+        opcoes += por_estado.get(estado, [])
+    return opcoes

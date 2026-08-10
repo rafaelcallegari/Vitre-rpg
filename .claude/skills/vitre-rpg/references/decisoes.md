@@ -1989,3 +1989,70 @@ Confirmação no banco em 10/08: ninguém passou do nível 6 de Forja, e 2 dos
   sobre qual armadura você quer, não sobre qual dá nível mais rápido" (e a
   tabela de custo das quatro receitas foi atualizada). Página "Tabela de
   Itens" também atualizada (mesma tabela + callout do piso de revenda).
+
+## Sistema de diálogo com NPC — alicerce do 0.3
+
+Primeiro corte, só os 9 NPCs de `tipo: "conversa"` (Pip, Lenhador, Homem de
+Sal, Pescadora, Capataz, Cavaleiro, Corista, Cartógrafo, A Porta). Mercador,
+ferreiro, carroceiro, taverneiro e a Guia continuam exatamente como estavam
+— cada um migra na carta própria dele, depois. É o alicerce dos próximos
+cortes (comprar dentro do diálogo, sidequests, novo início do jogo), então
+o contrato de dado importa mais que o conteúdo.
+
+- **Público com `ctx.send`, mas só o dono clica — mesmo padrão do
+  `PainelLuta`.** Rafael quer que o canal veja que existe conteúdo ali
+  (`DialogoView.interaction_check` compara `interaction.user.id` com
+  `ctx.author.id`; quem não é dono recebe recusa ephemeral). A alternativa
+  óbvia — mandar a conversa ephemeral pro autor — esconderia o próprio
+  ponto do sistema: um NPC de conversa hoje "não faz nada" pra quem só olha
+  o canal passar; ver os botões aparecendo é o que sinaliza que tem
+  conteúdo pra descobrir ali, mesmo que só uma pessoa esteja jogando aquela
+  conversa agora.
+- **A tabela `sidequests` e `opcoes_por_estado` nasceram um cartão inteiro
+  antes da primeira quest existir.** Motivo: `dialogos.py` é DADO — se o
+  formato do dado mudasse depois que os 9 diálogos já estivessem escritos
+  (pra caber `opcoes_por_estado`, `quest_id`, o mapeamento
+  ativa/concluida→durante/depois), os 9 seriam reescritos, não só
+  estendidos. Nascendo agora, uma sidequest nova só soma um bloco no dict
+  do NPC dela — nunca toca no motor. `database.estado_sidequest(user_id,
+  quest_id)` devolve `'antes'` sem linha na tabela (todo mundo, hoje) e
+  traduz `'ativa'/'concluida'` (colunas da tabela) pra `'durante'/'depois'`
+  (vocabulário do diálogo) — dois vocabulários de propósito: a tabela
+  descreve o estado da quest em si, o diálogo descreve o que o NPC fala
+  sobre ela, e nem todo estado de quest precisa virar uma fala diferente.
+  `npcs.opcoes_do_dialogo()` só chama `estado_sidequest` se o NPC declarar
+  `opcoes_por_estado` — nenhum declara ainda, então a função nunca toca no
+  banco neste corte (coberto em `tests/test_dialogo.py` com um NPC
+  fixture, já que nenhum real usa o campo pra testar contra).
+- **`dialogos.py` é só dado; a UI mora em `bot.py`, não em `npcs.py`.**
+  `npcs.py` não tinha dependência de `discord` antes disso — só ganhou
+  `opcoes_do_dialogo()` (lógica pura: mistura `opcoes` com o bloco do
+  estado atual). `DialogoView`/`BotaoOpcaoDialogo` ficam em `bot.py`, perto
+  do comando `falar` que os usa, no mesmo espírito de `trocas.py`/
+  `guildas.py` terem a própria UI perto do próprio comando — só que `falar`
+  já vive em `bot.py`, então a View fica ali também, sem criar módulo novo
+  só pra isso.
+- **Diálogo nunca é consumido — nada de "já ouviu isso".** `rpg falar`
+  duas vezes mostra as mesmas opções as duas vezes. O timeout (120s)
+  desabilita os botões em vez de apagar a mensagem — a conversa registrada
+  no canal continua legível, só para de aceitar clique.
+- **As respostas de cada opção foram escritas por mim (Claude), não pelo
+  Rafael.** O card dizia que o texto "vinha junto do briefing", mas a
+  página "Lore Vitre RPG" só tinha o tópico de cada opção (ex.: Pip —
+  "perguntar em qual número ele parou"), não a fala em si; os quatro NPCs
+  sem nenhuma lista de tópicos (Capataz, Cavaleiro, Cartógrafo, A Porta)
+  não tinham nem isso. Perguntei e o Rafael autorizou escrever no tom já
+  estabelecido pela `abertura` de cada um. Vale revisão de conteúdo depois
+  — é texto novo, não uma transcrição.
+- **Teste sem Discord de verdade**: `tests/test_dialogo.py` cobre
+  `estado_sidequest` (sem linha/ativa/concluida, por jogador e por quest) e
+  `opcoes_do_dialogo` (NPC sem quest nunca toca o banco; NPC fixture com
+  `opcoes_por_estado` soma o bloco certo por estado), mais consistência de
+  dado (os 9 conversa têm `dialogo` válido, todo `DIALOGOS[...]` tem
+  abertura e opções com label+resposta, nenhum NPC fora do escopo ganhou o
+  campo `dialogo`). `DialogoView`/`BotaoOpcaoDialogo` foram verificados à
+  mão fora da suíte (interaction_check aceita dono e nega o resto com
+  ephemeral, clique edita a descrição mantendo os botões, timeout desabilita
+  sem apagar a mensagem) — discord.py não conecta de verdade sem subir o
+  bot, então isso não virou teste automatizado; falta rodar no Discord real
+  pra ver os 8 passos do checklist do card de ponta a ponta.
