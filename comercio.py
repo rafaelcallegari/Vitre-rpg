@@ -11,6 +11,8 @@ from game_data import ITENS, ANDARES
 
 H = {}
 
+QUANTIDADES_COMPRA = (1, 5, 10, 25)
+
 
 class ShimCtx:
     """Bridge mínimo pra chamar os comandos de texto que já existem
@@ -58,6 +60,20 @@ def _opcoes_venda(user_id, tipos):
             value=i["item"], emoji=dado.get("emoji"),
         ))
     return opcoes[:25]
+
+
+def _opcoes_quantidade(chave):
+    """Segundo select do fluxo de Comprar -- quantidades fixas em vez de
+    modal: mais rápido de clicar e não abre teclado no celular (ver
+    decisoes.md). A descrição já mostra o TOTAL, não o preço unitário --
+    é a confirmação, não precisa de um passo a mais depois do clique."""
+    preco = ITENS[chave]["preco"]
+    return [
+        discord.SelectOption(
+            label=f"{qtd}x", description=f"{preco * qtd} 🪙 no total", value=str(qtd),
+        )
+        for qtd in QUANTIDADES_COMPRA
+    ]
 
 
 def _opcoes_equipamento_inventario(user_id):
@@ -175,6 +191,21 @@ class PainelComercioBase(discord.ui.View):
         if j and interaction.message:
             await interaction.message.edit(embed=self.embed(j), view=self)
 
+    async def _pedir_quantidade_e_comprar(self, interaction, chave):
+        """Segundo passo do Comprar: item já escolhido, agora a quantidade.
+        Reaproveita `abrir_selecao`/`MenuSelecaoView` — mesma "Voltar" de
+        sempre, que some com a quantidade e volta pro painel principal (não
+        pro select de item; cancelar no meio manda escolher tudo de novo,
+        troca aceitável por não duplicar navegação — ver decisoes.md)."""
+        async def escolher_qtd(interaction2, qtd):
+            async def invocar(ctx):
+                await H["comprar"].callback(ctx, argumento=f"{chave} {qtd}")
+            await self._executar(interaction2, invocar)
+
+        await self.abrir_selecao(
+            interaction, _opcoes_quantidade(chave), "Item não encontrado.", escolher_qtd,
+        )
+
     def _sair(self, interaction):
         e = interaction.message.embeds[0]
         e.description = f"*Você se despede de {self.npc['nome']}.*"
@@ -191,13 +222,8 @@ class MercadorView(PainelComercioBase):
         disponiveis = H["a_venda"](H["consumiveis_disponiveis"](j["andar_max"]))
         await self.abrir_selecao(
             interaction, _opcoes_compra(disponiveis),
-            "Nada à venda aqui agora.", self._escolher_comprar,
+            "Nada à venda aqui agora.", self._pedir_quantidade_e_comprar,
         )
-
-    async def _escolher_comprar(self, interaction, chave):
-        async def invocar(ctx):
-            await H["comprar"].callback(ctx, argumento=f"{chave} 1")
-        await self._executar(interaction, invocar)
 
     @discord.ui.button(label="Vender", style=discord.ButtonStyle.danger, row=0)
     async def vender_btn(self, interaction, button):
@@ -225,13 +251,8 @@ class FerreiroView(PainelComercioBase):
         disponiveis = H["a_venda"](H["equipamentos_do_andar"](self.andar_num))
         await self.abrir_selecao(
             interaction, _opcoes_compra(disponiveis),
-            "Nada à venda aqui agora.", self._escolher_comprar,
+            "Nada à venda aqui agora.", self._pedir_quantidade_e_comprar,
         )
-
-    async def _escolher_comprar(self, interaction, chave):
-        async def invocar(ctx):
-            await H["comprar"].callback(ctx, argumento=f"{chave} 1")
-        await self._executar(interaction, invocar)
 
     @discord.ui.button(label="Vender", style=discord.ButtonStyle.danger, row=0)
     async def vender_btn(self, interaction, button):

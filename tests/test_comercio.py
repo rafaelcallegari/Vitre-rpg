@@ -98,24 +98,81 @@ def test_shimctx_usa_followup_se_a_response_ja_foi_usada():
 
 
 # ---------------- fluxos ponta-a-ponta ----------------
-def test_mercador_comprar_debita_moedas_e_entrega_o_item():
+def test_mercador_comprar_pede_quantidade_antes_de_debitar():
     _jogador(moedas=10000)
     view = comercio.MercadorView(1, MERCADOR, 1)
     it = _interacao(1)
 
     async def cenario():
         await _botao(view, "Comprar").callback(it)
-        sel = it.response.edit_message.call_args.kwargs["view"].children[0]
-        chave = sel.options[0].value
+        sel_item = it.response.edit_message.call_args.kwargs["view"].children[0]
+        chave = sel_item.options[0].value
+
         it2 = _interacao(1, mensagem=it.message)
-        await sel._ao_escolher(it2, chave)
+        await sel_item._ao_escolher(it2, chave)
         return chave, it2
 
     chave, it2 = asyncio.run(cenario())
+    # depois de escolher o item, ainda não comprou nada -- é a quantidade
+    # que falta
+    assert db.get_jogador(1)["moedas"] == 10000
+    sel_qtd = it2.response.edit_message.call_args.kwargs["view"].children[0]
+    valores = [o.value for o in sel_qtd.options]
+    assert valores == ["1", "5", "10", "25"]
+    preco = game_data.ITENS[chave]["preco"]
+    assert f"{preco * 5} 🪙 no total" == sel_qtd.options[1].description
+
+
+def test_mercador_comprar_5_em_uma_interacao_so():
+    _jogador(moedas=10000)
+    view = comercio.MercadorView(1, MERCADOR, 1)
+    it = _interacao(1)
+
+    async def cenario():
+        await _botao(view, "Comprar").callback(it)
+        sel_item = it.response.edit_message.call_args.kwargs["view"].children[0]
+        chave = sel_item.options[0].value
+
+        it2 = _interacao(1, mensagem=it.message)
+        await sel_item._ao_escolher(it2, chave)
+        sel_qtd = it2.response.edit_message.call_args.kwargs["view"].children[0]
+
+        it3 = _interacao(1, mensagem=it2.message)
+        await sel_qtd._ao_escolher(it3, "5")
+        return chave, it3
+
+    chave, it3 = asyncio.run(cenario())
+    preco = game_data.ITENS[chave]["preco"]
     j = db.get_jogador(1)
-    assert j["moedas"] < 10000
-    assert db.tem_item(1, chave, 1)
-    it2.message.edit.assert_called_once()   # painel principal restaurado
+    assert j["moedas"] == 10000 - preco * 5
+    assert db.tem_item(1, chave, 5)
+    it3.message.edit.assert_called_once()   # painel principal restaurado
+
+
+def test_mercador_comprar_mais_do_que_as_moedas_permitem_recusa_igual_ao_comando():
+    _jogador(moedas=1)   # não cobre nem 1 unidade da poção mais barata
+    view = comercio.MercadorView(1, MERCADOR, 1)
+    it = _interacao(1)
+
+    async def cenario():
+        await _botao(view, "Comprar").callback(it)
+        sel_item = it.response.edit_message.call_args.kwargs["view"].children[0]
+        chave = sel_item.options[0].value
+
+        it2 = _interacao(1, mensagem=it.message)
+        await sel_item._ao_escolher(it2, chave)
+        sel_qtd = it2.response.edit_message.call_args.kwargs["view"].children[0]
+
+        it3 = _interacao(1, mensagem=it2.message)
+        await sel_qtd._ao_escolher(it3, "1")
+        return chave, it3
+
+    chave, it3 = asyncio.run(cenario())
+    assert db.get_jogador(1)["moedas"] == 1          # nada foi debitado
+    assert not db.tem_item(1, chave, 1)               # nada foi entregue
+    it3.response.send_message.assert_called_once()    # recusa do comprar() de verdade, via ShimCtx
+    # ShimCtx manda o texto do comando por kwarg (content=...), não posicional
+    assert "faltam" in it3.response.send_message.call_args.kwargs["content"].lower()
 
 
 def test_mercador_vender_so_lista_consumivel_mesmo_com_equipamento_na_mochila():

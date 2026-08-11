@@ -2315,3 +2315,58 @@ painel próprio dentro de `rpg falar` (`comercio.py`, novo módulo).
   dá pra checar fora de uma conexão real (o Future interno de `stop()` só
   é criado quando a View passa pelo dispatch de verdade) — o teste checa
   `disabled=True` nos filhos, que é o efeito que interessa.
+
+## Quantidade no menu de compra do NPC
+
+O select de Comprar (mercador e ferreiro) comprava sempre 1 unidade —
+quem queria 5 poções clicava Comprar→escolher 5 vezes, reabrindo o menu a
+cada uma. `rpg comprar <item> <qtd>` já resolvia isso; só o menu tinha
+perdido a funcionalidade quando `comercio.py` nasceu.
+
+- **Select de quantidade fixa (1/5/10/25), não modal — opção (a) do card.**
+  Um segundo `discord.ui.Select` com valores fixos é mais rápido de clicar
+  (um toque, sem digitar) e não abre teclado no celular — o público daqui é
+  quem já está DESCOBRINDO o item pelo menu (quem sabe o número exato usa
+  `rpg comprar <item> <qtd>`, que aceita qualquer valor). Um modal seria
+  mais flexível (qualquer quantidade), mas custa mais atrito exatamente pra
+  quem o menu deveria servir melhor, e exigiria estender o `ShimCtx` pra
+  cobrir o que `discord.ui.Modal.on_submit` precisa — nada que os comandos
+  chamados hoje (`comprar`) realmente usam. Ficou fora por não ter ninguém
+  que precisasse dele agora: sem modal, sem crescer o shim.
+- **A descrição de cada opção de quantidade já mostra o TOTAL, não o preço
+  unitário** — "5x" vem com "1.500 🪙 no total" (ou o que for), calculado
+  em `_opcoes_quantidade()`. Resolve o "vale mostrar o custo total antes de
+  confirmar" do card sem inventar um terceiro passo de confirmação: o
+  próprio clique na opção já é a confirmação, porque o número que importa
+  já estava visível antes do clique.
+- **Fluxo: Comprar → item → quantidade → `comprar` de verdade via
+  `ShimCtx`, `argumento=f"{chave} {qtd}"`.** Zero validação nova — `custo`,
+  saldo insuficiente e entrega continuam 100% dentro do `comprar` de
+  `bot.py`, chamado do mesmo jeito que antes (só a quantidade parou de
+  estar hardcoded em `1`). `_pedir_quantidade_e_comprar()` mora em
+  `PainelComercioBase` porque mercador e ferreiro compartilham o fluxo
+  inteiro — só a lista de itens disponíveis (consumível vs equipamento)
+  diferia, e isso já ficava a cargo de cada `comprar_btn`.
+- **"Voltar" na tela de quantidade volta pro painel principal, não pro
+  select de item.** `MenuSelecaoView`/`BotaoVoltarComercio` já tinham essa
+  semântica fixa (sempre volta pro painel) desde o cartão anterior; dar à
+  tela de quantidade uma navegação diferente ("voltar um passo" em vez de
+  "cancelar tudo") exigiria uma pilha de navegação que nada mais no módulo
+  usa. Cancelar no meio da compra custa reescolher o item — troca aceitável
+  por não inventar um mecanismo novo pra um caso que devia ser raro.
+- **Venda não mudou — só compra.** O card pediu isso explicitamente:
+  vender é item-por-item porque a fricção ali é decidir o que sai da
+  mochila, não repetir clique pra "mais uma unidade" — problema diferente
+  do que motivou este cartão.
+- **`ShimCtx` não cresceu.** Continua só `.author`/`.send()` — a opção (a)
+  não precisou de `ctx.channel` nem `ctx.message`, então o "cuidado
+  conhecido" do card não chegou a se materializar. Fica registrado aqui
+  pro próximo cartão que PRECISAR de modal saber que vai ter que estender
+  o shim, e com cuidado (ver aviso original em `comercio.ShimCtx`).
+- **3 testes novos** (`tests/test_comercio.py`, 22 no total): escolher item
+  não debita nada ainda (só abre o select de quantidade, com os 4 valores
+  certos e o total calculado); comprar 5 numa sequência de duas interações
+  debita `preço × 5` e entrega 5 unidades, com o painel restaurado no
+  fim; tentar comprar sem moedas suficientes recusa exatamente como
+  `rpg comprar` recusaria (mesma mensagem, via `ShimCtx`), sem debitar nem
+  entregar nada.
