@@ -180,7 +180,54 @@ def stats(j):
     atribs = {k: atribs_base[k] + bonus.get(k, 0) for k in atribs_base}
     s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"])
     s["atribs"] = atribs
+    # peças já resolvidas (bônus de melhoria incluso em arma/armadura) — pra
+    # quem só quer MOSTRAR o equipamento (rpg status) sem recalcular nada.
+    # None = slot vazio, nunca um dict vazio.
+    s["equipamento"] = {
+        "arma": (j["arma"], arma) if j["arma"] else None,
+        "armadura": (j["armadura"], armadura) if j["armadura"] else None,
+        "anel": (j["anel"], anel) if j["anel"] else None,
+        "colar": (j["colar"], colar) if j["colar"] else None,
+    }
     return s
+
+
+def texto_equipamento(s, user_id):
+    """Uma linha por slot (arma/armadura/anel/colar) pro `rpg status` — lê o
+    que `stats()` já resolveu, não recalcula bônus nenhum. Slot vazio
+    aparece como vazio de propósito: é como quem nunca foi em raide
+    descobre que anel e colar existem."""
+    eq = s["equipamento"]
+
+    def peca(slot, rotulo_fn):
+        par = eq[slot]
+        if not par:
+            return "*vazio*"
+        chave, dado = par
+        nome = f"{dado.get('emoji', '')} **{dado['nome']}**".strip()
+        return f"{nome} — {rotulo_fn(chave, dado)}"
+
+    def rotulo_arma(chave, dado):
+        nivel = db.get_upgrade(user_id, chave)
+        sufixo = f" +{nivel}" if nivel else ""
+        sigla = at.ATRIBUTOS[s["atributo_arma"]]["sigla"]
+        return f"+{dado['atk']} ATK{sufixo} ({sigla})"
+
+    def rotulo_armadura(chave, dado):
+        nivel = db.get_upgrade(user_id, chave)
+        sufixo = f" +{nivel}" if nivel else ""
+        return f"+{dado['def']} DEF{sufixo}"
+
+    def rotulo_acessorio(chave, dado):
+        sigla = at.ATRIBUTOS[dado["atributo"]]["sigla"]
+        return f"+{dado['bonus']} {sigla}"
+
+    return (
+        f"🗡️ Arma: {peca('arma', rotulo_arma)}\n"
+        f"🛡️ Armadura: {peca('armadura', rotulo_armadura)}\n"
+        f"💍 Anel: {peca('anel', rotulo_acessorio)}\n"
+        f"📿 Colar: {peca('colar', rotulo_acessorio)}"
+    )
 
 
 def hp_depois_do_nivel(hp_atual, nivel_novo, subiu, atribs):
@@ -1215,6 +1262,7 @@ async def status(ctx):
         ),
         inline=False,
     )
+    e.add_field(name="Equipado", value=texto_equipamento(s, j["user_id"]), inline=False)
     custo_respec = "grátis" if j["respec_gratis"] else f"{at.custo_respec(j['nivel'])} 🪙"
     e.set_footer(text=f"rpg upar <atributo> <qtd> · rpg respec ({custo_respec})")
     await ctx.send(embed=e)

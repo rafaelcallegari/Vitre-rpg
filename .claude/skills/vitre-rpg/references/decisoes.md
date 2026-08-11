@@ -2370,3 +2370,24 @@ perdido a funcionalidade quando `comercio.py` nasceu.
   fim; tentar comprar sem moedas suficientes recusa exatamente como
   `rpg comprar` recusaria (mesma mensagem, via `ShimCtx`), sem debitar nem
   entregar nada.
+
+## Equipamento no rpg status
+
+`rpg status` mostrava Ataque/Defesa como números soltos, sem dizer de onde
+vinham — e ninguém que não foi em raide sabia que slot de anel/colar existe.
+
+- **`stats()` passou a expor `s["equipamento"]`** — os quatro slots
+  (arma/armadura/anel/colar), cada um `None` (vazio) ou `(chave, dado)` com
+  o dict já resolvido (`com_bonus_upgrade` já aplicado em arma/armadura).
+  Zero conta nova: é literal o que `ficha()` já usava internamente, só que
+  agora sai do escopo da função em vez de morrer ali. `rpg status` só lê.
+- **Slot vazio mostra "*vazio*" em vez de sumir da lista** — de propósito,
+  é como o jogador descobre que o slot existe.
+- **Nível de melhoria (+1/+2) vem de `db.get_upgrade()` à parte**, não do
+  bônus em si — ler o nível não é "recalcular", é mostrar um dado que já
+  existe (a mesma leitura que `rpg melhorar` faz antes de agir).
+- **Teste**: `tests/test_status_equipamento.py` (8 casos) — os 4 slots
+  vazios por padrão, peça resolvida com e sem melhoria, texto sem "vazio"
+  quando tudo equipado, e a conta final: `at.ataque()`/`at.defesa()`
+  aplicados aos bônus mostrados batem exatamente com `s["atk"]`/`s["def"]`
+  que o resto do embed já exibia.
