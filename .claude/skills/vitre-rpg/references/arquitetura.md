@@ -45,6 +45,12 @@ bot.py        núcleo: conexão Discord, comandos de jogador (perfil, caçar,
   │                skills no catálogo (2 por classe)
   ├─ profissoes.py import tardio, opcional (try/except) — craft, melhoria
   │                (+1/+2) e desmanche de equipamento
+  ├─ comercio.py   import tardio, depois de profissoes — Comprar/Vender/
+  │                Forjar/Melhorar/Desmanchar dentro de `rpg falar` no
+  │                mercador/ferreiro (MercadorView/FerreiroView). Não
+  │                duplica lógica: ShimCtx chama `comprar`/`vender`/
+  │                `craftar`/`melhorar`/`desmanchar` de verdade via
+  │                `.callback()`. `rpg loja` foi removido em favor disso
   ├─ trocas.py     import tardio — `rpg pix` (transferência à distância,
   │                confirmação por botão) e `rpg trade` (troca presencial de
   │                item/moeda, UI de oferta com botões e modal); estado de

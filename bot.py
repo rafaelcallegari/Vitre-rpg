@@ -884,11 +884,15 @@ async def falar(ctx, *, quem: str = ""):
         view.mensagem = await ctx.send(embed=e, view=view)
         return
 
+    if n["tipo"] in ("mercador", "ferreiro"):
+        # rpg loja morreu — cada NPC vende o seu dentro da própria conversa
+        # (ver comercio.py, importado no fim do arquivo).
+        await comercio.abrir_comercio(ctx, j, n)
+        return
+
     e = discord.Embed(description=f"*{n['fala']}*", color=ANDARES[j["andar"]]["cor"])
     e.set_author(name=f"{ICONES_NPC.get(n['tipo'], '•')} {nome}")
-    if n["tipo"] in ("mercador", "ferreiro"):
-        e.set_footer(text="rpg loja")
-    elif n["tipo"] == "carroceiro":
+    if n["tipo"] == "carroceiro":
         e.set_footer(text="rpg carroca")
     elif n["tipo"] == "taverneiro":
         e.set_footer(text="rpg descansar")
@@ -1025,57 +1029,15 @@ async def inventario(ctx, pagina: int = 1):
 
 
 @bot.command(name="loja", aliases=["shop", "store"])
-@travas.fora_de_luta()
-async def loja(ctx, pagina: int = 1):
-    j = await pegar_jogador(ctx)
-    if not j:
-        return
-    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
-        await ctx.send(
-            "Não tem comércio nenhum acima do Selo — nada é vendido, nem poção. "
-            "Sobe abastecido ou não sobe."
-        )
-        return
-    a = ANDARES[j["andar"]]
-    partes_desc = []
-
-    mercador = next((n for n in npcs_do_andar(j["andar"]) if n["tipo"] == "mercador"), None)
-    consumiveis = a_venda(consumiveis_disponiveis(j["andar_max"]))
-    entradas = [
-        (f"🧺 {v['emoji']} {v['nome']}", f"{v['preco']} 🪙 ({descricao_cura(v)})")
-        for v in consumiveis.values()
-    ]
-    if mercador:
-        nome_mercador = f"{mercador['nome']} {mercador['titulo']}".strip()
-        partes_desc.append(f"🧺 {nome_mercador}")
-
-    ferreiro = ferreiro_do_andar(j["andar"])
-    equipamentos = a_venda(equipamentos_do_andar(j["andar"]))
-    if ferreiro and equipamentos:
-        entradas += [
-            (
-                f"🔨 {v['emoji']} {v['nome']}",
-                f"{v['preco']} 🪙"
-                + (f" (+{v['atk']} ATK)" if "atk" in v else "")
-                + (f" (+{v['def']} DEF)" if "def" in v else ""),
-            )
-            for v in equipamentos.values()
-        ]
-        nome_ferreiro = f"{ferreiro['nome']} {ferreiro['titulo']}".strip()
-        partes_desc.append(f"🔨 {nome_ferreiro}")
-    else:
-        andares_com_forja = sorted({v["andar_min"] for v in ITENS.values()
-                                    if v["tipo"] in ("arma", "armadura") and v.get("loja", True)})
-        partes_desc.append(
-            "🔨 Sem ferreiro aqui — equipamento só nos andares "
-            + ", ".join(str(n) for n in andares_com_forja) + "."
-        )
-
-    await paginacao.enviar_paginado(
-        ctx, entradas, f"Comércio do andar {j['andar']} — {a['nome']}", 0xE9C46A,
-        descricao=" · ".join(partes_desc) or None,
-        rodape_extra=f"Você tem {j['moedas']} moedas · rpg comprar <item> <qtd>",
-        pagina_inicial=pagina, mensagem_vazia="Nada à venda aqui agora.",
+async def loja(ctx):
+    """Morreu — juntava mercador e ferreiro numa lista só, como se fossem
+    um mercado único. Cada NPC vende o seu dentro da própria conversa
+    agora (ver comercio.py). `rpg comprar`/`rpg vender` continuam de pé
+    pra quem já sabe o item que quer."""
+    await ctx.send(
+        "`rpg loja` não existe mais. Fala com o mercador ou o ferreiro do andar "
+        "(`rpg npcs` mostra quem está aqui, `rpg falar <nome>` abre o balcão dele) "
+        "— ou `rpg comprar <item> <qtd>` se você já sabe o que quer."
     )
 
 
@@ -1614,7 +1576,8 @@ def embed_ajuda():
     e.add_field(
         name="Economia",
         value=(
-            "`rpg loja` · `rpg comprar <item> <qtd>` · `rpg vender <item> <qtd>` · `rpg ranking`\n"
+            "`rpg falar <nome>` — abre o balcão do mercador/ferreiro, com botões\n"
+            "`rpg comprar <item> <qtd>` · `rpg vender <item> <qtd>` — atalho de quem já sabe · `rpg ranking`\n"
             "`rpg pix @alguém <valor>` — manda moeda à distância, com confirmação por botão\n"
             "`rpg trade @alguém` — troca item/moeda com quem estiver no mesmo andar"
         ),
@@ -1663,6 +1626,13 @@ try:
     profissoes.instalar(bot, globals())
 except ModuleNotFoundError:
     print("profissoes.py ainda não está na pasta — craft desligado.")
+
+# comércio — comprar/vender/forjar/melhorar/desmanchar dentro do diálogo
+# com mercador e ferreiro (precisa vir depois de profissoes.instalar() pra
+# `craftar`/`melhorar`/`desmanchar` já estarem registrados no bot)
+import comercio
+
+comercio.instalar(bot, globals())
 
 # trocas — pix (transferência à distância) e trade (troca presencial de item/moeda)
 import trocas

@@ -2217,3 +2217,101 @@ suíte não conseguia importar `bot.py` sem contornar isso.
   frase sobre «Sua Majestade do Andar Nenhum» que fazia trocadilho com o
   nome antigo do chefe ("o Trono Vazio, ocupado por si mesmo") reescrita
   pra apontar pro nome novo sem o trocadilho quebrado.
+
+## Comércio dentro do diálogo
+
+Primeira carta grande do 0.3 — mexe no que todo mundo usa todo dia. `rpg loja`
+morreu, `rpg comprar`/`rpg vender` sobreviveram, e mercador/ferreiro ganharam
+painel próprio dentro de `rpg falar` (`comercio.py`, novo módulo).
+
+- **Por que `rpg loja` morria e `rpg comprar`/`rpg vender` não.** `rpg loja`
+  era a contradição: juntava mercador e ferreiro numa lista paginada só, como
+  se fossem um mercado único, quando a ficção sempre foi "cada NPC vende o
+  seu". Os comandos de atalho não têm esse problema — eles não fingem que
+  existe um mercado central, só executam uma compra que você já decidiu.
+  Cortar os dois juntos economizaria uma migração, mas ia contra o motivo
+  explícito do card: quem compra poção 15x por sessão não pode virar refém
+  de dois cliques (abrir o menu, escolher o item) toda vez.
+- **`rpg loja` não desapareceu silenciosamente — vira redirecionamento.**
+  `rpg loja`/`shop`/`store` continuam registrados, só que agora respondem
+  apontando pro `rpg falar <nome>` (menu) e pro `rpg comprar` (atalho). Um
+  comando que simplesmente some vira "bot quebrado" pra quem já tinha o
+  hábito digitado; um que explica pra onde foi é uma migração.
+- **Onde vender equipamento: só no ferreiro (decisão do Rafael).** `rpg
+  vender` (o comando) continua ambiente — vende qualquer coisa vendável,
+  igual antes. Mas no MENU, arma/armadura só aparece no painel do ferreiro;
+  o mercador só compra/vende consumível. Motivo: "o ferreiro cuida do que é
+  seu" — comprar, vender e a oficina inteira (forjar/melhorar/desmanchar)
+  no mesmo balcão, em vez de espalhar equipamento em dois NPCs diferentes.
+- **Select em vez de paginação por botão (decisão minha, pro card).** Dentro
+  da conversa a lista de itens é um `discord.ui.Select` (até 25 opções),
+  não a paginação de `paginacao.py` que `rpg receitas`/`rpg inventario`/a
+  antiga `rpg loja` usam. Paginação faz sentido quando o objetivo é LER uma
+  lista grande inteira; aqui o objetivo é ESCOLHER um item pra agir — um
+  menu suspenso resolve isso em um clique a mais (abrir o dropdown) contra
+  os N cliques de "próxima página" até achar o item. O teto de 25 nunca é
+  um problema real: poção por andar são no máximo ~3 opções, equipamento
+  por ferreiro são ~3, e receita "pronta pra fazer agora" (não o catálogo
+  inteiro) raramente passa de um punhado — ver a seguir.
+- **Nenhuma lógica de negócio foi duplicada — os botões chamam os comandos
+  de texto de verdade.** `comercio.ShimCtx` é um bridge mínimo (`.author` +
+  `.send()`) que deixa `comprar`/`vender`/`craftar`/`melhorar`/`desmanchar`
+  rodarem sem mudar uma linha deles: o botão monta `"{chave} 1"` (ou só o
+  slot, pro melhorar) e chama `comando.callback(shim_ctx, argumento=...)`
+  direto — o mesmo parsing (`encontrar_item`, `separar_quantidade`), a
+  mesma validação de moedas/andar_min/nível/desconto de Forjador, a mesma
+  resposta. `encontrar_item` já casa a CHAVE do item normalizada antes de
+  tentar por nome, então passar a chave exata (o que o `value` de um
+  `SelectOption` sempre é) resolve sem ambiguidade. `craftar`/`melhorar`/
+  `desmanchar` não são atributos de módulo em `profissoes.py` (vivem dentro
+  do closure de `instalar()`), por isso passam por
+  `H["_bot"].get_command(nome).callback` em vez de import direto — `comprar`/
+  `vender` já chegam prontos em `H` porque `bot.py` os define no nível do
+  módulo, então `comercio.instalar(bot, globals())` os pega direto do
+  `contexto`.
+- **Depois de cada ação, o painel principal volta sozinho** (com moedas
+  atualizadas) — `PainelComercioBase._executar` reabre `self.embed(j)` na
+  MESMA mensagem depois que o `ShimCtx` manda a resposta do comando como
+  mensagem nova. Comprar 15 poções pelo menu custa 2 cliques cada
+  (Comprar → escolher) porque o painel nunca fecha.
+- **Menu compra/vende 1 unidade por clique, de propósito.** O card já
+  reserva `rpg comprar <item> <qtd>` pra quem quer comprar em lote; o menu
+  é "a porta da frente pra quem está descobrindo" — pedir quantidade dentro
+  do select (um segundo prompt, ou um modal) complicaria a UI sem servir
+  esse público. Quem quer 10 poções de uma vez já sabe digitar o comando.
+- **A fileira de oficina fica sempre habilitada — nunca `disabled=True`.**
+  Um botão desabilitado no Discord não gera interação: o clique não chega
+  no bot, e não tem como responder nada. O ponto do design é justamente
+  ensinar que a profissão existe pra quem não tem — um botão cinza e mudo
+  não ensina nada, só esconde a funcionalidade de quem mais precisaria
+  descobrir ela.
+- **Só "Forjar" recusa por ofício errado — "Melhorar" e "Desmanchar" não.**
+  Conferido no código antes de inventar uma regra nova: `craftar` exige
+  literalmente ter escolhido Forja como profissão (senão a receita nem
+  aparece nas suas); mas `melhorar` e `desmanchar` sempre funcionaram pra
+  QUALQUER jogador — só o desconto de 25% (melhorar) e o XP de ofício
+  (melhorar e desmanchar) dependem de ser Forjador. Copiar a recusa
+  ephemeral pra essas duas teria sido reimplementar uma trava que não
+  existe no comando de texto — o card proíbe isso explicitamente ("não
+  reimplementar a lógica"). O checklist do próprio card também só testa
+  Forjar pra esse caso (itens 6-7), o que confirma a leitura.
+- **Select do "Forjar" mostra só receita PRONTA agora (`pode_fazer`), não
+  o catálogo inteiro.** Um Forjador nível 10 tem acesso a ~33 receitas
+  (9 do Selo pra baixo + 24 armas elementais) — passa do teto de 25 do
+  Discord se listar tudo. Mostrar só o que dá pra fazer AGORA (nível
+  liberado + material + moedas em mãos) resolve o teto pro caso realista
+  E é mais útil: as outras já apareceriam com erro de material se
+  escolhidas. Sem nada pronto, a mensagem aponta pra `rpg receitas` (o
+  catálogo completo, com paginação, pra quem quer planejar o que falta).
+- **Teste sem Discord de verdade**: `tests/test_comercio.py` (20 casos)
+  cobre as funções puras de montagem de select (corte de 25, filtro por
+  tipo/vendável, desmanchar ignorando `vendavel`), o `ShimCtx` (response
+  na primeira chamada, followup depois), e os fluxos ponta-a-ponta via
+  interação fake — mesma estratégia de `tests/test_dialogo.py`: compra e
+  venda debitam/creditam moedas de verdade no banco em memória, forjar sem
+  ofício recusa sem abrir o select, forjar com ofício+material crafta de
+  verdade, melhorar só lista slot equipado, desmanchar reduz a mochila,
+  outro jogador é negado, Sair desabilita tudo. `view.is_finished()` não
+  dá pra checar fora de uma conexão real (o Future interno de `stop()` só
+  é criado quando a View passa pelo dispatch de verdade) — o teste checa
+  `disabled=True` nos filhos, que é o efeito que interessa.
