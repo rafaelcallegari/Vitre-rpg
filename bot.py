@@ -931,19 +931,13 @@ async def falar(ctx, *, quem: str = ""):
         view.mensagem = await ctx.send(embed=e, view=view)
         return
 
-    if n["tipo"] in ("mercador", "ferreiro"):
-        # rpg loja morreu — cada NPC vende o seu dentro da própria conversa
-        # (ver comercio.py, importado no fim do arquivo).
-        await comercio.abrir_comercio(ctx, j, n)
-        return
-
-    e = discord.Embed(description=f"*{n['fala']}*", color=ANDARES[j["andar"]]["cor"])
-    e.set_author(name=f"{ICONES_NPC.get(n['tipo'], '•')} {nome}")
-    if n["tipo"] == "carroceiro":
-        e.set_footer(text="rpg carroca")
-    elif n["tipo"] == "taverneiro":
-        e.set_footer(text="rpg descansar")
-    await ctx.send(embed=e)
+    # mercador/ferreiro (rpg loja morreu) e agora taverneiro/carroceiro
+    # também: cada NPC oferece a própria mecânica dentro da conversa (ver
+    # comercio.py, importado no fim do arquivo). rpg comprar/vender/
+    # descansar/carroca continuam de pé — igual ao padrão de comprar/vender,
+    # descansar e carroca já funcionavam sem exigir o NPC físico por perto,
+    # então o comando avulso não morreu, só ganhou uma porta a mais.
+    await comercio.abrir_comercio(ctx, j, n)
 
 
 class PronomeView(discord.ui.View):

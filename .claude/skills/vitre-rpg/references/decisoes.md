@@ -2391,3 +2391,91 @@ vinham — e ninguém que não foi em raide sabia que slot de anel/colar existe.
   quando tudo equipado, e a conta final: `at.ataque()`/`at.defesa()`
   aplicados aos bônus mostrados batem exatamente com `s["atk"]`/`s["def"]`
   que o resto do embed já exibia.
+
+## Ações de diálogo de todos os NPCs
+
+Faltava dar às 28 NPCs (menos A Guia, carta própria) as ações que a Lore já
+descrevia. Mercador e ferreiro só tinham o botão de comércio; taverneiro e
+carroceiro nem tinham entrado no diálogo. Nenhuma sidequest neste corte — o
+que a Lore marca como gancho de quest virou resposta de texto normal, e
+`opcoes_por_estado` (existe desde 421e4e2) continua sem nenhum NPC usando.
+
+- **`rpg descansar` e `rpg carroca` NÃO viraram redirecionamento — desvio
+  deliberado do texto literal do card, confirmado com o Rafael.** O card
+  pedia "mesmo padrão do `rpg loja`", mas `rpg descansar` documentava
+  explicitamente "sem NPC físico exigido" — funciona em qualquer andar até
+  o Selo, não só nos andares 1/10 que têm taverneiro. Gutar o comando
+  quebraria descanso pros andares 2-9, uma mudança de REGRA, não só de
+  porta de entrada. `rpg carroca` tem o mesmo formato (informativo, útil
+  de qualquer andar). A pergunta que resolveu isso: os dois ficam de pé,
+  exatamente como `rpg comprar`/`rpg vender` (que também nunca exigiram
+  NPC físico por perto, e por isso sobreviveram no cartão do comércio) —
+  só `rpg loja` morreu de verdade, porque a lista que ele mostrava foi
+  substituída por dois comandos que já existiam. O menu do taverneiro/
+  carroceiro é uma PORTA A MAIS, chamando os mesmos comandos via `ShimCtx`
+  — não uma regra nova.
+- **Fileira de opções + Sair nunca hardcoded — calculada a partir de onde a
+  subclasse já parou.** `PainelComercioBase.__init__` roda depois de
+  `super().__init__()` (que já populou `self.children` com os botões dos
+  decorators da subclasse), pega `max(row) + 1` como a próxima linha livre,
+  desenha as perguntas da Lore ali, e Sair uma linha depois (ou na mesma,
+  se não teve pergunta nenhuma). Isso deixa Mercador (1 fileira de
+  mecânica), Ferreiro (2 fileiras) e Taverneiro/Carroceiro (1 fileira)
+  compartilharem a mesma base sem hardcode de número de linha em lugar
+  nenhum — um NPC com mais perguntas no futuro não quebra o layout.
+- **Sair virou 100% igual entre `DialogoView` (bot.py) e
+  `PainelComercioBase` (comercio.py)**: `BotaoOpcaoComercio`/
+  `BotaoSairComercio` são a mesma lógica de `BotaoOpcaoDialogo`/
+  `BotaoSairDialogo`, só que precisando existir em `comercio.py` (que já
+  não importa bot.py, evita circular). Duplicação de UI aceitável — são
+  ~15 linhas cada, e as duas Views têm ciclos de vida diferentes (uma só
+  conversa, outra abre sub-telas de select) que não compartilham base sem
+  forçar acoplamento entre os dois módulos.
+- **Bramm não tem `opcoes` — a chave nem existe no dict dele.** A Lore não
+  tinha pergunta nenhuma pra ele; `opcoes_do_dialogo` já trata ausência
+  igual a lista vazia (`dado.get("opcoes", [])`), então o menu dele só
+  mostra Viajar e Sair, sem fileira de pergunta no meio.
+- **Selen (andar 9) não precisou de nenhum código novo pra "não vender
+  nada".** A Lore avisa que o botão Comprar "não se aplica a ela", mas
+  como nenhuma receita de loja tem `andar_min == 9`,
+  `equipamentos_do_andar(9)` já vinha vazio — o Comprar dela cai sozinho no
+  mesmo fallback ephemeral "Nada à venda aqui agora." que qualquer andar
+  sem estoque mostraria. Conferido, não assumido (ver
+  `test_selen_comprar_nao_precisa_de_caso_especial`).
+- **A rede do Torv (Kesh, Hjalmar, Selen) foi escrita numa passada só**,
+  como o card pediu, pra não se contradizer: os três confirmam que ele
+  treinou/é conhecido por todo ferreiro da torre, os três já o convidaram
+  pra visitar/se mudar, e os três recebem a mesma recusa — ele fica porque
+  "tem gente demais contando com isso". Fecha com a fala original dele
+  ("Ninguém mais desce pra me render") em vez de contradizer.
+- **Respostas escritas por mim de novo, mesmo acordo do cartão do
+  diálogo (421e4e2).** A Lore trouxe só o tópico de cada pergunta
+  ("perguntar sobre a barraca torta"), não a fala em si — os 5 NPCs de
+  conversa que já tinham linha na Lore bateram exatamente com o que eu já
+  tinha escrito naquele cartão (nenhuma mudança), e os 18 novos (mercador/
+  ferreiro/taverneiro/carroceiro) seguem o mesmo tom.
+- **Corrigido:** a fala do Bramm em `npcs.py` dizia "três vezes por dia";
+  a Lore já tinha "quatro". Só o código estava desatualizado.
+- **`falar()` ficou mais simples, não mais complexo.** Antes tinha um
+  branch por mecânica (mercador/ferreiro→comércio, taverneiro→footer
+  "rpg descansar", carroceiro→footer "rpg carroca") mais um fallback
+  genérico que nunca era alcançado por "conversa"/"guia" (já tratados
+  antes). Agora os quatro tipos de mecânica caem numa linha só
+  (`comercio.abrir_comercio`), e o fallback — que ficou struturalmente
+  inalcançável, já que os 6 tipos de NPC do jogo têm todos um branch
+  próprio agora — foi removido.
+- **Teste**: 32 casos em `test_comercio.py` (+14) — `_opcoes_destino` com e
+  sem carroça ativa, Descansar/Viajar chamando os comandos de verdade via
+  `ShimCtx`, o embed do carroceiro mostrando os dois estados (parada agora
+  / próximo horário), Bramm só com Viajar+Sair, clicar numa pergunta edita
+  a descrição sem desabilitar o painel, `rpg descansar`/`rpg carroca`
+  continuam funcionando fora de qualquer NPC, e o caso da Selen. Mais 8
+  casos em `test_dialogo.py` (+8) — só a Guia fica sem `dialogo`, nenhuma
+  `opcoes` duplica um botão de mecânica (Comprar/Vender/Descansar/Sair/
+  Viajar), a rede do Torv menciona ele nas três respostas, `abertura`
+  sempre bate com a `fala` de `npcs.py`, Bramm sem `opcoes`, e a fala dele
+  corrigida pra "quatro vezes".
+- **Notion não atualizado nesta carta — MCP do Notion segue desconectado.**
+  Guia da Torre e Lore ficam pendentes de sincronizar manualmente quando a
+  conexão voltar (nada que mudasse a lista de comandos do jogo, só o
+  conteúdo do diálogo — os comandos digitados continuam os mesmos).

@@ -1,12 +1,16 @@
 # comercio.py
-# Comprar/vender/forjar/melhorar/desmanchar dentro do diálogo com o
-# mercador e o ferreiro -- substitui o antigo `rpg loja`. Mesmo padrão de
-# combate.py/profissoes.py: não importa bot.py (evita import circular), os
-# helpers chegam por instalar(). Ver decisoes.md § Comércio dentro do diálogo.
+# Comprar/vender/forjar/melhorar/desmanchar (mercador/ferreiro), descansar
+# (taverneiro) e viajar (carroceiro) dentro do diálogo -- substitui o antigo
+# `rpg loja`. Mesmo padrão de combate.py/profissoes.py: não importa bot.py
+# (evita import circular), os helpers chegam por instalar(). Ver
+# decisoes.md § Comércio dentro do diálogo e § Ações de diálogo de todos os NPCs.
 import discord
 
 import database as db
+import dialogos
+import npcs
 import profissoes
+import pronomes
 from game_data import ITENS, ANDARES
 
 H = {}
@@ -76,6 +80,26 @@ def _opcoes_quantidade(chave):
     ]
 
 
+def _opcoes_destino(j):
+    """Pro Viajar do carroceiro -- mesma lista que `rpg viajar` sem
+    argumento mostra (destino, custo), só que como select. O desconto da
+    carroça já sai de `custo_e_motivo_viagem`, a mesma função que `rpg
+    viajar` usa pra valer -- aqui é só pra exibir o preço antes do clique."""
+    ativa, _ = H["carroca_ativa"]()
+    gratis_carroca = ativa and H["conheceu_bramm"](j)
+    teto = min(j["andar_max"], H["LIMITE_VIAJAR"])
+    opcoes = []
+    for n in range(1, teto + 1):
+        if n == j["andar"]:
+            continue
+        custo, motivo = H["custo_e_motivo_viagem"](j, n, gratis_carroca)
+        preco = "grátis" if motivo else f"{custo} 🪙"
+        opcoes.append(discord.SelectOption(
+            label=f"{n}. {ANDARES[n]['nome']}"[:100], description=preco, value=str(n),
+        ))
+    return opcoes[:25]
+
+
 def _opcoes_equipamento_inventario(user_id):
     """Pra desmanchar -- não filtra por `vendavel` (desmanchar não checa
     isso, e o item nunca fica sem dono: vira material de volta)."""
@@ -138,21 +162,34 @@ class MenuSelecaoView(discord.ui.View):
         await self.mensagem.edit(view=self)
 
 
-# ---------------- painel principal (mercador/ferreiro) ----------------
+# ---------------- painel principal (mercador/ferreiro/taverneiro/carroceiro) ----------------
 class PainelComercioBase(discord.ui.View):
-    def __init__(self, autor_id, npc, andar_num):
-        super().__init__(timeout=180)
+    def __init__(self, autor_id, npc, andar_num, pronome):
+        super().__init__(timeout=180)   # decorators de cada subclasse já populam self.children aqui
         self.autor_id = autor_id
         self.npc = npc
         self.andar_num = andar_num
+        self.pronome = pronome
         self.mensagem = None
+        self._dado_dialogo = dialogos.DIALOGOS.get(npc.get("dialogo"), {})
+
+        # opções de diálogo (perguntas da Lore) + Sair entram numa linha
+        # livre, depois de tudo que a subclasse já desenhou por decorator --
+        # nunca hardcoded, pra não colidir com fileira de mercador (1) vs
+        # ferreiro (2). NPC sem pergunta na Lore (ex.: Bramm) só ganha Sair.
+        linha_livre = max((c.row or 0) for c in self.children) + 1 if self.children else 0
+        opcoes = npcs.opcoes_do_dialogo(npc["dialogo"], autor_id) if npc.get("dialogo") else []
+        for opcao in opcoes:
+            self.add_item(BotaoOpcaoComercio(opcao, linha_livre))
+        linha_sair = linha_livre + 1 if opcoes else linha_livre
+        saida = self._dado_dialogo.get("saida") or dialogos.SAIDA_PADRAO
+        self.add_item(BotaoSairComercio(saida, linha_sair))
 
     def embed(self, j):
         nome = f"{self.npc['nome']} {self.npc['titulo']}".strip()
-        e = discord.Embed(
-            description=f"*{self.npc['fala']}*",
-            color=ANDARES[self.andar_num]["cor"],
-        )
+        abertura = self._dado_dialogo.get("abertura", self.npc["fala"])
+        texto = pronomes.concordar(abertura, self.pronome)
+        e = discord.Embed(description=f"*{texto}*", color=ANDARES[self.andar_num]["cor"])
         e.set_author(name=f"{H['ICONES_NPC'][self.npc['tipo']]} {nome}")
         e.set_footer(text=f"Você tem {j['moedas']} moedas")
         return e
@@ -206,13 +243,37 @@ class PainelComercioBase(discord.ui.View):
             interaction, _opcoes_quantidade(chave), "Item não encontrado.", escolher_qtd,
         )
 
-    def _sair(self, interaction):
+
+class BotaoOpcaoComercio(discord.ui.Button):
+    """Uma pergunta da Lore -- mesmo papel do BotaoOpcaoDialogo da
+    DialogoView (bot.py), só que dentro do painel de comércio/serviço."""
+
+    def __init__(self, opcao, row):
+        super().__init__(label=opcao["label"][:80], style=discord.ButtonStyle.secondary, row=row)
+        self.resposta = opcao["resposta"]
+
+    async def callback(self, interaction):
         e = interaction.message.embeds[0]
-        e.description = f"*Você se despede de {self.npc['nome']}.*"
-        for item in self.children:
+        e.description = f"*{pronomes.concordar(self.resposta, self.view.pronome)}*"
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class BotaoSairComercio(discord.ui.Button):
+    """Sempre acrescentado por `PainelComercioBase.__init__` -- nunca um
+    item de `opcoes` em dialogos.py. Mesmo comportamento do Sair da
+    DialogoView: troca a descrição pela despedida e desabilita tudo."""
+
+    def __init__(self, saida, row):
+        super().__init__(label="Sair", style=discord.ButtonStyle.secondary, row=row)
+        self.saida = saida
+
+    async def callback(self, interaction):
+        e = interaction.message.embeds[0]
+        e.description = f"*{pronomes.concordar(self.saida, self.view.pronome)}*"
+        for item in self.view.children:
             item.disabled = True
-        self.stop()
-        return e
+        self.view.stop()
+        await interaction.response.edit_message(embed=e, view=self.view)
 
 
 class MercadorView(PainelComercioBase):
@@ -237,11 +298,6 @@ class MercadorView(PainelComercioBase):
         async def invocar(ctx):
             await H["vender"].callback(ctx, argumento=f"{chave} 1")
         await self._executar(interaction, invocar)
-
-    @discord.ui.button(label="Sair", style=discord.ButtonStyle.secondary, row=1)
-    async def sair_btn(self, interaction, button):
-        e = self._sair(interaction)
-        await interaction.response.edit_message(embed=e, view=self)
 
 
 class FerreiroView(PainelComercioBase):
@@ -340,19 +396,60 @@ class FerreiroView(PainelComercioBase):
             await H["_bot"].get_command("desmanchar").callback(ctx, argumento=f"{chave} 1")
         await self._executar(interaction, invocar)
 
-    # -------- fileira 3: sair
-    @discord.ui.button(label="Sair", style=discord.ButtonStyle.secondary, row=2)
-    async def sair_btn(self, interaction, button):
-        e = self._sair(interaction)
-        await interaction.response.edit_message(embed=e, view=self)
+
+class TaverneiroView(PainelComercioBase):
+    @discord.ui.button(label="Descansar", style=discord.ButtonStyle.success, row=0)
+    async def descansar_btn(self, interaction, button):
+        async def invocar(ctx):
+            await H["descansar"].callback(ctx)
+        await self._executar(interaction, invocar)
+
+
+class CarroceiroView(PainelComercioBase):
+    def embed(self, j):
+        e = super().embed(j)
+        ativa, parte_em = H["carroca_ativa"]()
+        if ativa:
+            restante = (parte_em - H["agora"]()).total_seconds()
+            estado = (
+                f"**Parada agora.** Sai às {parte_em.strftime('%H:%M')} — "
+                f"faltam **{H['fmt_tempo'](restante)}**. `rpg viajar` não custa nada enquanto ela estiver aqui."
+            )
+        else:
+            prox = H["proxima_carroca"]()
+            falta = (prox - H["agora"]()).total_seconds()
+            estado = f"Não está aqui agora. Próxima às **{prox.strftime('%H:%M')}**, em **{H['fmt_tempo'](falta)}**."
+        e.add_field(name="🐎 Horário da carroça", value=estado, inline=False)
+        return e
+
+    @discord.ui.button(label="Viajar", style=discord.ButtonStyle.success, row=0)
+    async def viajar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
+        await self.abrir_selecao(
+            interaction, _opcoes_destino(j),
+            "Nenhum destino disponível — você só destrancou este andar.", self._escolher_destino,
+        )
+
+    async def _escolher_destino(self, interaction, destino):
+        async def invocar(ctx):
+            await H["viajar"].callback(ctx, destino=int(destino))
+        await self._executar(interaction, invocar)
 
 
 # ---------------- ponto de entrada ----------------
+VIEW_POR_TIPO = {
+    "mercador": MercadorView,
+    "ferreiro": FerreiroView,
+    "taverneiro": TaverneiroView,
+    "carroceiro": CarroceiroView,
+}
+
+
 async def abrir_comercio(ctx, j, npc):
-    """Chamado por bot.py:falar() quando o NPC é mercador ou ferreiro —
-    substitui o embed estático + footer de comando de antes."""
-    view = MercadorView(ctx.author.id, npc, j["andar"]) if npc["tipo"] == "mercador" \
-        else FerreiroView(ctx.author.id, npc, j["andar"])
+    """Chamado por bot.py:falar() pros quatro tipos de NPC de mecânica
+    (mercador/ferreiro/taverneiro/carroceiro) — substitui o embed estático +
+    footer de comando de antes."""
+    view = VIEW_POR_TIPO[npc["tipo"]](ctx.author.id, npc, j["andar"], j["pronome"])
     view.mensagem = await ctx.send(embed=view.embed(j), view=view)
 
 
