@@ -111,7 +111,7 @@ ITENS = {
 
     "martelo_divino": {"loja": False, "nome": "«Martelo do Prego de Luz»", "emoji": "🔨", "tipo": "arma", "atributo": "forca", "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
     "foice_divina": {"loja": False, "nome": "«Foice do Juízo Suspenso»", "emoji": "🌫️", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
-    "cajado_divino": {"loja": False, "nome": "«Cajado do Desperto»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
+    "cajado_divino": {"loja": False, "nome": "«Cajado da Ruína»", "emoji": "🪄", "tipo": "arma", "atributo": "inteligencia", "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
     "manopla_divina": {"loja": False, "nome": "«Manoplas da Marca»", "emoji": "🥊", "tipo": "arma", "atributo": "destreza", "critico": 0.18, "bonus": 6, "elemento": "divino", "preco": 18000, "atk": 95, "andar_min": 15},
 
     # ---------------- materiais dos andares 11-15 (monstro comum) ----------------
@@ -333,12 +333,13 @@ ANDARES = {
         # duas fases, ver decisoes.md § Andar 15 — combate.py troca pra
         # "fase2" sozinho quando o hp cruza 50%, sem resetar nada da luta.
         "boss": {
-            "nome": "«O Trono Vazio»", "hp": 5580, "atk": 335, "def": 59,
+            "nome": "«Espectro do rei»", "hp": 5580, "atk": 335, "def": 59,
             "xp": 2420, "moedas": 4050, "elemento": "sombrio",
             "drops": [("sombra_dobrada", 1.0)],
             "fase2": {
-                "nome": "«O Trono Vazio — Desperto»", "atk": 375, "def": 65,
+                "nome": "«A Ruína do Rei»", "atk": 375, "def": 65,
                 "elemento": "divino", "drops": [("prego_de_luz", 1.0)],
+                "fala_derrota": "De novo não, como você está aqui, se já subiu essa torre",
             },
         },
     },

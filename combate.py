@@ -538,6 +538,8 @@ async def finalizar_vitoria(luta):
         rodape=f"Luta encerrada na rodada {luta.rodada}. Quem sobreviveu recuperou todo o HP.",
     )
     e.add_field(name="Recompensas", value="\n".join(linhas) or "Ninguém sobrou de pé.", inline=False)
+    if luta.chefe.get("fala_derrota"):
+        e.add_field(name="🗡️ Últimas palavras", value=f"*{luta.chefe['fala_derrota']}*", inline=False)
     if luta.andar_num == ANDAR_MAXIMO:
         e.add_field(
             name="🌌 O topo, outra vez",

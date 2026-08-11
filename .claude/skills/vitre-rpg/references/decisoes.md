@@ -1563,15 +1563,14 @@ depois disso é intencional, é o late game.
  (por isso o material cai na chance baixa a partir daqui), e **não guarda**
  a posição (por isso `andar`/`andar_max` voltam pro 10 e a escalada
  recomeça em `rpg viajar 11`).
-- **Achado no caminho, não mexido**: `bot.py` ainda tem um `@bot.command(name="boss", ...)`
+- **Achado no caminho, removido no cartão da guarda de main (ver § Guarda de
+ main + setup no nível do módulo)**: `bot.py` tinha um `@bot.command(name="boss", ...)`
  inteiro (resolução instantânea, motor de `simular_combate`, o mesmo de
- `cacar`/`explorar`) que faz sua própria conta de `novo_andar`/XP/drop e
- também cita "Décimo Selo". É código morto — `combate.instalar()` chama
+ `cacar`/`explorar`) que fazia sua própria conta de `novo_andar`/XP/drop e
+ também citava "Décimo Selo". Era código morto — `combate.instalar()` chama
  `bot.remove_command("boss")` antes de registrar o `boss` de verdade (por
- turnos), então esse daqui nunca roda. Não tem risco funcional (nunca é
- chamado, não precisou de reset roguelike nele), mas é lixo que vale uma
- limpeza separada — não mexi de novo porque não foi pedido e não faz
- diferença nenhuma rodando.
+ turnos), então esse ali nunca rodava. `simular_combate` continua vivo
+ (usado por `cacar`/`explorar`) — só o comando morto saiu.
 
 ## Ciclo 1 — "o banco fica seguro": WAL, backup de verdade, escada 3/1/1
 
@@ -2134,3 +2133,87 @@ o contrato de dado importa mais que o conteúdo.
 - **Resto da `DialogoView` intocado**, como pedido: `interaction_check`,
   timeout de 120s, opções normais continuando a conversa — só o
   comportamento do Sair mudou.
+
+## Guarda de main + setup no nível do módulo
+
+Fecha a fase de fundação do patch 0.3. `bot.py` tinha `bot.run(TOKEN)` solto
+no fim do arquivo — importar o módulo conectava no Discord de verdade. Já
+rodou por engano com o token real, e já custou cobertura duas vezes:
+`DialogoView` e `PainelLuta` só puderam ser verificadas à mão porque a
+suíte não conseguia importar `bot.py` sem contornar isso.
+
+- **`bot.run(TOKEN)` (com o try/finally do `db.fechar_conexao()`) foi pra
+  dentro de `if __name__ == "__main__":`.** É a mudança mínima que resolve
+  o problema descrito: só `python bot.py` de verdade conecta.
+- **As chamadas `combate.instalar(bot, globals())`, `habilidades.instalar()`,
+  `trocas.instalar()`, `guildas.instalar()`, `raide.instalar()`,
+  `agenda.instalar(bot)` e `admin.instalar(bot)` CONTINUAM no nível do
+  módulo — não viraram uma função de setup separada.** Duas razões pra
+  escolher a opção menos invasiva:
+  1. **Nenhuma delas toca banco ou rede.** `instalar()` só registra
+     comandos no `bot` e popula o dict `H` de cada módulo (`H.update(contexto)`)
+     — é registro de função, não I/O. `agenda.instalar(bot)` também só
+     registra os loops, não os inicia (`iniciar()` é quem faz isso, chamado
+     só em `on_ready`). Confirmado na prática: as 58 chamadas de `import bot`
+     que a suíte já fazia (test_morte.py, test_dialogo.py indiretamente via
+     bot.py, e agora test_andar15.py) sempre rodaram essas oito chamadas
+     de `instalar()` sem nunca precisar de rede — o único problema real
+     sempre foi o `bot.run()` no fim.
+  2. **Extrair um `setup_modulos()` só adicionaria indireção sem resolver
+     nada a mais.** O sintoma do card ("importar CONECTA no Discord") tem
+     uma causa única e pontual — um guard resolve ela inteira. Uma função
+     de setup faria sentido se algum `instalar()` precisasse rodar
+     condicionalmente (só em testes, ou só em produção), o que não é o
+     caso hoje: todo `instalar()` precisa rodar sempre que o módulo `bot`
+     existir, testes inclusos, porque `combate.H`/`habilidades.H`/etc.
+     precisam estar populados pra qualquer teste que chame uma função
+     desses módulos (ex.: `tests/test_andar15.py::test_finalizar_vitoria_*`
+     usa `combate.finalizar_vitoria()`, que lê `H['barra_hp']`).
+  Se algum `instalar()` futuro passar a tocar banco ou rede no nível do
+  módulo, essa decisão precisa ser revisitada — ver o mesmo aviso já
+  registrado em § Sobra do Cartão 4 sobre esse risco.
+- **`tests/test_bot_seguro.py`** prova a guarda de duas formas: troca
+  `commands.Bot.run` por algo que estoura `AssertionError` se for chamado
+  (determinístico, não depende de rede/DNS/timeout) e, separado, um import
+  sem patch nenhum — o item 2 do checklist do card ("importar bot num
+  shell") literalmente. `tests/test_morte.py` perdeu o workaround de
+  `patch.object(commands.Bot, "run", ...)` que precisava antes — virou
+  `import bot` direto.
+- **Limpeza de brinde**: o `@bot.command(name="boss", ...)` morto (nunca
+  rodava — `combate.instalar()` chama `bot.remove_command("boss")` antes
+  de registrar o de verdade) saiu junto, porque o rename do chefe do 15
+  passava perto do texto errado "Décimo Selo" que esse comando morto
+  carregava. `simular_combate()` continua vivo — é usado por `cacar` e
+  `explorar`, não só pelo comando morto.
+
+## Rename do chefe do andar 15
+
+- **Nome do ANDAR continua "Trono Vazio" — só o chefe mudou.** Fase 1
+  «Espectro do rei» (sombrio), fase 2 «A Ruína do Rei» (divino, nome
+  definido pelo Rafael em 10/08). HP/ATK/DEF/XP/moedas/drops das duas
+  fases intocados — só `"nome"` mudou em cada dict, e a fase 2 ganhou
+  `"fala_derrota"`.
+- **`fala_derrota` é campo genérico em `combate.py`, não um `if` pro andar
+  15.** `finalizar_vitoria()` checa `luta.chefe.get("fala_derrota")` e
+  soma um field "🗡️ Últimas palavras" se existir — qualquer chefe futuro
+  ganha a mesma revelação só escrevendo o campo, sem tocar código. Hoje só
+  o andar 15 tem: *"De novo não, como você está aqui, se já subiu essa
+  torre"* — a linha que entrega que alguém (o Herói que selou a torre, ver
+  Lore) já subiu antes.
+- **Duas armas do andar 15, duas decisões diferentes, ambas do Rafael:**
+  `cajado_divino` («Cajado do Desperto» → **«Cajado da Ruína»**, "Desperto"
+  deixou de existir como nome de ninguém) e `adaga_sombria` (**mantida**
+  «Adaga do Trono Vazio» — ela é nomeada pela sala, não pelo chefe, e o
+  andar continua se chamando Trono Vazio, então o nome dela continua
+  literalmente correto). As outras seis armas do andar (nomeadas por
+  material ou condição — Sombra Dobrada, Ferida Sombria, Silêncio
+  Ajoelhado, Prego de Luz, Juízo Suspenso, Marca) não têm nada a ver com o
+  nome do chefe e ficaram como estavam.
+- **Guia da Torre**: nada a mudar — a seção "Acima do Selo" esconde nome e
+  stats de chefe de 11-15 de propósito ("você descobre subindo"), e a
+  seção de armas elementais nunca listou as 24 individualmente. Lore
+  Vitre RPG (Notion) atualizada: tabela do elenco de chefes (fase 2 com
+  nome próprio), callout de "cargo, não pessoa" (pendência fechada), e a
+  frase sobre «Sua Majestade do Andar Nenhum» que fazia trocadilho com o
+  nome antigo do chefe ("o Trono Vazio, ocupado por si mesmo") reescrita
+  pra apontar pro nome novo sem o trocadilho quebrado.

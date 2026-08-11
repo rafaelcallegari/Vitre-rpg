@@ -3,27 +3,14 @@
 # a 30% do máximo, contador de mortes, e a reconquista do andar acima do
 # Selo (ver decisoes.md § Morte e reconquista / Roguelike acima do Selo).
 import asyncio
-import sys
-from unittest.mock import patch
 
 import andares_altos
 import database as db
 
-
-def _importar_bot():
-    """bot.py chama bot.run(TOKEN) no nível do módulo, sem guarda de
-    __main__ -- um import direto tentaria conectar no Discord de verdade.
-    Troca Bot.run por um no-op só para o import terminar sem rede; o resto
-    do módulo (registro de comandos via instalar()) não toca no Discord."""
-    if "bot" in sys.modules:
-        return sys.modules["bot"]
-    from discord.ext import commands
-    with patch.object(commands.Bot, "run", lambda self, *a, **kw: None):
-        import bot as bot_module
-    return bot_module
-
-
-bot = _importar_bot()
+# import direto e seguro -- bot.run(TOKEN) mora atrás de `if __name__ ==
+# "__main__"` desde o cartão da guarda de main (ver
+# tests/test_bot_seguro.py e decisoes.md § Guarda de main).
+import bot
 
 
 def _jogador_e_stats(andar=5, andar_max=5, moedas=1000, mortes=0):

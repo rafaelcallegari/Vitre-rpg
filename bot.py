@@ -605,85 +605,6 @@ async def explorar(ctx):
     await ctx.send(embed=e)
 
 
-@bot.command(name="boss", aliases=["chefe"])
-async def boss(ctx):
-    j = await pegar_jogador(ctx)
-    if not j:
-        return
-
-    if j["andar"] < j["andar_max"]:
-        await ctx.send(
-            f"A sala do chefe do andar {j['andar']} está vazia — você já limpou esse andar. "
-            f"Manda `rpg viajar {j['andar_max']}` pra voltar pro topo."
-        )
-        return
-
-    s = stats(j)
-    if j["hp"] < s["hp_max"] * 0.4:
-        machucado = pronomes.concordar("Você está machucad{o|a} demais", j["pronome"])
-        await ctx.send(
-            f"{machucado} ({max(0, j['hp'])}/{s['hp_max']}). "
-            f"Manda `rpg usar pocao pequena` antes."
-        )
-        return
-    if await bloqueado_por_cooldown(ctx, "boss", COOLDOWN_BOSS):
-        return
-
-    andar = ANDARES[j["andar"]]
-    chefe = andar["boss"]
-    hp_final, venceu, log = simular_combate(s, j["hp"], chefe, j["andar"])
-
-    e = discord.Embed(title=f"Chefe do andar {j['andar']} — {chefe['nome']}", color=andar["cor"])
-    e.description = "\n".join(log)
-
-    if venceu:
-        for item in rolar_drops(chefe):
-            db.add_item(j["user_id"], item)
-        nivel, xp, subiu = aplicar_xp(j, chefe["xp"])
-        novo_andar = min(j["andar"] + 1, ANDAR_MAXIMO)
-        novo_max = max(j["andar_max"], novo_andar)
-        hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
-        db.atualizar_jogador(
-            j["user_id"], hp=hp_cheio, mana=s["mana_max"], xp=xp, nivel=nivel,
-            pontos=pontos_por_subir(j, subiu),
-            moedas=j["moedas"] + chefe["moedas"], andar=novo_andar, andar_max=novo_max,
-        )
-        e.add_field(
-            name="Chefe derrotado",
-            value=f"+{chefe['xp']} XP · +{chefe['moedas']} 🪙 · 🔷 Fragmento do Selo",
-            inline=False,
-        )
-        if j["andar"] == ANDAR_MAXIMO:
-            e.add_field(
-                name="🌑 Décimo Selo",
-                value="A porta abre. Do outro lado tem uma escada que continua subindo — e ela não acaba.",
-                inline=False,
-            )
-        else:
-            e.add_field(
-                name=f"⬆️ Andar {novo_andar} destrancado",
-                value=f"**{ANDARES[novo_andar]['nome']}**\n{ANDARES[novo_andar]['descricao']}",
-                inline=False,
-            )
-            if novo_andar == ANDAR_DESBLOQUEIA_CARROCA:
-                e.add_field(
-                    name="🐎 Você conheceu Bramm",
-                    value="O carroceiro passa por aqui três vezes por dia e não cobra. `rpg carroca`",
-                    inline=False,
-                )
-        if subiu:
-            e.add_field(
-                name="Nível",
-                value=f"Você chegou ao **nível {nivel}** · +{at.PONTOS_POR_NIVEL * subiu} ponto(s).",
-                inline=False,
-            )
-    else:
-        perda = await a_processar_morte(j, s)
-        e.color = 0x8B0000
-        e.add_field(name="Derrota", value=f"O chefe continua no lugar. Você perdeu **{perda}** 🪙.", inline=False)
-    await ctx.send(embed=e)
-
-
 # ==================== andares e viagem ====================
 @bot.command(name="andar", aliases=["floor", "local"])
 async def andar_info(ctx):
@@ -1768,9 +1689,13 @@ import admin
 
 admin.instalar(bot)
 
-try:
-    bot.run(TOKEN)
-finally:
-    # conexão única de módulo (database.py) — precisa ser fechada explicitamente
-    # agora que ninguém mais fecha ela por chamada.
-    db.fechar_conexao()
+if __name__ == "__main__":
+    # guarda de main: importar este módulo (testes, um shell, outro script)
+    # não pode conectar no Discord — só rodar `python bot.py` de verdade
+    # conecta. Ver decisoes.md § Guarda de main + setup no nível do módulo.
+    try:
+        bot.run(TOKEN)
+    finally:
+        # conexão única de módulo (database.py) — precisa ser fechada explicitamente
+        # agora que ninguém mais fecha ela por chamada.
+        db.fechar_conexao()
