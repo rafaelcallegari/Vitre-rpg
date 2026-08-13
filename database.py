@@ -181,8 +181,27 @@ COLUNAS_INSTANCIAS = {
     # colunas só dizem SE a peça equipada é uma instância modificada e
     # QUAL linha de `instancias` é ela. NULL = peça comum, sem identidade
     # própria. Ver decisoes.md § Instâncias de item.
+    #
+    # CONGELADO -- não acrescente coluna nova aqui. Este dict é o gatilho
+    # de `_migrar_upgrades_para_instancias` (migração 12): qualquer coluna
+    # que falte dispara a migração de dados inteira de novo, reprocessando
+    # `upgrades` e duplicando instância (ver decisoes.md § Instâncias de
+    # item -- anel e colar também carregam instância). Slot de instância
+    # novo entra num dict/migração PRÓPRIA, só com ALTER TABLE, sem chamar
+    # a função de migração de dados.
     "arma_instancia_id": "INTEGER",
     "armadura_instancia_id": "INTEGER",
+}
+
+COLUNAS_INSTANCIA_ACESSORIOS = {
+    # mesma ideia de COLUNAS_INSTANCIAS, mas pra anel/colar -- migração 13,
+    # com guarda própria. `rpg melhorar` continua só em arma/armadura (isso
+    # não muda); estas colunas existem pra o Arcano (encantamento) ter onde
+    # guardar a instância de um acessório encantado. Nenhuma instância de
+    # acessório é criada nesta carta -- ninguém escreve nestas colunas
+    # ainda, então não há dado histórico pra migrar aqui.
+    "anel_instancia_id": "INTEGER",
+    "colar_instancia_id": "INTEGER",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -400,6 +419,22 @@ def init_db():
                 f"{mochila} na mochila, {orfas} órfã(s) descartada(s) (upgrade sem peça física)."
             )
 
+        # migração 13: anel e colar também ganham coluna de instância --
+        # só estrutura, pro Arcano (encantamento) ter onde guardar. `rpg
+        # melhorar` continua não aceitando acessório, então não existe
+        # `upgrades` de anel/colar pra migrar: só ALTER TABLE, sem chamar
+        # `_migrar_upgrades_para_instancias` (guarda própria, deliberadamente
+        # separada da migração 12 -- ver o comentário "CONGELADO" em
+        # COLUNAS_INSTANCIAS e decisoes.md § Instâncias de item -- anel e
+        # colar também carregam instância).
+        novas_acessorios_instancia = [c for c in COLUNAS_INSTANCIA_ACESSORIOS if c not in colunas]
+        if novas_acessorios_instancia:
+            for coluna in novas_acessorios_instancia:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_INSTANCIA_ACESSORIOS[coluna]}"
+                )
+            print("Banco migrado: colunas de instância criadas pra anel e colar (sem melhoria neles ainda).")
+
 
 def _migrar_upgrades_para_instancias(conn):
     """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída
@@ -584,6 +619,7 @@ def resetar_temporada():
                    forca = ?, destreza = ?, constituicao = ?, inteligencia = ?, pontos = 0,
                    arma = NULL, armadura = NULL, anel = NULL, colar = NULL,
                    arma_instancia_id = NULL, armadura_instancia_id = NULL,
+                   anel_instancia_id = NULL, colar_instancia_id = NULL,
                    classe = NULL,
                    profissao = NULL, prof_nivel = 1, prof_xp = 0,
                    andar = 1, andar_max = 1,
@@ -1005,10 +1041,12 @@ def instancias_na_mochila(user_id):
     equipados."""
     with conectar() as conn:
         jog = conn.execute(
-            "SELECT arma_instancia_id, armadura_instancia_id FROM jogadores WHERE user_id = ?",
+            """SELECT arma_instancia_id, armadura_instancia_id,
+                      anel_instancia_id, colar_instancia_id
+               FROM jogadores WHERE user_id = ?""",
             (user_id,),
         ).fetchone()
-        equipadas = {jog["arma_instancia_id"], jog["armadura_instancia_id"]} if jog else set()
+        equipadas = set(jog) if jog else set()
         rows = conn.execute("SELECT * FROM instancias WHERE dono = ?", (user_id,)).fetchall()
     return [dict(r) for r in rows if r["id"] not in equipadas]
 

@@ -2478,7 +2478,7 @@ que a Lore marca como gancho de quest virou resposta de texto normal, e
 - **Notion não atualizado nesta carta — MCP do Notion segue desconectado.**
   Guia da Torre e Lore ficam pendentes de sincronizar manualmente quando a
   conexão voltar (nada que mudasse a lista de comandos do jogo, só o
-  wording de fala).
+  conteúdo do diálogo — os comandos digitados continuam os mesmos).
 
 ## Instâncias de item — melhoria presa à peça, não mais ao jogador
 
@@ -2615,4 +2615,57 @@ acima). Sem teste automatizado dedicado pra `rpg equipar`/`vender`/
 antes desta carta pra essas quatro tampouco, só pros helpers puros de
 `profissoes.py`) — validação desses quatro é manual, jogando (ver Antes
 de subir / teste no card original).
-  conteúdo do diálogo — os comandos digitados continuam os mesmos).
+
+## Correção — anel e colar também carregam instância, e o gatilho da migração 12 tava presa a errada
+
+Bug real encontrado antes de virar incidente: acrescentar coluna nova a
+`COLUNAS_INSTANCIAS` (pra dar a anel/colar onde guardar instância, prérequisito
+do Arcano em qualquer peça) reexecutaria `_migrar_upgrades_para_instancias`
+inteira. O gatilho era "qualquer coluna do dict que falte" — `novas_instancias
+= [c for c in COLUNAS_INSTANCIAS if c not in colunas]` — e a migração de dados
+estava pendurada nesse mesmo `if`. Bastava a lista crescer pra condição virar
+verdadeira nas colunas antigas mesmo já preenchidas, reprocessando `upgrades`
+(que nunca é apagada, ver decisão original) e duplicando as 4 instâncias reais
+em produção pra 8.
+
+**Correção estrutural, não patch pontual**: a migração de dados (12) ficou
+presa às DUAS colunas originais (`arma_instancia_id`/`armadura_instancia_id`),
+marcadas **CONGELADAS** em comentário no próprio dict — nenhuma coluna nova
+entra em `COLUNAS_INSTANCIAS` nunca mais. Slot de instância novo ganha dict e
+migração PRÓPRIOS, com guarda independente. `anel_instancia_id`/
+`colar_instancia_id` entraram assim, em `COLUNAS_INSTANCIA_ACESSORIOS` /
+migração 13 — só `ALTER TABLE`, sem chamar `_migrar_upgrades_para_instancias`
+(não existe `upgrades` de acessório pra migrar: `rpg melhorar` nunca aceitou
+anel/colar, isso não mudou aqui).
+
+Descartei as outras duas formas que o card ofereceu:
+- **Flag de versão de schema** (tabela nova só pra marcar "migração X já
+  rodou") — funcionaria, mas nenhuma outra migração do projeto usa esse
+  padrão; todas se guardam por presença de coluna. Criar uma exceção só
+  pra essa migração destoaria mais do que ajudaria.
+- **Checar se `instancias` já tem linha** — frágil: um banco legítimo onde
+  todo mundo já vendeu/desmanchou a peça melhorada ficaria com `instancias`
+  vazia e a migração rodaria nunca deveria de novo, mesmo já tendo rodado.
+
+Migração 13 não muda nada visível — não é possível melhorar anel/colar
+(`rpg melhorar` continua recusando qualquer coisa que não seja `arma`/
+`armadura`, sem alteração nesta carta) nem encantar (Arcano não existe
+ainda), então as duas colunas ficam `NULL` pra todo mundo até o Arcano
+nascer. `bot.stats()` ganhou `com_instancia()` — anexa o id da instância ao
+dict do item sem aplicar bônus nenhum (diferente de `com_bonus_upgrade`,
+que só arma/armadura usam) — só pra o Arcano ter de onde ler depois, sem
+precisar reconsultar o banco. `rpg equipar` deixou de checar
+`slot in ("arma", "armadura")` em dois pontos: como os quatro slots têm
+coluna de instância agora, o código generalizado funciona igual pros
+quatro, mesmo só arma/armadura realmente populando `arma_instancia_id`/
+`armadura_instancia_id` hoje.
+
+**Teste**: `test_migracao_13_anel_colar_nao_reexecuta_a_migracao_12`
+simula exatamente o estado de produção (migração 12 já rodada, colunas de
+acessório ainda não existem) via `ALTER TABLE ... DROP COLUMN` num banco
+em memória, roda `init_db()` de novo e confere que o total de instâncias
+não muda. Validado também contra uma **cópia do `aincrad.db` real**
+(que já estava exatamente nesse estado — 4 instâncias, colunas de
+arma/armadura presentes, sem as de acessório): depois de rodar a migração
+13, continuam **4** instâncias, não 8. `COLUNAS_ESPERADAS` em
+`test_database_migracao.py` ganhou as duas colunas novas.

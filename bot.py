@@ -162,6 +162,20 @@ def com_bonus_upgrade(item_dado, instancia_id, campo):
     return item_dado
 
 
+def com_instancia(item_dado, instancia_id):
+    """Anexa o id da instância (se houver) ao dict do item, sem aplicar
+    bônus nenhum -- anel/colar não melhoram (só arma/armadura, via
+    com_bonus_upgrade). Preparo pro Arcano: quando o encantamento existir,
+    ele lê `_instancia_id` daqui em vez de reconsultar o banco -- ver
+    decisoes.md § Instâncias de item -- anel e colar também carregam
+    instância."""
+    if not instancia_id:
+        return item_dado
+    item_dado = dict(item_dado)
+    item_dado["_instancia_id"] = instancia_id
+    return item_dado
+
+
 def bonus_atributo_equipamento(*pecas):
     """Soma o bônus de atributo de qualquer peça equipada que declare
     "atributo"+"bonus" — anel, colar, e agora as armas elementais dos
@@ -177,8 +191,8 @@ def bonus_atributo_equipamento(*pecas):
 def stats(j):
     arma = com_bonus_upgrade(ITENS.get(j["arma"], {}), j["arma_instancia_id"], "atk")
     armadura = com_bonus_upgrade(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
-    anel = ITENS.get(j["anel"], {})
-    colar = ITENS.get(j["colar"], {})
+    anel = com_instancia(ITENS.get(j["anel"], {}), j["anel_instancia_id"])
+    colar = com_instancia(ITENS.get(j["colar"], {}), j["colar_instancia_id"])
     atribs_base = at.extrair(j)
     bonus = bonus_atributo_equipamento(arma, anel, colar)
     atribs = {k: atribs_base[k] + bonus.get(k, 0) for k in atribs_base}
@@ -1247,15 +1261,17 @@ async def equipar(ctx, *, texto: str = ""):
     slot = ITENS[item]["tipo"]
     # a mochila pode ter cópia comum E a instância modificada da mesma
     # chave -- equipar prefere a instância (é sempre igual ou melhor que a
-    # comum), ver decisoes.md § Instâncias de item.
-    instancia_nova = mochila_instancias.get(item) if slot in ("arma", "armadura") else None
+    # comum), ver decisoes.md § Instâncias de item. Os quatro slots têm
+    # coluna de instância (arma/armadura por melhoria, anel/colar
+    # preparados pro Arcano) -- generalizado, sem checar tipo aqui.
+    instancia_nova = mochila_instancias.get(item)
     if not instancia_nova:
         if not db.remove_item(j["user_id"], item, 1):
             await ctx.send("Você não tem esse item.")
             return
 
     antigo = j[slot]
-    antigo_instancia_id = j.get(f"{slot}_instancia_id") if slot in ("arma", "armadura") else None
+    antigo_instancia_id = j.get(f"{slot}_instancia_id")
     if antigo and not antigo_instancia_id:
         # peça comum desequipada volta a ser só quantidade. Se era uma
         # instância, ela não "volta" pra lugar nenhum -- já pertence ao
@@ -1263,9 +1279,7 @@ async def equipar(ctx, *, texto: str = ""):
         # ponteiro de slot nenhum apontando pra ela).
         db.add_item(j["user_id"], antigo, 1)
 
-    campos = {slot: item}
-    if slot in ("arma", "armadura"):
-        campos[f"{slot}_instancia_id"] = instancia_nova["id"] if instancia_nova else None
+    campos = {slot: item, f"{slot}_instancia_id": instancia_nova["id"] if instancia_nova else None}
     db.atualizar_jogador(j["user_id"], **campos)
 
     sufixo = f" +{instancia_nova['nivel_melhoria']}" if instancia_nova and instancia_nova["nivel_melhoria"] else ""

@@ -187,7 +187,11 @@ def _commitar_troca(troca):
                         f"**{ITENS[chave]['nome']}** de {nome} não está mais com ele(a) — "
                         "a oferta não vale mais."
                     )
-                if instancia_id in (jog["arma_instancia_id"], jog["armadura_instancia_id"]):
+                equipadas_agora = (
+                    jog["arma_instancia_id"], jog["armadura_instancia_id"],
+                    jog["anel_instancia_id"], jog["colar_instancia_id"],
+                )
+                if instancia_id in equipadas_agora:
                     return False, (
                         f"**{ITENS[chave]['nome']}** de {nome} foi equipada depois da oferta — "
                         "desequipa antes de tentar de novo."

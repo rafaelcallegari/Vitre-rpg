@@ -12,6 +12,7 @@ COLUNAS_ESPERADAS = {
     "respec_gratis", "titulo", "titulos_possuidos", "classe", "habilidades_extras",
     "mana_em", "anel", "colar", "acoes_andar_alto", "pronome",
     "arma_instancia_id", "armadura_instancia_id",
+    "anel_instancia_id", "colar_instancia_id",
 }
 
 
@@ -86,3 +87,35 @@ def test_migracao_instancias_descarta_linha_orfa_sem_peca_fisica():
         resultado = db._migrar_upgrades_para_instancias(conn)
     assert resultado == (0, 0, 1)
     assert db.instancias_na_mochila(1) == []
+
+
+def _contar_instancias():
+    with db.conectar() as conn:
+        return conn.execute("SELECT COUNT(*) FROM instancias").fetchone()[0]
+
+
+def test_migracao_13_anel_colar_nao_reexecuta_a_migracao_12():
+    """Regressão do bug real: acrescentar coluna nova a COLUNAS_INSTANCIAS
+    fazia `novas_instancias` voltar a ser verdadeiro e `init_db()`
+    reprocessava `upgrades` inteiro, duplicando instância. anel/colar têm
+    dict e migração (13) PRÓPRIOS agora -- este teste simula rodar a
+    migração 13 num banco que já tinha passado pela 12, sem tocar
+    `COLUNAS_INSTANCIAS` (migração 12) pra não reabrir o mesmo buraco."""
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, arma="espada_ferro")
+    _upgrade_bruto(1, "espada_ferro", 1)
+    with db.conectar() as conn:
+        db._migrar_upgrades_para_instancias(conn)   # simula a migração 12 já ter rodado
+    assert _contar_instancias() == 1
+
+    # simula um banco que já passou pela migração 12 mas ainda não pela 13
+    # (anel/colar não existiam ainda quando essas duas colunas nasceram)
+    with db.conectar() as conn:
+        conn.execute("ALTER TABLE jogadores DROP COLUMN anel_instancia_id")
+        conn.execute("ALTER TABLE jogadores DROP COLUMN colar_instancia_id")
+
+    db.init_db()   # só a migração 13 deveria rodar agora
+
+    colunas = _colunas_jogadores()
+    assert "anel_instancia_id" in colunas and "colar_instancia_id" in colunas
+    assert _contar_instancias() == 1   # não duplicou -- continua 1, não 2
