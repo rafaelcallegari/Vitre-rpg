@@ -81,9 +81,9 @@ DIALOGOS = {
         "abertura": "Vou subir amanhã. Falo isso há bastante tempo.",
         "opcoes": [
             {"label": "Perguntar por que ele espera",
-             "resposta": "Porque amanhã ainda não chegou de um jeito que me convença. Um dia chega."},
+             "resposta": "Porque amanhã ainda não chegou de um jeito que me convença. Um dia chega, ainda não estou pronto para voltar lá."},
             {"label": "Perguntar sobre a armadura dele",
-             "resposta": "Isso aqui já viu andar mais alto que este. Não pergunta o que ela viu lá."},
+             "resposta": "Isso aqui já viu andar mais alto que este. hoje é apenas um metal batido."},
         ],
         "saida": "Ele acena, sem se levantar. \"Amanhã\", ele repete, pra si mesmo.",
     },
@@ -99,7 +99,7 @@ DIALOGOS = {
         "abertura": "Mapeei os dez. O décimo primeiro se recusa a ficar no papel.",
         "opcoes": [
             {"label": "Perguntar sobre o andar 11",
-             "resposta": "Toda vez que desenho a linha, ela muda de lugar quando eu não olho. Não é o meu pulso que treme — é o andar."},
+             "resposta": "Toda vez que desenho a linha, ela muda de lugar quando eu não olho. Não é o meu pulso que treme, é o andar."},
             {"label": "Perguntar se ele já subiu",
              "resposta": "Só até onde o mapa aguenta. Depois disso é fé, não cartografia."},
         ],
@@ -126,10 +126,10 @@ DIALOGOS = {
         "saida": "Ela já está de olho no próximo cliente antes de você sair.",
     },
     "torv": {
-        "abertura": "Aposentado uma ova. Ninguém mais desce pra me render.",
+        "abertura": "Vamos para mais um dia na forja, isso por enquanto vai servir pra você.",
         "opcoes": [
             {"label": "Perguntar por que está aposentado",
-             "resposta": "Não estou. Falo isso desde que o último aprendiz subiu e nunca mais desceu pra me substituir. Fico até alguém voltar."},
+             "resposta": "Uma hora o martelo tem que repousar, nem sempre a melhor forja esta no topo."},
         ],
         "saida": "Ele volta pro fole sem se despedir — trabalho não espera despedida.",
     },
@@ -137,7 +137,7 @@ DIALOGOS = {
         "abertura": "Aqui ninguém pergunta o motivo do cansaço. Só cobra por ele.",
         "opcoes": [
             {"label": "Comprar uma cerveja",
-             "resposta": "Não vendo bebida — vendo descanso. Cerveja você acha lá fora, se sair da torre algum dia."},
+             "resposta": "Só não extrapola, o ultimo deixou a barraca da Elna torta."},
             {"label": "Perguntar da clientela",
              "resposta": "Gente cansada, gente machucada, e um ou outro que só quer conversa. Eu sirvo os três igual."},
         ],
@@ -159,7 +159,7 @@ DIALOGOS = {
         "abertura": "Vendo por aqui porque o resto da minha loja tá dois metros abaixo.",
         "opcoes": [
             {"label": "O que aconteceu para tudo estar afundado",
-             "resposta": "Ninguém sabe direito. Um dia o chão decidiu que preferia ser teto de outra coisa. Eu só me mudei antes de descobrir o motivo."},
+             "resposta": "Ninguém sabe direito. Um dia uma tempestade começou e eu só me mudei antes de descobrir o motivo."},
         ],
         "saida": "Ele volta a arrumar os potes que a maré já bagunçou de novo.",
     },
@@ -167,9 +167,9 @@ DIALOGOS = {
         "abertura": "Aço que já afundou uma vez não afunda de novo. É superstição, mas funciona.",
         "opcoes": [
             {"label": "Como ela forja debaixo d'água",
-             "resposta": "Não forjo debaixo d'água — forjo na bolsa de ar que sobrou quando tudo afundou. O fogo não sabe que devia ter apagado."},
+             "resposta": "Uso pedras vulcanicas que um rapaz trouxe para mim de andares mais altos, faz tempo que não o vejo para agradecer."},
             {"label": "Perguntar sobre Torv",
-             "resposta": "Torv? Ele martelou minha primeira peça, lá no andar de cima. Já chamei ele pra ver minha forja submersa. Disse que já tem água demais pingando no teto dele — e que alguém precisa segurar o primeiro andar."},
+             "resposta": "Torv? Ele martelou minha primeira peça, faz muito tempo que ele não sobe para os andares superiores, existem boatos que tem haver com um dos seus aprendizes."},
         ],
         "saida": "Ela volta a bater o martelo, e o som atravessa a água como se não estivesse lá.",
     },
@@ -193,7 +193,7 @@ DIALOGOS = {
         "abertura": "Compra a poção grande. Não é venda, é conselho.",
         "opcoes": [
             {"label": "Pedir um chocolate quente",
-             "resposta": "Não vendo isso — mas se você comprar a poção grande, eu finjo que foi chocolate. Combinado?"},
+             "resposta": "Não vendo isso, mas se você comprar a poção grande, eu finjo que foi chocolate. Combinado?"},
         ],
         "saida": "Ele já está de volta ao trenó, ajeitando os potes pro próximo cliente.",
     },
@@ -201,7 +201,7 @@ DIALOGOS = {
         "abertura": "Têmpera no lago. A lâmina grita e depois nunca mais reclama.",
         "opcoes": [
             {"label": "Perguntar sobre Torv",
-             "resposta": "Todo ferreiro dessa torre segurou o martelo pela primeira vez com o Torv. Chamei ele pra ver o gelo aqui em cima. Ele disse que já é frio o bastante lá embaixo, sem precisar subir escada nenhuma."},
+             "resposta": "Todo ferreiro dessa torre segurou o martelo pela primeira vez com o Torv. existem boatos dizendo que um aventureiro pediu a Torv uma arma perigosa, Torv não queria fazer, mas quando a fez, o arrependimento foi tão grande que ele voltou para o andar 1."},
         ],
         "saida": "Ele mergulha a lâmina de novo, e o vapor sobe entre vocês dois.",
     },
@@ -211,7 +211,7 @@ DIALOGOS = {
         "abertura": "Lamparina acesa não quer dizer que tem gente. Quer dizer que teve.",
         "opcoes": [
             {"label": "O que tem no vagão 13",
-             "resposta": "Ninguém abre o vagão 13. Não porque é proibido — porque ninguém quis ser o primeiro a descobrir por quê."},
+             "resposta": "Ninguém abre o vagão 13. Não porque é proibido, porque ninguém quis ser o primeiro a descobrir por quê."},
         ],
         "saida": "Ele baixa a voz antes de virar de costas, como se o vagão pudesse ouvir.",
     },
@@ -221,7 +221,7 @@ DIALOGOS = {
         "abertura": "Sacode a roupa antes de entrar. A cinza aqui pega carona.",
         "opcoes": [
             {"label": "Por que aqui chove cinzas",
-             "resposta": "Alguma coisa queimou faz tempo e nunca parou de cair. Eu só varro. Não pergunto o que era."},
+             "resposta": "Minha avó dizia que antes aqui era um lugar de luz, calor e sol, mas um dia alguém tentou ser maior que a luz e apagou o fogo destas terras."},
         ],
         "saida": "Ela sacode o próprio avental, e mais cinza sobe no ar entre vocês.",
     },
@@ -229,7 +229,7 @@ DIALOGOS = {
         "abertura": "Não forjo com fogo. Forjo com o que sobrou dele.",
         "opcoes": [
             {"label": "Por que o fogo se apagou",
-             "resposta": "Não apagou. Só parou de precisar de chama pra continuar queimando. Isso devia te preocupar mais do que preocupa."},
+             "resposta": "Um aventureiro, decidiu que queria governar essas terras, o que você esta vendo é as consequências da decisão de um de vocês."},
         ],
         "saida": "Ela volta a bater a bigorna, e a brasa nela pisca como se respirasse.",
     },
@@ -249,7 +249,7 @@ DIALOGOS = {
         "abertura": "Não olha pra baixo. Não por medo — é que não tem baixo.",
         "opcoes": [
             {"label": "O que existe além do céu",
-             "resposta": "Mais céu. E depois disso, o Selo. Eu já subi o balão até onde dava — o que vem depois não é rota de comércio."},
+             "resposta": "Mais céu. E depois disso, o Selo. Eu já subi o balão até onde dava, não me atrevo a subir mais que isso, deixo essa aventura para vocês."},
         ],
         "saida": "Ele ajusta as cordas do balão, sem tirar os olhos do horizonte.",
     },
@@ -257,9 +257,9 @@ DIALOGOS = {
         "abertura": "O que eu faço aqui, ninguém faz mais acima. Escolhe com calma.",
         "opcoes": [
             {"label": "Perguntar sobre Torv",
-             "resposta": "O Torv foi o primeiro nome que ouvi quando escolhi esse ofício — mesmo aqui em cima, tão longe do andar dele. Já mandei convite pra ele conhecer a forja do Selo. A resposta foi a mesma de sempre: ele fica onde está, porque tem gente demais contando com isso."},
+             "resposta": "O Torv foi o primeiro nome que ouvi quando escolhi esse ofício, mesmo aqui em cima, tão longe do andar dele. Ele continua lá embaixo? Claro que sim, nunca se perdoou pela arma que forjou, mas não o culpo, qualquer um confiaria em seu aprendiz."},
             {"label": "Perguntar sobre o Selo",
-             "resposta": "O Selo não é peça que se forja — é peça que se fecha. Eu só faço o que sobra depois dele: as armas que carregam o nome de quem passou."},
+             "resposta": "O Selo foi criado para proteger os 10 andares do que há de pior lá em cima. Foi criado por um heroí, em uma missão quase impossivel, ele e sua escudeira subiram e se trancaram lá pra cima, nunca mais tivemos noticias."},
         ],
         "saida": "Ela volta pra bancada sem dizer mais nada — aqui, o trabalho fala por ela.",
     },

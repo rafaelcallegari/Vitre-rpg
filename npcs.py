@@ -77,7 +77,7 @@ NPCS = {
         {"nome": "Elna", "titulo": "da Barraca Torta", "tipo": "mercador", "dialogo": "elna",
          "fala": "Poção é poção. Bebe rápido que o gosto passa."},
         {"nome": "Torv", "titulo": "o Ferreiro Aposentado", "tipo": "ferreiro", "dialogo": "torv",
-         "fala": "Aposentado uma ova. Ninguém mais desce pra me render."},
+         "fala": "Vamos para mais um dia na forja, isso por enquanto vai servir pra você."},
         {"nome": "Pip", "titulo": "o Menino que Conta", "tipo": "conversa", "dialogo": "pip",
          "fala": "Já contei os degraus até em cima. Deu um número que não cabe na boca."},
         {"nome": "Sera", "titulo": "a Taverneira", "tipo": "taverneiro", "dialogo": "sera",
