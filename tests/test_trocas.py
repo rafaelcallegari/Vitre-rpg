@@ -74,16 +74,54 @@ def test_condicao_de_corrida_item_removido_por_fora_falha_e_nao_move_nada():
     assert _inventario(2) == {}
 
 
-def test_estado_invalido_upgrade_aplicado_por_fora_devolve_false_sem_excecao():
+def test_peca_melhorada_pode_ser_trocada_e_o_bonus_viaja_junto():
+    """O bloqueio de peça melhorada saiu -- agora ela é uma instância, e
+    trocar só muda o `dono`. Ver decisoes.md § Instâncias de item."""
     _criar_par()
-    db.add_item(1, "espada_ferro", 1)
+    instancia_id = db.criar_instancia(1, "espada_ferro", nivel_melhoria=2)
+    db.atualizar_jogador(1, arma="espada_ferro", arma_instancia_id=instancia_id)
+    db.atualizar_jogador(1, arma=None, arma_instancia_id=None)  # desequipa: agora "na mochila"
 
     troca = trocas.Troca(1, 2, andar=1)
-    troca.ofertas[1] = {"itens": {"espada_ferro": 1}, "moedas": 0}
-    troca.ofertas[2] = {"itens": {}, "moedas": 0}
+    troca.ofertas[1] = {"itens": {}, "instancias": {"espada_ferro": instancia_id}, "moedas": 0}
+    troca.ofertas[2] = {"itens": {}, "instancias": {}, "moedas": 0}
 
-    # por fora: a peça foi melhorada depois que a oferta foi montada
-    db.set_upgrade(1, "espada_ferro", 1)
+    sucesso, motivo = trocas._commitar_troca(troca)
+    assert (sucesso, motivo) == (True, None)
+
+    instancia = db.get_instancia(instancia_id)
+    assert instancia["dono"] == 2
+    assert instancia["nivel_melhoria"] == 2   # o bônus viajou junto
+
+
+def test_estado_invalido_instancia_equipada_por_fora_devolve_false_sem_excecao():
+    _criar_par()
+    instancia_id = db.criar_instancia(1, "espada_ferro", nivel_melhoria=1)
+
+    troca = trocas.Troca(1, 2, andar=1)
+    troca.ofertas[1] = {"itens": {}, "instancias": {"espada_ferro": instancia_id}, "moedas": 0}
+    troca.ofertas[2] = {"itens": {}, "instancias": {}, "moedas": 0}
+
+    # por fora: a peça foi equipada depois que a oferta foi montada
+    db.atualizar_jogador(1, arma="espada_ferro", arma_instancia_id=instancia_id)
+
+    sucesso, motivo = trocas._commitar_troca(troca)
+    assert sucesso is False
+    assert isinstance(motivo, str) and motivo
+    assert db.get_instancia(instancia_id)["dono"] == 1   # nada moveu
+
+
+def test_estado_invalido_instancia_nao_e_mais_do_ofertante_devolve_false():
+    _criar_par()
+    instancia_id = db.criar_instancia(1, "espada_ferro", nivel_melhoria=1)
+
+    troca = trocas.Troca(1, 2, andar=1)
+    troca.ofertas[1] = {"itens": {}, "instancias": {"espada_ferro": instancia_id}, "moedas": 0}
+    troca.ofertas[2] = {"itens": {}, "instancias": {}, "moedas": 0}
+
+    # por fora: a instância já tinha ido pra outro jogador (ex: outra troca)
+    with db.conectar() as conn:
+        conn.execute("UPDATE instancias SET dono = 3 WHERE id = ?", (instancia_id,))
 
     sucesso, motivo = trocas._commitar_troca(troca)
     assert sucesso is False

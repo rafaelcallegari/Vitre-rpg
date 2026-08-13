@@ -146,15 +146,19 @@ def separar_quantidade(texto):
     return texto.strip(), 1
 
 
-def com_bonus_upgrade(item_dado, item_chave, user_id, campo):
-    """Copia o item aplicando +12% no atk/def por nivel de melhoria (+1/+2)."""
-    if not item_chave or campo not in item_dado:
+def com_bonus_upgrade(item_dado, instancia_id, campo):
+    """Copia o item aplicando +12% no atk/def por nivel de melhoria (+1/+2).
+    A melhoria mora na instância agora (id no slot), não mais no par
+    (jogador, item) -- ver decisoes.md § Instâncias de item."""
+    if not instancia_id or campo not in item_dado:
         return item_dado
-    nivel = db.get_upgrade(user_id, item_chave)
+    instancia = db.get_instancia(instancia_id)
+    nivel = instancia["nivel_melhoria"] if instancia else 0
     if not nivel:
         return item_dado
     item_dado = dict(item_dado)
     item_dado[campo] = int(item_dado[campo] * (1 + 0.12 * nivel))
+    item_dado["_nivel_melhoria"] = nivel
     return item_dado
 
 
@@ -171,8 +175,8 @@ def bonus_atributo_equipamento(*pecas):
 
 
 def stats(j):
-    arma = com_bonus_upgrade(ITENS.get(j["arma"], {}), j["arma"], j["user_id"], "atk")
-    armadura = com_bonus_upgrade(ITENS.get(j["armadura"], {}), j["armadura"], j["user_id"], "def")
+    arma = com_bonus_upgrade(ITENS.get(j["arma"], {}), j["arma_instancia_id"], "atk")
+    armadura = com_bonus_upgrade(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
     anel = ITENS.get(j["anel"], {})
     colar = ITENS.get(j["colar"], {})
     atribs_base = at.extrair(j)
@@ -192,7 +196,7 @@ def stats(j):
     return s
 
 
-def texto_equipamento(s, user_id):
+def texto_equipamento(s):
     """Uma linha por slot (arma/armadura/anel/colar) pro `rpg status` — lê o
     que `stats()` já resolveu, não recalcula bônus nenhum. Slot vazio
     aparece como vazio de propósito: é como quem nunca foi em raide
@@ -208,13 +212,13 @@ def texto_equipamento(s, user_id):
         return f"{nome} — {rotulo_fn(chave, dado)}"
 
     def rotulo_arma(chave, dado):
-        nivel = db.get_upgrade(user_id, chave)
+        nivel = dado.get("_nivel_melhoria", 0)
         sufixo = f" +{nivel}" if nivel else ""
         sigla = at.ATRIBUTOS[s["atributo_arma"]]["sigla"]
         return f"+{dado['atk']} ATK{sufixo} ({sigla})"
 
     def rotulo_armadura(chave, dado):
-        nivel = db.get_upgrade(user_id, chave)
+        nivel = dado.get("_nivel_melhoria", 0)
         sufixo = f" +{nivel}" if nivel else ""
         return f"+{dado['def']} DEF{sufixo}"
 
@@ -1062,6 +1066,10 @@ async def inventario(ctx, pagina: int = 1):
         (f"{ITENS[i['item']]['emoji']} {ITENS[i['item']]['nome']}", f"x{i['qtd']}")
         for i in itens if i["item"] in ITENS
     ]
+    entradas += [
+        (f"{ITENS[i['item']]['emoji']} {ITENS[i['item']]['nome']} +{i['nivel_melhoria']}", "x1")
+        for i in db.instancias_na_mochila(j["user_id"]) if i["item"] in ITENS
+    ]
     await paginacao.enviar_paginado(
         ctx, entradas, f"Mochila de {j['nome']}", 0xC9ADA7,
         rodape_extra=f"🪙 {j['moedas']} moedas", pagina_inicial=pagina,
@@ -1137,9 +1145,10 @@ async def vender(ctx, *, argumento: str = ""):
         await ctx.send("Uso: `rpg vender <item> <quantidade>`.")
         return
     texto, qtd = separar_quantidade(argumento)
-    possuidos = [i["item"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS]
-    item = encontrar_item(texto, possuidos)
-    if not item or not db.tem_item(j["user_id"], item, qtd):
+    inventario_qtd = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
+    mochila_instancias = {i["item"]: i for i in db.instancias_na_mochila(j["user_id"])}
+    item = encontrar_item(texto, set(inventario_qtd) | set(mochila_instancias))
+    if not item:
         await ctx.send("Você não tem isso nessa quantidade.")
         return
     dado = ITENS[item]
@@ -1149,11 +1158,31 @@ async def vender(ctx, *, argumento: str = ""):
             f"material de fabricação. Guarda."
         )
         return
+
     unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
-    total = unitario * qtd
-    db.remove_item(j["user_id"], item, qtd)
-    db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + total)
-    await ctx.send(f"Vendeu **{dado['nome']}** x{qtd} por {total} 🪙.")
+    plain_qtd = inventario_qtd.get(item, 0)
+    instancia = mochila_instancias.get(item)
+
+    if plain_qtd >= qtd:
+        # prioriza cópia comum -- não mexe numa peça melhorada à toa quando
+        # existe cópia comum de sobra pra atender o pedido
+        total = unitario * qtd
+        db.remove_item(j["user_id"], item, qtd)
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + total)
+        await ctx.send(f"Vendeu **{dado['nome']}** x{qtd} por {total} 🪙.")
+        return
+
+    if instancia and plain_qtd == 0 and qtd == 1:
+        # única cópia é a peça melhorada -- preço reflete o bônus (mesma
+        # curva de +12%/nível do combate, ver decisoes.md § Instâncias)
+        total = int(unitario * (1 + 0.12 * instancia["nivel_melhoria"]))
+        db.excluir_instancia(instancia["id"])
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + total)
+        sufixo = f" +{instancia['nivel_melhoria']}" if instancia["nivel_melhoria"] else ""
+        await ctx.send(f"Vendeu **{dado['nome']}{sufixo}** por {total} 🪙.")
+        return
+
+    await ctx.send("Você não tem isso nessa quantidade.")
 
 
 @bot.command(name="usar", aliases=["use", "u"])
@@ -1201,8 +1230,9 @@ async def equipar(ctx, *, texto: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
         return
-    possuidos = [i["item"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS]
-    item = encontrar_item(texto, possuidos)
+    inventario_qtd = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
+    mochila_instancias = {i["item"]: i for i in db.instancias_na_mochila(j["user_id"])}
+    item = encontrar_item(texto, set(inventario_qtd) | set(mochila_instancias))
     if not item or ITENS[item]["tipo"] not in ("arma", "armadura", "anel", "colar"):
         await ctx.send("Você não tem esse equipamento na mochila.")
         return
@@ -1213,15 +1243,33 @@ async def equipar(ctx, *, texto: str = ""):
             f"{j['andar_max']}. Fica guardado na mochila até você chegar lá."
         )
         return
-    if not db.remove_item(j["user_id"], item, 1):
-        await ctx.send("Você não tem esse item.")
-        return
+
     slot = ITENS[item]["tipo"]
+    # a mochila pode ter cópia comum E a instância modificada da mesma
+    # chave -- equipar prefere a instância (é sempre igual ou melhor que a
+    # comum), ver decisoes.md § Instâncias de item.
+    instancia_nova = mochila_instancias.get(item) if slot in ("arma", "armadura") else None
+    if not instancia_nova:
+        if not db.remove_item(j["user_id"], item, 1):
+            await ctx.send("Você não tem esse item.")
+            return
+
     antigo = j[slot]
-    if antigo:
+    antigo_instancia_id = j.get(f"{slot}_instancia_id") if slot in ("arma", "armadura") else None
+    if antigo and not antigo_instancia_id:
+        # peça comum desequipada volta a ser só quantidade. Se era uma
+        # instância, ela não "volta" pra lugar nenhum -- já pertence ao
+        # jogador e passa a morar na mochila sozinha (estado derivado, sem
+        # ponteiro de slot nenhum apontando pra ela).
         db.add_item(j["user_id"], antigo, 1)
-    db.atualizar_jogador(j["user_id"], **{slot: item})
-    msg = f"Equipou {ITENS[item]['emoji']} **{ITENS[item]['nome']}**."
+
+    campos = {slot: item}
+    if slot in ("arma", "armadura"):
+        campos[f"{slot}_instancia_id"] = instancia_nova["id"] if instancia_nova else None
+    db.atualizar_jogador(j["user_id"], **campos)
+
+    sufixo = f" +{instancia_nova['nivel_melhoria']}" if instancia_nova and instancia_nova["nivel_melhoria"] else ""
+    msg = f"Equipou {ITENS[item]['emoji']} **{ITENS[item]['nome']}{sufixo}**."
     if antigo:
         msg += f" {ITENS[antigo]['nome']} voltou pra mochila."
     await ctx.send(msg)
@@ -1256,7 +1304,7 @@ async def status(ctx):
         ),
         inline=False,
     )
-    e.add_field(name="Equipado", value=texto_equipamento(s, j["user_id"]), inline=False)
+    e.add_field(name="Equipado", value=texto_equipamento(s), inline=False)
     custo_respec = "grátis" if j["respec_gratis"] else f"{at.custo_respec(j['nivel'])} 🪙"
     e.set_footer(text=f"rpg upar <atributo> <qtd> · rpg respec ({custo_respec})")
     await ctx.send(embed=e)
@@ -1633,7 +1681,7 @@ def embed_ajuda():
             "`rpg guilda aceitar/recusar <nome>` · `rpg guilda convites` — convite vale 24h\n"
             "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro\n"
             "`rpg guilda bau` · `depositar <item> <qtd>` · `sacar <item> <qtd>` · `log`\n"
-            "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, 1x/dia por guilda"
+            "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, a cada 2h por guilda"
         ),
         inline=False,
     )

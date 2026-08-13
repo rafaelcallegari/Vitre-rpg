@@ -29,9 +29,18 @@ def test_stats_expoe_a_peca_resolvida_quando_equipada():
     assert dado["atk"] == 8   # sem melhoria, é o valor cru do item
 
 
+def _melhorar(user_id, slot, item, nivel):
+    """Simula uma peça equipada e melhorada -- cria a instância e aponta o
+    slot pra ela, mesmo caminho que `rpg melhorar` usa na primeira melhoria."""
+    instancia_id = db.criar_instancia(user_id, item, nivel)
+    db.atualizar_jogador(user_id, **{f"{slot}_instancia_id": instancia_id})
+    return instancia_id
+
+
 def test_stats_expoe_o_bonus_de_melhoria_ja_aplicado_na_arma():
     j = _jogador(arma="espada_ferro")
-    db.set_upgrade(1, "espada_ferro", 2)
+    _melhorar(1, "arma", "espada_ferro", 2)
+    j = db.get_jogador(1)
     s = bot.stats(j)
     _, dado = s["equipamento"]["arma"]
     assert dado["atk"] == int(8 * (1 + 0.12 * 2))   # mesma conta de com_bonus_upgrade
@@ -40,7 +49,7 @@ def test_stats_expoe_o_bonus_de_melhoria_ja_aplicado_na_arma():
 def test_texto_equipamento_marca_slot_vazio():
     j = _jogador()
     s = bot.stats(j)
-    texto = bot.texto_equipamento(s, 1)
+    texto = bot.texto_equipamento(s)
     assert texto.count("*vazio*") == 4   # arma, armadura, anel e colar
 
 
@@ -48,7 +57,7 @@ def test_texto_equipamento_mostra_nome_e_bonus_de_cada_peca():
     j = _jogador(arma="espada_ferro", armadura="couro_batido",
                   anel="anel_forca", colar="colar_inteligencia")
     s = bot.stats(j)
-    texto = bot.texto_equipamento(s, 1)
+    texto = bot.texto_equipamento(s)
     assert "Espada de Ferro" in texto and "+8 ATK" in texto
     assert "Couro Batido" in texto and "+8 DEF" in texto
     assert "Anel do Punho Firme" in texto and "+4 FOR" in texto
@@ -58,16 +67,17 @@ def test_texto_equipamento_mostra_nome_e_bonus_de_cada_peca():
 
 def test_texto_equipamento_mostra_o_nivel_de_melhoria():
     j = _jogador(arma="espada_ferro")
-    db.set_upgrade(1, "espada_ferro", 2)
+    _melhorar(1, "arma", "espada_ferro", 2)
+    j = db.get_jogador(1)
     s = bot.stats(j)
-    texto = bot.texto_equipamento(s, 1)
+    texto = bot.texto_equipamento(s)
     assert "+2" in texto
 
 
 def test_texto_equipamento_sem_melhoria_nao_mostra_nivel():
     j = _jogador(arma="espada_ferro")
     s = bot.stats(j)
-    texto = bot.texto_equipamento(s, 1)
+    texto = bot.texto_equipamento(s)
     linha_arma = next(l for l in texto.splitlines() if "Espada de Ferro" in l)
     assert "+8 ATK (FOR)" in linha_arma   # nada de "+0" ou "+None" sobrando
 
@@ -78,7 +88,7 @@ def test_soma_dos_bonus_bate_com_ataque_e_defesa_mostrados():
     com o valor final que `rpg status` mostra."""
     j = _jogador(arma="espada_ferro", armadura="couro_batido",
                   anel="anel_forca", colar="colar_inteligencia")
-    db.set_upgrade(1, "espada_ferro", 2)
+    _melhorar(1, "arma", "espada_ferro", 2)
     j = db.get_jogador(1)
     s = bot.stats(j)
 

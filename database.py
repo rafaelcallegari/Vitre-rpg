@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS upgrades (
     nivel   INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, item)
 );
+CREATE TABLE IF NOT EXISTS instancias (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    dono                  INTEGER,
+    item                  TEXT,
+    nivel_melhoria        INTEGER DEFAULT 0,
+    encantamento_atributo TEXT,
+    encantamento_valor    INTEGER
+);
 CREATE TABLE IF NOT EXISTS guildas (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     nome       TEXT UNIQUE,
@@ -166,6 +174,15 @@ COLUNAS_PRONOME = {
     # default 'elu' de propósito -- não atribui gênero a ninguém que já
     # jogava antes da coluna existir (ver decisoes.md § pronomes do jogador)
     "pronome": "TEXT NOT NULL DEFAULT 'elu'",
+}
+
+COLUNAS_INSTANCIAS = {
+    # arma/armadura continuam guardando a CHAVE do item, sempre -- essas
+    # colunas só dizem SE a peça equipada é uma instância modificada e
+    # QUAL linha de `instancias` é ela. NULL = peça comum, sem identidade
+    # própria. Ver decisoes.md § Instâncias de item.
+    "arma_instancia_id": "INTEGER",
+    "armadura_instancia_id": "INTEGER",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -362,6 +379,94 @@ def init_db():
                 )
             print("Banco migrado: pronome adicionado (default 'elu' pra quem já jogava).")
 
+        # migração 12: instâncias de item -- a melhoria (+1/+2) passa a
+        # ficar presa à PEÇA (id próprio em `instancias`), não mais ao par
+        # (jogador, item) em `upgrades`. Motivo: duas cópias do mesmo item
+        # eram indistinguíveis, e o encantamento (Arcano, card futuro)
+        # precisa viajar com a peça numa troca -- `upgrades` não viajava.
+        # `upgrades` continua no schema (nunca se dropa tabela com dado
+        # real), só para de ser escrita a partir daqui. Roda uma vez só,
+        # no mesmo bloco que cria as colunas -- ver decisoes.md § Instâncias
+        # de item pras regras de cada caso (equipada / na mochila / órfã).
+        novas_instancias = [c for c in COLUNAS_INSTANCIAS if c not in colunas]
+        if novas_instancias:
+            for coluna in novas_instancias:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_INSTANCIAS[coluna]}"
+                )
+            equipadas, mochila, orfas = _migrar_upgrades_para_instancias(conn)
+            print(
+                f"Banco migrado: instâncias de item criadas -- {equipadas} equipada(s), "
+                f"{mochila} na mochila, {orfas} órfã(s) descartada(s) (upgrade sem peça física)."
+            )
+
+
+def _migrar_upgrades_para_instancias(conn):
+    """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída
+    do corpo de init_db() pra dar pra testar os três casos isoladamente
+    (equipada / uma cópia na mochila / órfã) sem precisar fingir schema
+    antigo -- ver tests/test_database_migracao.py e decisoes.md § Instâncias
+    de item. Só chamada de dentro do bloco `if novas_instancias` acima
+    (roda uma vez, quando as colunas de instância ainda não existiam)."""
+    equipadas = mochila = orfas = 0
+    for row in conn.execute("SELECT user_id, item, nivel FROM upgrades WHERE nivel > 0").fetchall():
+        user_id, item, nivel = row["user_id"], row["item"], row["nivel"]
+        jog = conn.execute(
+            "SELECT arma, armadura FROM jogadores WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not jog:
+            orfas += 1
+            continue
+
+        if jog["arma"] == item:
+            slot = "arma"
+        elif jog["armadura"] == item:
+            slot = "armadura"
+        else:
+            slot = None
+
+        if slot:
+            cur = conn.execute(
+                "INSERT INTO instancias (dono, item, nivel_melhoria) VALUES (?, ?, ?)",
+                (user_id, item, nivel),
+            )
+            conn.execute(
+                f"UPDATE jogadores SET {slot}_instancia_id = ? WHERE user_id = ?",
+                (cur.lastrowid, user_id),
+            )
+            equipadas += 1
+            continue
+
+        inv = conn.execute(
+            "SELECT qtd FROM inventario WHERE user_id = ? AND item = ?", (user_id, item)
+        ).fetchone()
+        if inv and inv["qtd"] > 0:
+            # várias cópias comuns + uma linha de upgrade: só UMA cópia
+            # vira a instância melhorada, o resto continua comum -- o jogo
+            # nunca soube diferenciar cópias além dessa única linha salva,
+            # não tem como saber qual era "a" cópia melhorada além de
+            # tirar uma da pilha.
+            conn.execute(
+                "INSERT INTO instancias (dono, item, nivel_melhoria) VALUES (?, ?, ?)",
+                (user_id, item, nivel),
+            )
+            conn.execute(
+                "UPDATE inventario SET qtd = qtd - 1 WHERE user_id = ? AND item = ?",
+                (user_id, item),
+            )
+            conn.execute(
+                "DELETE FROM inventario WHERE user_id = ? AND item = ? AND qtd <= 0",
+                (user_id, item),
+            )
+            mochila += 1
+        else:
+            # linha órfã: upgrade salvo pra um item que o jogador não tem
+            # mais nem equipado nem na mochila -- não existe peça física
+            # pra prender a instância, descarta.
+            orfas += 1
+
+    return equipadas, mochila, orfas
+
 
 # ---------------- jogadores ----------------
 def get_jogador(user_id):
@@ -478,6 +583,7 @@ def resetar_temporada():
                    hp = ?, mana = ?,
                    forca = ?, destreza = ?, constituicao = ?, inteligencia = ?, pontos = 0,
                    arma = NULL, armadura = NULL, anel = NULL, colar = NULL,
+                   arma_instancia_id = NULL, armadura_instancia_id = NULL,
                    classe = NULL,
                    profissao = NULL, prof_nivel = 1, prof_xp = 0,
                    andar = 1, andar_max = 1,
@@ -487,6 +593,7 @@ def resetar_temporada():
         conn.execute("DELETE FROM inventario")
         conn.execute("DELETE FROM cooldowns")
         conn.execute("DELETE FROM upgrades")
+        conn.execute("DELETE FROM instancias")
         conn.execute("DELETE FROM chefes_derrotados")
     return afetados
 
@@ -853,29 +960,57 @@ def get_inventario(user_id):
     return [dict(r) for r in rows]
 
 
-# ---------------- upgrades de equipamento ----------------
-# Nivel de melhoria (+1/+2) fica preso ao par (user_id, item), nao ao slot
-# equipado nem a' quantidade em mochila — sobrevive a desequipar/reequipar.
-# Se o jogador tiver mais de uma copia do mesmo item, elas compartilham o
-# mesmo nivel (o jogo nao distingue copias individuais do mesmo equipamento).
-def get_upgrade(user_id, item):
+# ---------------- instâncias de item ----------------
+# Peça comum é só quantidade em `inventario`, sem identidade -- vira
+# instância (linha própria, com dono e id) só quando recebe melhoria ou
+# encantamento (encantamento ainda não existe, ver decisoes.md). Equipada:
+# o dono aponta pra ela via jogadores.<slot>_instancia_id (jogadores.<slot>
+# continua guardando a CHAVE do item, sempre -- a coluna de instância só
+# diz SE e QUAL cópia daquela chave é a modificada). Desequipada: a
+# instância "mora" na mochila -- não existe linha própria pra isso, o
+# estado é derivado (pertence ao dono e nenhum slot dele aponta pro id
+# dela). Substitui a tabela `upgrades` (que fica no schema, sem uso, por
+# nunca se dropar tabela com dado real -- ver decisoes.md § Instâncias).
+def criar_instancia(dono, item, nivel_melhoria=0):
     with conectar() as conn:
-        row = conn.execute(
-            "SELECT nivel FROM upgrades WHERE user_id = ? AND item = ?", (user_id, item)
+        cur = conn.execute(
+            "INSERT INTO instancias (dono, item, nivel_melhoria) VALUES (?, ?, ?)",
+            (dono, item, nivel_melhoria),
+        )
+    return cur.lastrowid
+
+
+def get_instancia(instancia_id):
+    if not instancia_id:
+        return None
+    with conectar() as conn:
+        row = conn.execute("SELECT * FROM instancias WHERE id = ?", (instancia_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_nivel_melhoria(instancia_id, nivel):
+    with conectar() as conn:
+        conn.execute("UPDATE instancias SET nivel_melhoria = ? WHERE id = ?", (nivel, instancia_id))
+
+
+def excluir_instancia(instancia_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM instancias WHERE id = ?", (instancia_id,))
+
+
+def instancias_na_mochila(user_id):
+    """Instâncias do jogador que não estão equipadas em slot nenhum agora
+    -- 'na mochila' é estado derivado, não uma coluna própria: compara
+    contra os ponteiros de jogadores pra descobrir quais ids estão
+    equipados."""
+    with conectar() as conn:
+        jog = conn.execute(
+            "SELECT arma_instancia_id, armadura_instancia_id FROM jogadores WHERE user_id = ?",
+            (user_id,),
         ).fetchone()
-    return row["nivel"] if row else 0
-
-
-def set_upgrade(user_id, item, nivel):
-    with conectar() as conn:
-        if nivel <= 0:
-            conn.execute("DELETE FROM upgrades WHERE user_id = ? AND item = ?", (user_id, item))
-        else:
-            conn.execute(
-                """INSERT INTO upgrades (user_id, item, nivel) VALUES (?, ?, ?)
-                   ON CONFLICT(user_id, item) DO UPDATE SET nivel = excluded.nivel""",
-                (user_id, item, nivel),
-            )
+        equipadas = {jog["arma_instancia_id"], jog["armadura_instancia_id"]} if jog else set()
+        rows = conn.execute("SELECT * FROM instancias WHERE dono = ?", (user_id,)).fetchall()
+    return [dict(r) for r in rows if r["id"] not in equipadas]
 
 
 # ---------------- cooldowns ----------------

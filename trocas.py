@@ -69,8 +69,8 @@ class Troca:
         self.alvo_id = alvo_id
         self.andar = andar
         self.ofertas = {
-            iniciador_id: {"itens": {}, "moedas": 0},
-            alvo_id: {"itens": {}, "moedas": 0},
+            iniciador_id: {"itens": {}, "instancias": {}, "moedas": 0},
+            alvo_id: {"itens": {}, "instancias": {}, "moedas": 0},
         }
         self.prontos = {iniciador_id: False, alvo_id: False}
         self.mensagem = None
@@ -85,6 +85,10 @@ def embed_troca(troca, membro_a, membro_b, titulo="🤝 Troca"):
     for user_id, membro in ((troca.iniciador_id, membro_a), (troca.alvo_id, membro_b)):
         oferta = troca.ofertas[user_id]
         linhas = [f"{ITENS[k]['emoji']} {ITENS[k]['nome']} x{q}" for k, q in oferta["itens"].items()]
+        for chave, instancia_id in oferta.get("instancias", {}).items():
+            instancia = db.get_instancia(instancia_id)
+            nivel = instancia["nivel_melhoria"] if instancia else 0
+            linhas.append(f"{ITENS[chave]['emoji']} {ITENS[chave]['nome']} +{nivel}")
         if oferta["moedas"]:
             linhas.append(f"🪙 {oferta['moedas']} moedas")
         valor = "\n".join(linhas) if linhas else "*(vazio)*"
@@ -99,19 +103,16 @@ def _liberar(*user_ids):
         TROCAS_ATIVAS.discard(uid)
 
 
-def _checar_item_para_oferta(user_id, chave, qtd, oferta_atual):
-    """Devolve None se o item pode entrar na oferta, ou a mensagem de erro."""
+def _checar_item_para_oferta(chave, oferta_atual):
+    """Devolve None se o item pode entrar na oferta, ou a mensagem de erro.
+    Peça melhorada podia ser trocada -- o bloqueio saiu junto com a
+    instância: o bônus agora viaja com a peça, não fica preso ao jogador
+    (ver decisoes.md § Instâncias de item)."""
     if not ITENS[chave].get("vendavel", True):
         return f"**{ITENS[chave]['nome']}** não se troca — é intransferível."
-    if db.get_upgrade(user_id, chave) > 0:
-        nivel = db.get_upgrade(user_id, chave)
-        return (
-            f"**{ITENS[chave]['nome']}** está melhorado (+{nivel}) — o bônus é preso a você, "
-            "não dá pra transferir. Desmancha (`rpg desmanchar`) ou oferece uma cópia sem "
-            "melhoria, se tiver mais de uma."
-        )
-    novo_item = chave not in oferta_atual["itens"]
-    if novo_item and len(oferta_atual["itens"]) >= MAX_ITENS_TROCA:
+    distintos = len(oferta_atual["itens"]) + len(oferta_atual.get("instancias", {}))
+    novo_item = chave not in oferta_atual["itens"] and chave not in oferta_atual.get("instancias", {})
+    if novo_item and distintos >= MAX_ITENS_TROCA:
         return f"Máximo de {MAX_ITENS_TROCA} itens distintos por oferta."
     return None
 
@@ -135,6 +136,11 @@ def _mover(conn, de_id, para_id, oferta):
                ON CONFLICT(user_id, item) DO UPDATE SET qtd = qtd + excluded.qtd""",
             (para_id, chave, qtd),
         )
+    for instancia_id in oferta.get("instancias", {}).values():
+        # só o dono muda -- a instância carrega nível de melhoria (e,
+        # futuramente, encantamento) junto, é o ponto inteiro de virar
+        # instância em vez de continuar presa a `upgrades`.
+        conn.execute("UPDATE instancias SET dono = ? WHERE id = ?", (para_id, instancia_id))
 
 
 def _commitar_troca(troca):
@@ -162,8 +168,8 @@ def _commitar_troca(troca):
         if jb["moedas"] < oferta_b["moedas"]:
             return False, f"{jb['nome']} não tem mais {oferta_b['moedas']} 🪙 (saldo atual: {jb['moedas']})."
 
-        for user_id, oferta, nome in ((troca.iniciador_id, oferta_a, ja["nome"]),
-                                       (troca.alvo_id, oferta_b, jb["nome"])):
+        for user_id, oferta, nome, jog in ((troca.iniciador_id, oferta_a, ja["nome"], ja),
+                                            (troca.alvo_id, oferta_b, jb["nome"], jb)):
             for chave, qtd in oferta["itens"].items():
                 row = conn.execute(
                     "SELECT qtd FROM inventario WHERE user_id = ? AND item = ?", (user_id, chave)
@@ -171,13 +177,20 @@ def _commitar_troca(troca):
                 tem = row["qtd"] if row else 0
                 if tem < qtd:
                     return False, f"{nome} não tem mais {qtd}x {ITENS[chave]['nome']} (tem {tem})."
-                nivel_row = conn.execute(
-                    "SELECT nivel FROM upgrades WHERE user_id = ? AND item = ?", (user_id, chave)
+
+            for chave, instancia_id in oferta.get("instancias", {}).items():
+                inst = conn.execute(
+                    "SELECT dono FROM instancias WHERE id = ?", (instancia_id,)
                 ).fetchone()
-                if nivel_row and nivel_row["nivel"] > 0:
+                if not inst or inst["dono"] != user_id:
                     return False, (
-                        f"**{ITENS[chave]['nome']}** de {nome} foi melhorada depois da oferta — "
-                        "não pode ser trocada assim."
+                        f"**{ITENS[chave]['nome']}** de {nome} não está mais com ele(a) — "
+                        "a oferta não vale mais."
+                    )
+                if instancia_id in (jog["arma_instancia_id"], jog["armadura_instancia_id"]):
+                    return False, (
+                        f"**{ITENS[chave]['nome']}** de {nome} foi equipada depois da oferta — "
+                        "desequipa antes de tentar de novo."
                     )
 
         _mover(conn, troca.iniciador_id, troca.alvo_id, oferta_a)
@@ -190,7 +203,7 @@ def _nota_andar_travado(oferta, destinatario):
     """Item recebido que ainda não dá pra equipar — guarda na mochila até
     destravar o andar. Não bloqueia a troca, só avisa."""
     notas = []
-    for chave in oferta["itens"]:
+    for chave in list(oferta["itens"]) + list(oferta.get("instancias", {})):
         item = ITENS[chave]
         if item["tipo"] in ("arma", "armadura", "anel", "colar") and item["andar_min"] > destinatario["andar_max"]:
             notas.append(f"🔒 {item['nome']} só destrava lá no andar {item['andar_min']}.")
@@ -218,7 +231,8 @@ class ModalItem(discord.ui.Modal, title="Oferecer item"):
         troca = self.view_troca.troca
         j = db.get_jogador(self.user_id)
         inventario = {i["item"]: i["qtd"] for i in db.get_inventario(self.user_id) if i["item"] in ITENS}
-        chave = H["encontrar_item"](self.nome.value, inventario.keys())
+        mochila_instancias = {i["item"]: i for i in db.instancias_na_mochila(self.user_id)}
+        chave = H["encontrar_item"](self.nome.value, set(inventario) | set(mochila_instancias))
 
         if not chave:
             equipados = {slot: j[slot] for slot in ("arma", "armadura", "anel", "colar") if j[slot]}
@@ -236,6 +250,7 @@ class ModalItem(discord.ui.Modal, title="Oferecer item"):
 
         if qtd == 0:
             oferta["itens"].pop(chave, None)
+            oferta["instancias"].pop(chave, None)
             troca.resetar_prontos()
             await interaction.response.edit_message(
                 embed=embed_troca(troca, self.view_troca.membro_a, self.view_troca.membro_b),
@@ -243,18 +258,28 @@ class ModalItem(discord.ui.Modal, title="Oferecer item"):
             )
             return
 
-        if qtd > inventario[chave]:
-            await interaction.response.send_message(
-                f"Você só tem {inventario[chave]}x **{ITENS[chave]['nome']}**.", ephemeral=True
-            )
-            return
-
-        erro = _checar_item_para_oferta(self.user_id, chave, qtd, oferta)
+        erro = _checar_item_para_oferta(chave, oferta)
         if erro:
             await interaction.response.send_message(erro, ephemeral=True)
             return
 
-        oferta["itens"][chave] = qtd
+        if chave in inventario:
+            # cópia comum tem prioridade -- se o jogador tiver também uma
+            # instância modificada da mesma chave, esse modal não oferece
+            # ela (limitação conhecida, ver decisoes.md § Instâncias de item)
+            if qtd > inventario[chave]:
+                await interaction.response.send_message(
+                    f"Você só tem {inventario[chave]}x **{ITENS[chave]['nome']}**.", ephemeral=True
+                )
+                return
+            oferta["itens"][chave] = qtd
+            oferta["instancias"].pop(chave, None)
+        else:
+            # só existe como instância na mochila -- não empilha, a
+            # quantidade digitada só liga/desliga a oferta dela
+            oferta["instancias"][chave] = mochila_instancias[chave]["id"]
+            oferta["itens"].pop(chave, None)
+
         troca.resetar_prontos()
         await interaction.response.edit_message(
             embed=embed_troca(troca, self.view_troca.membro_a, self.view_troca.membro_b),
@@ -323,7 +348,7 @@ class TrocaView(discord.ui.View):
 
     @discord.ui.button(label="Limpar", style=discord.ButtonStyle.secondary, emoji="🧹")
     async def botao_limpar(self, interaction, button):
-        self.troca.ofertas[interaction.user.id] = {"itens": {}, "moedas": 0}
+        self.troca.ofertas[interaction.user.id] = {"itens": {}, "instancias": {}, "moedas": 0}
         self.troca.resetar_prontos()
         await interaction.response.edit_message(
             embed=embed_troca(self.troca, self.membro_a, self.membro_b), view=self

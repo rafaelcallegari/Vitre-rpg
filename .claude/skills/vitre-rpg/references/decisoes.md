@@ -2478,4 +2478,141 @@ que a Lore marca como gancho de quest virou resposta de texto normal, e
 - **Notion não atualizado nesta carta — MCP do Notion segue desconectado.**
   Guia da Torre e Lore ficam pendentes de sincronizar manualmente quando a
   conexão voltar (nada que mudasse a lista de comandos do jogo, só o
+  wording de fala).
+
+## Instâncias de item — melhoria presa à peça, não mais ao jogador
+
+Pré-requisito do Arcano (encantamento). **Esta carta não implementa
+encantamento** — só o modelo de instância e a migração das melhorias
+existentes. `upgrades(user_id, item, nivel)` chaveava a melhoria pelo par
+(jogador, item): duas cópias do mesmo item eram indistinguíveis, e uma
+peça melhorada era bloqueada de troca porque o bônus "pertencia" ao
+jogador, não à peça — problema real quando o encantamento (que precisa
+viajar com a peça numa troca) fosse entrar em cima disso.
+
+Peça comum continua sendo só quantidade em `inventario`, sem identidade.
+Peça ganha identidade — uma linha em `instancias` (id, dono, item,
+nivel_melhoria, e `encantamento_atributo`/`encantamento_valor` já
+criados agora, sem uso, pra não precisar de segunda migração quando o
+Arcano nascer) — **só quando recebe melhoria**. `upgrades` continua no
+schema (nunca se dropa tabela com dado real) mas não é mais escrita por
+nada; virou histórico morto depois da migração.
+
+### Forma do slot: coluna paralela, não o slot guardando id
+
+`jogadores.arma`/`armadura` continuam guardando a CHAVE do item, sempre —
+igual antes, pra peça comum e melhorada. Duas colunas novas,
+`arma_instancia_id`/`armadura_instancia_id` (nullable), dizem SE a peça
+equipada é uma instância e QUAL linha ela é.
+
+Alternativa descartada: o slot guardar o id da instância em vez da chave
+quando a peça é melhorada. Motivo de não fazer isso: `j["arma"]`/
+`j["armadura"]` são lidos direto (sem passar por `stats()`) em pelo menos
+3 arquivos (`combate.py` — afinidade de skill e bônus de arma nu,
+`comercio.py` — listar o que está equipado no menu de Melhorar). Um slot
+polimórfico (às vezes chave, às vezes id) obrigaria todo esses call sites
+a saber diferenciar os dois formatos — risco real de esquecer um, sem
+teste cobrindo 100% deles. Coluna paralela deixa a chave sempre presente
+e sempre no mesmo formato; só quem precisa saber SE é instância (bônus de
+melhoria/encantamento, trade) consulta a coluna nova.
+
+### Onde mora uma instância desequipada: estado derivado, não coluna
+
+Não existe coluna `local`/`equipado`. Uma instância pertence ao dono
+(`instancias.dono`) e está "na mochila" sempre que o id dela **não**
+aparece em nenhuma coluna `<slot>_instancia_id` desse mesmo dono
+(`database.instancias_na_mochila`). Fonte de verdade única: os ponteiros
+de slot em `jogadores` (mesma disciplina que `arma`/`armadura` já exigem
+hoje pra peça comum). Alternativa descartada: uma coluna `local` explícita
+seria mais fácil de consultar direto, mas cria duas fontes de verdade que
+podiam dessincronizar se algum caminho (equipar, trade, desmanchar)
+esquecesse de atualizar as duas.
+
+Consequência prática: uma instância só nasce **equipada** — `rpg melhorar`
+só opera na peça que já está no slot (regra que já existia), então a
+primeira melhoria cria a instância e aponta o slot pra ela no mesmo
+UPDATE. Ela só passa a "morar" na mochila depois, quando o jogador equipa
+outra coisa no lugar (`rpg equipar` limpa o ponteiro sem mexer em
+`inventario` — a instância não decrementa nem soma quantidade em lugar
+nenhum, só muda se algum slot aponta pra ela).
+
+### Migração dos 4 `upgrades` reais existentes
+
+Roda dentro de `init_db()`, migração 12, mesmo padrão do projeto —
+guardada por `if novas_instancias` (só roda quando as colunas de
+instância ainda não existem), então idempotente por construção: rodar
+`init_db()` de novo nunca reprocessa `upgrades`. A lógica de migração foi
+extraída pra `database._migrar_upgrades_para_instancias(conn)` — testável
+isolada (`tests/test_database_migracao.py`) sem precisar fingir schema
+antigo.
+
+Três casos, cada um com regra fechada (nenhum tinha exemplo real nos 4
+`upgrades` do banco — todos estavam equipados, sem cópia extra, sem
+órfã — mas a regra precisa existir pra qualquer estado futuro):
+
+- **Peça equipada e melhorada** → vira instância equipada: cria a linha em
+  `instancias` e aponta o `<slot>_instancia_id` do dono pra ela.
+- **Peça não equipada, várias cópias comuns no inventário + uma linha de
+  upgrade** → UMA cópia vira a instância melhorada (decrementa 1 de
+  `inventario`), o resto continua comum. O jogo nunca soube diferenciar
+  cópias além dessa única linha salva — não tem como saber qual "era" a
+  melhorada além de tirar uma da pilha.
+- **Linha de upgrade órfã** (jogador não tem mais o item, nem equipado nem
+  na mochila) → descartada, não materializada. Não existe peça física pra
+  prender a instância; inventar uma do nada daria item de graça.
+
+Validado contra uma cópia de `aincrad.db` antes de subir: os 4 upgrades
+reais (todos peça equipada, todos +1) viraram 4 instâncias corretas,
+apontadas pelos slots certos, com `nivel_melhoria` preservado. Rodar a
+migração duas vezes na mesma cópia não duplicou nada.
+
+### Preço de venda de peça melhorada
+
+`rpg vender` de uma instância usa a mesma curva de bônus do combate,
+**preço × (1 + 0.12 × nível)** — mesmo número de `com_bonus_upgrade`, só
+aplicado em moedas em vez de ATK/DEF. Consistente e fácil de justificar
+pro jogador: a peça vale o que ela rende em combate.
+
+### `rpg trade` perdeu o bloqueio de peça melhorada — decisão deliberada
+
+Antes, `_checar_item_para_oferta` recusava qualquer item com
+`get_upgrade(...) > 0` ("o bônus é preso a você"). Isso saiu: o bônus
+agora é preso à PEÇA (instância com dono, id, nível), não ao jogador —
+trocar só muda `instancias.dono`, o nível viaja junto. Isso cria mercado
+de peças melhoradas entre jogadores, de propósito.
+
+- `_commitar_troca` revalida cada instância ofertada dentro da mesma
+  transação: `dono` ainda é quem ofereceu, e a instância não foi equipada
+  por ele depois da oferta (senão cancela com motivo, sem mover nada —
+  mesmo padrão de revalidação que já existia pra saldo/inventário).
+- **Só instância DESEQUIPADA entra na oferta** — `ModalItem` só considera
+  `db.instancias_na_mochila(user_id)`. Equipada continua bloqueada de
+  trade, mas pelo motivo de sempre (peça equipada nunca pôde ser
+  oferecida, `equipados = {...}` já barrava isso antes desta carta).
+- **Limitação conhecida, documentada aqui em vez de resolvida**: se um
+  jogador tem cópia COMUM e a instância modificada da mesma chave ao
+  mesmo tempo, `ModalItem` só oferece a cópia comum (prioridade
+  automática, sem seletor). Nenhum dos 4 casos reais tem essa
+  duplicidade hoje — não valeu construir uma UI de desambiguação pra um
+  cenário que não existe ainda. Se acontecer, o próximo passo é um
+  seletor explícito no modal, não mudar a prioridade.
+- Mesma prioridade "cópia comum primeiro, instância só se não sobrar
+  comum suficiente" em `rpg vender` e `rpg desmanchar` — evita que um
+  comando genérico por nome destrua/venda a peça melhorada sem querer
+  quando existe cópia comum de sobra pra atender o pedido.
+  `rpg equipar` é o oposto (prioriza a instância): equipar a pior cópia de
+  propósito não tem uso real, e a instância é sempre igual ou melhor.
+
+### Teste
+
+`tests/test_database_migracao.py` (3 casos da migração + colunas novas),
+`tests/test_status_equipamento.py` (bônus de melhoria lido da instância,
+não mais de `upgrades`), `tests/test_trocas.py` (peça melhorada troca e o
+bônus viaja; instância equipada por fora ou dona trocada por fora cancela
+sem exceção). Migração validada contra cópia real de `aincrad.db` (ver
+acima). Sem teste automatizado dedicado pra `rpg equipar`/`vender`/
+`melhorar`/`desmanchar` como comandos Discord (a suíte não tinha isso
+antes desta carta pra essas quatro tampouco, só pros helpers puros de
+`profissoes.py`) — validação desses quatro é manual, jogando (ver Antes
+de subir / teste no card original).
   conteúdo do diálogo — os comandos digitados continuam os mesmos).

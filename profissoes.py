@@ -566,7 +566,9 @@ def instalar(bot, contexto):
             )
             return
 
-        nivel_atual = db.get_upgrade(j["user_id"], item_chave)
+        instancia_id = j.get(f"{slot}_instancia_id")
+        instancia = db.get_instancia(instancia_id)
+        nivel_atual = instancia["nivel_melhoria"] if instancia else 0
         if nivel_atual >= NIVEL_MAX_UPGRADE:
             await ctx.send(f"**{ITENS[item_chave]['nome']}** já está no teto: +{NIVEL_MAX_UPGRADE}.")
             return
@@ -606,7 +608,10 @@ def instalar(bot, contexto):
         )
 
         if sucesso:
-            db.set_upgrade(j["user_id"], item_chave, alvo_nivel)
+            if instancia_id:
+                db.set_nivel_melhoria(instancia_id, alvo_nivel)
+            else:
+                campos[f"{slot}_instancia_id"] = db.criar_instancia(j["user_id"], item_chave, alvo_nivel)
             e.add_field(name="✅ Sucesso", value=f"Peça agora é **+{alvo_nivel}**.", inline=False)
             if eh_forjador:
                 nivel, xp, subiu = aplicar_xp_profissao(
@@ -639,11 +644,15 @@ def instalar(bot, contexto):
             return
 
         texto, vezes = H["separar_quantidade"](argumento)
-        possuidos = [
-            i["item"] for i in db.get_inventario(j["user_id"])
+        inventario_qtd = {
+            i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"])
             if i["item"] in ITENS and ITENS[i["item"]]["tipo"] in ("arma", "armadura")
-        ]
-        item_chave = H["encontrar_item"](texto, possuidos)
+        }
+        mochila_instancias = {
+            i["item"]: i for i in db.instancias_na_mochila(j["user_id"])
+            if ITENS.get(i["item"], {}).get("tipo") in ("arma", "armadura")
+        }
+        item_chave = H["encontrar_item"](texto, set(inventario_qtd) | set(mochila_instancias))
         if not item_chave:
             fora = H["encontrar_item"](texto)
             if fora and ITENS[fora]["tipo"] not in ("arma", "armadura"):
@@ -651,17 +660,26 @@ def instalar(bot, contexto):
             else:
                 await ctx.send("Você não tem esse equipamento (sem estar equipado) na mochila.")
             return
-        if not db.tem_item(j["user_id"], item_chave, vezes):
+
+        plain_qtd = inventario_qtd.get(item_chave, 0)
+        instancia = mochila_instancias.get(item_chave)
+
+        if plain_qtd >= vezes:
+            # prioriza cópia comum -- não desmancha a peça melhorada à toa
+            # quando cópias comuns bastam pro pedido
+            nivel_upgrade = 0
+            db.remove_item(j["user_id"], item_chave, vezes)
+        elif instancia and plain_qtd == 0 and vezes == 1:
+            # instância não empilha: só dá pra desmanchar 1 de cada vez
+            nivel_upgrade = instancia["nivel_melhoria"]
+            db.excluir_instancia(instancia["id"])
+        else:
             await ctx.send(f"Você não tem {vezes}x **{ITENS[item_chave]['nome']}** sobrando na mochila.")
             return
 
-        nivel_upgrade = db.get_upgrade(j["user_id"], item_chave)
         materiais, xp_peca = refund_desmanche(item_chave, nivel_upgrade)
-
-        db.remove_item(j["user_id"], item_chave, vezes)
         for mat, qtd in materiais.items():
             db.add_item(j["user_id"], mat, qtd * vezes)
-        db.set_upgrade(j["user_id"], item_chave, 0)
 
         texto_devolvido = " · ".join(
             f"{ITENS[m]['emoji']} {ITENS[m]['nome']} x{q * vezes}" for m, q in materiais.items()
