@@ -498,7 +498,7 @@ ANDAR_MINIMO_RAIDE = 7
 ANDAR_REFERENCIA_RAIDE = 7   # só pra fórmulas de penetração/destreza — não desbloqueia nada
 RECOMPENSA_MOEDAS_RAIDE = 800   # modesta de propósito: chefe fixo, sem risco pra late game
 QTD_ACESSORIOS_RAIDE = 2
-COOLDOWN_RAIDE_SEGUNDOS = 24 * 3600   # 1x por dia, por guilda (não por jogador)
+COOLDOWN_RAIDE_SEGUNDOS = 2 * 3600   # por guilda (não por jogador)
 
 
 def itens_da_loja(andar: int):

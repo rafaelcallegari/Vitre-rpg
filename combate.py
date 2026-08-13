@@ -1375,7 +1375,7 @@ def instalar(bot, contexto):
             return
         await iniciar_luta(ctx, [j["user_id"]], j["andar"])
 
-    @bot.command(name="party", aliases=["grupo", "raid"])
+    @bot.command(name="party", aliases=["grupo"])
     async def party(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:

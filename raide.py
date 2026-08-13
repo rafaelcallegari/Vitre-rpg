@@ -259,8 +259,7 @@ async def iniciar_raide(destino, ids, guilda_id, iniciador_id, editar=False):
 def instalar(bot, contexto):
     H.update(contexto)
 
-    @bot.command(name="raide", aliases=["audiencia"])
-    # "raid" não entra como apelido: combate.py já usa "raid" pra `rpg party`.
+    @bot.command(name="raide", aliases=["audiencia", "raid"])
     async def raide_cmd(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:
@@ -288,10 +287,10 @@ def instalar(bot, contexto):
             return
         restante = db.checar_cooldown_raide(guilda["id"])
         if restante > 0:
-            await ctx.send(f"A guilda já teve audiência hoje. Volta em **{H['fmt_tempo'](restante)}**.")
+            await ctx.send(f"A guilda já teve audiência recentemente. Volta em **{H['fmt_tempo'](restante)}**.")
             return
 
         view = SalaDeEsperaRaide(j["user_id"], guilda, j)
         view.mensagem = await ctx.send(embed=view.embed(), view=view)
 
-    print("raide.py carregado — rpg raide (mínimo 3, uma vez por dia por guilda).")
+    print("raide.py carregado — rpg raide (mínimo 3, a cada 2h por guilda).")
