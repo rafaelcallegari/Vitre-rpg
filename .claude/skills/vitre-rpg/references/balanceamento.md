@@ -190,9 +190,64 @@ rebalanceamento pendente.
 
 ## Profissões e craft (`profissoes.py`)
 
-- XP de ofício: `xp_para_subir(nível) = 50 * nível`, nível máximo `10`.
- Trocada de `int(50 * nível**1.4)` — mais rápida em todo tier, e mais ainda
- nos altos porque a curva antiga era superlinear.
+- XP de ofício: `xp_para_subir(nível, profissão)`. Forja/Alquimia:
+ `50 * nível`, nível máximo `10` (era `int(50 * nível**1.4)` — trocada pra
+ ficar mais rápida em todo tier). **Encantador/Joalheiro têm curva própria**
+ (`XP_NIVEL_MAGICO`), nível máximo **9**:
+
+ | Nível → | XP exigido | Ações (25 XP cada) |
+ |---|---|---|
+ | 1→2 | 75 | 3 |
+ | 2→3 | 100 | 4 |
+ | 3→4 | 125 | 5 |
+ | 4→5 | 175 | 7 |
+ | 5→6 | 225 | 9 |
+ | 6→7 | 300 | 12 |
+ | 7→8 | 375 | 15 |
+ | 8→9 | 500 | 20 |
+
+ Total: 75 ações do zero ao nível 9 (teto). Cada encantamento ou peça de
+ joia dá `XP_ACAO_MAGICA = 25` fixo — desencantar não devolve XP.
+
+### Encantador e Joalheiro — bônus, custo e material (`profissoes.py`)
+
+Mesma tabela pros dois ofícios (`BONUS_POR_NIVEL_MAGICO`,
+`CUSTO_MOEDAS_POR_BONUS`) — o bônus é função do nível ATUAL de quem
+fabrica, não escolha de quanto material gastar:
+
+| Nível | Bônus | Custo 🪙 |
+|---|---|---|
+| 1-2 | +1 | 400 |
+| 3 | +2 | 900 |
+| 4 | +3 | 1.600 |
+| 5 | +4 | 2.600 |
+| 6-7 | +5 | 3.800 |
+| 8 | +6 | 5.200 |
+| 9 | +7 | 6.800 |
+
+Material: `QTD_MATERIAL_MAGICO = 3` do material do "andar do bônus"
+(`INDICE_ANDAR_POR_BONUS`, compartilhado pelos dois ofícios — só a escada
+de andar/material muda):
+
+| Bônus | Índice | Andar (Encantador, ímpar) | Andar (Joalheiro, par) | + extra |
+|---|---|---|---|---|
+| 1, 2 | 0 | 1 — Essência do Vento | 2 — Âmbar de Seiva | — |
+| 3, 4 | 1 | 3 — Essência da Água | 4 — Lágrima de Sal | — |
+| 5 | 2 | 5 — Essência do Gelo | 6 — Rubi Fosco | — |
+| 6 | 3 | 7 — Essência de Fogo | 8 — Vitral Partido | — |
+| 7 | 4 | 9 — Essência Estelar | 10 — Pérola do Eco | + 💠 Eco Cristalizado x1 |
+
+`material_magico(bonus, profissao)` isola esse mapeamento;
+`custo_magico(nivel, profissao)` compõe nível→bônus→material→custo pro
+comando de verdade. Encantar as 4 peças no teto = 27.200 🪙 (4×6.800),
+anel+colar de Joalheiro no teto = 13.600 🪙 (2×6.800) — mesma escada.
+
+Camadas na mesma instância (`bot.com_instancia()`): `nivel_melhoria`
+(+1/+2 do Forjador, só arma/armadura), `joia_atributo`/`joia_valor`
+(bônus base do Joalheiro, vira `"atributo"`/`"bonus"` no dict do item) e
+`encantamento_atributo`/`encantamento_valor` (Encantador, vira
+`_encantamento_atributo`/`_valor` — soma por cima, nunca substitui). As
+três convivem na mesma linha de `instancias` sem se pisar.
 - Trocar de profissão custa `CUSTO_TROCA = 1000` moedas e **zera o nível**
  de ofício — escolha é praticamente travada na prática.
 - Craft exige estar no andar certo (bancada do NPC do ofício) — não dá pra

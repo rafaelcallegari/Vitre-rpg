@@ -43,7 +43,7 @@ def test_stats_expoe_o_bonus_de_melhoria_ja_aplicado_na_arma():
     j = db.get_jogador(1)
     s = bot.stats(j)
     _, dado = s["equipamento"]["arma"]
-    assert dado["atk"] == int(8 * (1 + 0.12 * 2))   # mesma conta de com_bonus_upgrade
+    assert dado["atk"] == int(8 * (1 + 0.12 * 2))   # mesma conta de com_instancia
 
 
 def test_texto_equipamento_marca_slot_vazio():

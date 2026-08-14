@@ -264,6 +264,110 @@ DIALOGOS = {
         "saida": "Ela volta pra bancada sem dizer mais nada — aqui, o trabalho fala por ela.",
     },
 
+    # ---- encantadores (ímpares) e joalheiros (pares) -- falas e ações de
+    # diálogo destes 10 NÃO são do Rafael, escritas no tom estabelecido pra
+    # ele revisar depois (mesmo acordo dos 9 NPCs de conversa). Ver decisoes.md.
+    "baldo": {
+        "abertura": "O vento não escolhe onde bate. Eu só aprendi a prender um pedaço dele na sua lâmina.",
+        "opcoes": [
+            {"label": "Como se encanta uma arma",
+             "resposta": "Não é magia grande, é teimosia pequena. Repito o mesmo símbolo até ele parar de escorregar da peça."},
+            {"label": "Por que só nos andares ímpares",
+             "resposta": "Porque nos pares a Torv que vem antes de mim já disse: quem forja e quem encanta não deviam dividir bancada. Eu concordo, hoje em dia."},
+        ],
+        "saida": "Ele sopra de leve na palma da mão, como se testasse o vento antes de você ir.",
+    },
+    "orin": {
+        "abertura": "Toda pedra que acho aqui já nasceu torta, que nem a árvore. Eu só ajudo a torcer certo.",
+        "opcoes": [
+            {"label": "Por que escolher o atributo da peça",
+             "resposta": "Porque uma joia sem dono ainda não decidiu o que quer ser. Você decide por ela, eu só lapido a decisão."},
+            {"label": "Já viu uma joia encantada por cima",
+             "resposta": "Já. Some o que eu boto com o que o encantador bota depois, e não briga — cada um fica no seu canto da pedra."},
+        ],
+        "saida": "Ela sopra a poeira da bancada e ergue a próxima pedra contra a luz.",
+    },
+    "lira": {
+        "abertura": "A maré fala baixo, mas fala sempre a mesma coisa duas vezes. Eu só repito pra sua arma.",
+        "opcoes": [
+            {"label": "O que a maré repete",
+             "resposta": "Repete o nome de quem afundou aqui antes de a cidade virar ruína. Eu não entendo a língua, só o ritmo — e o ritmo é o que vira encantamento."},
+            {"label": "Dá pra remover o que você encanta",
+             "resposta": "Dá. Custa metade do que custou prender. A maré leva embora o que a maré ainda não esqueceu."},
+        ],
+        "saida": "Ela volta a olhar pra água, esperando a próxima repetição.",
+    },
+    "kef": {
+        "abertura": "O poço secou, mas o que ele guardava no fundo não. Eu só desço buscar.",
+        "opcoes": [
+            {"label": "O que tem no fundo do poço",
+             "resposta": "Pedra que nunca viu sol. É por isso que ela segura tão bem um atributo — nunca teve outra cor pra perder."},
+            {"label": "Já fabricou um colar tão bom quanto anel",
+             "resposta": "Os dois saem da mesma pedra, só muda o corte. Ninguém nunca me disse qual serve mais — escolho pelo peso na mão."},
+        ],
+        "saida": "Ele desce mais uma corda no poço, sem olhar pra trás.",
+    },
+    "corin": {
+        "abertura": "Uso o casaco comprido porque o frio daqui gruda no encantamento antes de grudar em mim.",
+        "opcoes": [
+            {"label": "Por que o frio ajuda a encantar",
+             "resposta": "Não ajuda. Só desacelera o bastante pra eu enxergar o símbolo formando antes dele fixar errado."},
+            {"label": "Perguntar sobre Hjalmar",
+             "resposta": "Ele tempera o aço no mesmo lago que eu uso pra esfriar o encantamento. Nunca conversamos sobre isso — nem precisa, o lago já divide o trabalho."},
+        ],
+        "saida": "Ele puxa a gola do casaco e volta a olhar pro gelo, como se procurasse o próximo símbolo nele.",
+    },
+    "mira": {
+        "abertura": "O trilho não leva a lugar nenhum mais. Mas as pedras que acho ao lado dele levam.",
+        "opcoes": [
+            {"label": "Pra onde as pedras levam",
+             "resposta": "Pro atributo que você escolher. Eu só entrego a pedra pronta — a decisão de virar força, destreza, o que for, é sempre sua."},
+            {"label": "O que aconteceu com o trilho",
+             "resposta": "Parou de levar gente antes de eu chegar. Fico com o que sobrou dele: silêncio, ferrugem, e as pedras boas."},
+        ],
+        "saida": "Ela guarda a lapidadeira no bolso do avental e volta a andar pelo trilho morto.",
+    },
+    "talla": {
+        "abertura": "Guardo uma brasa só, a última que não virou cinza. É o suficiente pra encantar o resto.",
+        "opcoes": [
+            {"label": "Por que só uma brasa",
+             "resposta": "Porque encantamento não gasta fogo, gasta símbolo. A brasa só me dá luz pra ver o que eu tô desenhando na peça."},
+            {"label": "Encanta arma e armadura igual",
+             "resposta": "Igual. O que muda é onde o atributo pega — na arma ele empurra, na armadura ele segura. O símbolo é o mesmo."},
+        ],
+        "saida": "Ela protege a brasa com a mão antes que o vento dos Campos de Cinzas a apague de vez.",
+    },
+    "vesna": {
+        "abertura": "O altar principal é pra rezar. O lateral, onde eu fico, é pra lapidar. Os dois pedem silêncio.",
+        "opcoes": [
+            {"label": "Por que lapidar exige silêncio",
+             "resposta": "Porque a pedra racha no barulho errado. Aprendi isso perdendo mais joia do que gostaria de admitir pro Irmão Cael."},
+            {"label": "Alguém já pediu uma joia estranha",
+             "resposta": "Todo dia. Ninguém concorda em qual atributo é o certo pra um anel. Eu só fico feliz que a escolha não seja minha."},
+        ],
+        "saida": "Ela volta a lapidar em silêncio, sem levantar os olhos do altar lateral.",
+    },
+    "astrea": {
+        "abertura": "Cada estrela que conto daqui já morreu há tempos. O brilho que sobra é o que eu uso pra encantar.",
+        "opcoes": [
+            {"label": "Como se encanta com luz morta",
+             "resposta": "A luz não sabe que a estrela já morreu — ela ainda tá viajando. Eu só interrompo a viagem um pouco antes de chegar."},
+            {"label": "Perguntar sobre Selen",
+             "resposta": "Ela forja o que eu não consigo encantar sozinha: o Selo em si. Nunca subimos juntas pra ver o que tem depois dele."},
+        ],
+        "saida": "Ela volta a contar as estrelas, murmurando um número que você não consegue acompanhar.",
+    },
+    "eco_joalheira": {
+        "abertura": "Já lapidei isso. Você já usou. Nós duas já esquecemos — só a pedra lembra.",
+        "opcoes": [
+            {"label": "Quem foi você antes deste andar",
+             "resposta": "Uma joalheira, imagino. É a única coisa que meu corpo ainda sabe fazer sem eu lembrar por quê."},
+            {"label": "Qual pedra você mais lembra",
+             "resposta": "Nenhuma. Mas minhas mãos param exatamente no lugar onde uma pedra melhor ficaria — isso deve contar como lembrança."},
+        ],
+        "saida": "Ela já está com outra pedra na mão, como se você nunca tivesse chegado.",
+    },
+
     # ---- andar 10
     "eco_mercador": {
         "abertura": "Eu já te vendi isso. Você já me pagou. Nós dois já esquecemos.",

@@ -2668,4 +2668,184 @@ não muda. Validado também contra uma **cópia do `aincrad.db` real**
 (que já estava exatamente nesse estado — 4 instâncias, colunas de
 arma/armadura presentes, sem as de acessório): depois de rodar a migração
 13, continuam **4** instâncias, não 8. `COLUNAS_ESPERADAS` em
+
+## Patch 0.3 — Encantador e Joalheiro
+
+Dois ofícios novos, substituindo o Minerador (cortado do projeto — os
+quatro ofícios ficam Forja/Alquimia/Encantador/Joalheiro). Dependia da
+carta anterior (instâncias em anel/colar) porque o bônus dos dois ofícios
+mora na peça, não no catálogo — a mesma chave (`espada_ferro`, `anel_joia`)
+precisa poder valer coisas diferentes em duas cópias.
+
+### Onde o bônus do Joalheiro foi guardado
+
+`instancias` já tinha `encantamento_atributo`/`encantamento_valor`,
+reservadas desde a carta de instâncias pro "Arcano" (o card que virou
+Encantador). Essas duas colunas viraram a fonte de verdade do
+**encantamento** — reuso direto, sem migração nova.
+
+O bônus **base** do Joalheiro (o atributo que ele escolhe ao fabricar
+anel/colar) não podia reusar as mesmas colunas: as duas camadas precisam
+somar de forma independente ("anel de Joalheiro encantado pelo Encantador"
+é o próprio pedido, sem trava). Duas colunas novas, **migração 14**,
+`joia_atributo`/`joia_valor` em `instancias` — primeira migração do projeto
+que altera uma tabela que não é `jogadores`, então o bloco em `init_db()`
+lê `PRAGMA table_info(instancias)` em vez de `table_info(jogadores)` como
+todas as anteriores. Fora isso, mesmo padrão de sempre (checa coluna
+faltando, só then faz `ALTER TABLE`) — não precisou de dado histórico pra
+migrar, porque nenhuma joia de Joalheiro existia antes desta carta.
+
+`bot.com_instancia()` (que já existia, preparada exatamente pra isso desde
+a carta de instâncias) ganhou o corpo que faltava: lê a instância uma vez
+e aplica as três camadas que podem coexistir na mesma linha —
+`nivel_melhoria` (+1/+2 do Forjador, só arma/armadura), `joia_atributo`/
+`joia_valor` (vira `"atributo"`/`"bonus"` no dict do item, mesma chave que
+acessório de raide e arma elemental já usavam) e `encantamento_atributo`/
+`encantamento_valor` (vira `_encantamento_atributo`/`_encantamento_valor`,
+com underscore de propósito — não pode colidir com `"atributo"`/`"bonus"`,
+senão a soma das duas camadas vira substituição). Isso também **absorveu**
+o antigo `com_bonus_upgrade`: eram duas funções fazendo duas leituras de
+banco separadas pra arma/armadura (uma pra melhoria, outra pro que virou
+encantamento); virou uma função, uma leitura, pras 4 peças. `stats()` passa
+a chamar só `com_instancia()` pros 4 slots.
+
+`bonus_atributo_equipamento()` ganhou uma segunda passada: além de somar
+`"atributo"`/`"bonus"` (como já fazia), soma `_encantamento_atributo`/
+`_valor` de qualquer peça que tiver — por isso agora recebe `armadura`
+também (antes só `arma, anel, colar`, porque armadura nunca tinha bônus de
+atributo próprio; agora pode ter encantamento). O atributo de joia e o de
+encantamento entram só no `atribs` **efetivo** de `stats()`, nunca na
+coluna crua do jogador — mesma regra que já valia pra acessório de raide,
+então "não conta pra requisito de habilidade" saiu de graça, sem código
+novo (`habilidades.conhecida()` já lia a coluna crua, não `s['atribs']`).
+
+### A curva própria (Encantador e Joalheiro não fabricam em série)
+
+`xp_para_subir()` passou a receber a profissão. Forja/Alquimia continuam
+com `50 * nível` (comportamento idêntico a antes, só o parâmetro mudou).
+Encantador/Joalheiro usam uma tabela fixa (`XP_NIVEL_MAGICO`,
+`profissoes.py`) que fecha em exatamente 75 ações de 25 XP fixo do nível 1
+ao 9 (não 10 — `NIVEL_MAXIMO_MAGICO = 9`, teto diferente do resto).
+`aplicar_xp_profissao()` também passou a receber a profissão, e todo call
+site dela (craftar/melhorar/desmanchar da Forja) foi atualizado — mecânico,
+sem mudar comportamento nenhum desses três.
+
+O bônus que cada nível entrega (`BONUS_POR_NIVEL_MAGICO`) e o custo em
+moedas por bônus (`CUSTO_MOEDAS_POR_BONUS`) são **a mesma tabela pros dois
+ofícios** — o pedido já confirmava isso pela conta ("encantar as 4 peças no
+teto = 27.200" bate com 6.800×4, e "anel + colar de Joalheiro no teto =
+13.600" bate com 6.800×2, o mesmo 6.800 de bônus+7). O material muda: cada
+ofício tem sua própria escada de andar (`ANDARES_ENCANTADOR` ímpares,
+`ANDARES_JOALHEIRO` pares) e material (`MATERIAL_ENCANTADOR`/
+`MATERIAL_JOALHEIRO`), mas o índice que liga bônus a andar
+(`INDICE_ANDAR_POR_BONUS`) é compartilhado. `material_magico(bonus,
+profissao)` ficou separado de `custo_magico(nivel, profissao)` de propósito
+— o mapeamento bônus→material é a invariante real do pedido, nível→bônus é
+uma composição por cima; separar os dois deixou o teste
+(`test_material_do_encantador_...`) exercitar a tabela certa sem embutir a
+composição de nível junto (um teste que testasse só via `custo_magico`
+passando "nível" como se fosse "bônus" mentiria — bônus 2 e nível 3 não são
+o mesmo número, ver `BONUS_POR_NIVEL_MAGICO[3] == 2`).
+
+O bônus entregue **não é escolha do jogador** — é o que o nível atual dele
+rende. Um Encantador nível 3 sempre encanta em bônus 2, nunca escolhe
+gastar mais material por um bônus menor ou maior.
+
+### Por que reencantar depois de remover dá XP de novo
+
+É o mecanismo que já existia pro resto do craft (craftar, melhorar,
+desmanchar — todos dão XP pela AÇÃO, não pelo resultado final). Encantar
+grava `XP_ACAO_MAGICA = 25` sempre que roda com sucesso, remover não some
+XP nenhum de volta (não tem como "devolver" nível de ofício). O pedido
+descreve isso como intencional e já antecipa o freio: reencantar depois de
+remover queima moeda de novo (o custo pelo bônus atual, não tem desconto de
+segunda vez) — self-balanceado, sem precisar de trava extra tipo cooldown
+ou limite de remoções.
+
+### Encantador (`rpg encantar`/`rpg desencantar`)
+
+- Vale nos 4 slots (arma/armadura/anel/colar) — `_slot_equipamento()` faz o
+  mesmo parsing que `melhorar()` já tinha pra arma/armadura, estendido.
+- Recusa reencantar peça já com `encantamento_atributo` na instância —
+  manda desencantar primeiro. Sem essa checagem, encantar de novo
+  sobrescreveria o valor salvo silenciosamente (`db.definir_encantamento`
+  não protege sozinha, quem chama tem que checar antes).
+- Remover custa **metade do custo de encantar aquele valor**
+  (`CUSTO_MOEDAS_POR_BONUS[bonus] // 2`) — só moeda, sem devolver material
+  (o pedido não menciona refund de material, só de moeda; diferente de
+  `rpg desmanchar`, que devolve material porque desfaz uma fabricação
+  inteira — desencantar desfaz só a camada de cima).
+- Peça sem instância ainda (arma/armadura/anel/colar comum, nunca
+  melhorada) ganha uma na hora de encantar (`db.criar_instancia` +
+  `{slot}_instancia_id`) — mesmo caminho que `melhorar()` já usava pra
+  criar a primeira instância de uma peça.
+
+### Joalheiro (`rpg lapidar`)
+
+Fabrica direto pra dentro de `instancias` (`db.criar_instancia(...,
+joia_atributo=, joia_valor=)`) — nunca passa por `db.add_item` (cópia
+comum), porque não existe "cópia comum" de uma peça de Joalheiro: o
+bônus varia por fabricação, então toda peça nasce como instância própria,
+flutuando na mochila até ser equipada (mesmo estado derivado que peça
+melhorada desequipada já usa). Dois itens novos no catálogo, `anel_joia`/
+`colar_joia` — **sem** `"atributo"`/`"bonus"` estáticos (ao contrário de
+`anel_forca` etc.): esses dois campos só existem depois de `com_instancia`
+ler a instância, porque variam por peça.
+
+`rpg receitas`/`rpg craftar` continuam existindo mas não servem pra estes
+dois ofícios (o catálogo `RECEITAS` é pra Forja/Alquimia, com nível fixo
+por item — Encantador/Joalheiro não têm "item de catálogo", o resultado
+depende do nível de quem fabrica). `rpg receitas` com um desses dois
+ofícios agora devolve uma mensagem apontando pro comando certo em vez do
+embed vazio que apareceria antes.
+
+### A armadilha do `ACESSORIOS_RAIDE` — corrigida antes das peças existirem
+
+`game_data.ACESSORIOS_RAIDE` era `tuple(k for k, v in ITENS.items() if
+v.get("tipo") in ("anel", "colar"))` — qualquer anel/colar novo entrava
+sozinho na mesa de loot da raide. `anel_joia`/`colar_joia` teriam caído
+nessa lista no mesmo commit que os criou, sem ninguém pedir. Trocado por
+tupla **explícita** com os 8 originais, comentada como "não muda nesta
+carta nem em nenhuma futura sem decisão direta" — mais simples que uma
+flag nova no dict do item (`"raide": True`), e os 8 acessórios de raide já
+são um conjunto fechado (`decisoes.md` § Pacote 1 já dizia isso).
+Testado (`test_acessorios_raide_nao_inclui_itens_do_joalheiro`).
+
+### Dez NPCs novos — falas não são do Rafael
+
+`encantador` (ímpares: Baldo/1, Lira/3, Corin/5, Talla/7, Astrea/9) e
+`joalheiro` (pares: Orin/2, Kef/4, Mira/6, Vesna/8, Eco de uma Joalheira/10)
+são dois tipos novos em `npcs.py`, com bancada (`bancada_no_andar` já
+generalizado — só olha `PROFISSOES[profissao]["npc"]`, funcionou pros dois
+sem mudança). `dialogos.py` ganhou as 10 entradas num bloco próprio (mesmo
+padrão dos 9 NPCs de tipo `conversa`, que também ficam agrupados por
+categoria em vez de por andar). **As falas e as perguntas de diálogo dos
+10 são inventadas pra fechar a carta — não são do Rafael.** Mesmo acordo
+dos 9 NPCs de conversa anteriores: tom estabelecido, ele revisa/reescreve
+quando quiser.
+
+`comercio.py` ganhou `EncantadorView`/`JoalheiroView`, registradas em
+`VIEW_POR_TIPO` — mesmo padrão do `FerreiroView` (botão que recusa
+ephemeral se o ofício não bate, dois selects em sequência reaproveitando
+`abrir_selecao`/`MenuSelecaoView` já existentes, sem UI nova). Testado
+ponta-a-ponta com interação fake (mesma estratégia de
+`tests/test_comercio.py`): clicar Encantar → escolher peça → escolher
+atributo → moedas debitadas e instância com o encantamento certo; clicar
+Lapidar → escolher anel/colar → escolher atributo → instância nova na
+mochila.
+
+### Teste
+
+`tests/test_encantador_joalheiro.py` (curva de XP, tabela de bônus/custo/
+material, `com_instancia` somando joia+encantamento+melhoria na mesma
+peça, requisito de skill não conta o bônus, `ACESSORIOS_RAIDE` fechado),
+`tests/test_comercio_encantador_joalheiro.py` (fluxo ponta-a-ponta dos dois
+botões novos), migração 14 em `tests/test_database_migracao.py` (colunas
+criadas, idempotente, não reprocessa `upgrades`).
+
+**Não testado automaticamente**: os 10 diálogos novos (mesma situação dos
+9 anteriores — conteúdo, não lógica) e o comando de texto puro
+`rpg encantar`/`rpg lapidar` sem passar pelo botão (coberto indiretamente
+pelos testes de comércio, que chamam o `.callback()` de verdade via
+`ShimCtx`, igual ao resto do craft).
 `test_database_migracao.py` ganhou as duas colunas novas.

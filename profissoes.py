@@ -6,6 +6,7 @@ import random
 
 import discord
 
+import atributos as at
 import database as db
 import paginacao
 import travas
@@ -15,6 +16,7 @@ H = {}
 
 CUSTO_TROCA = 1000        # moedas para trocar de profissao (zera o nivel)
 NIVEL_MAXIMO = 10
+NIVEL_MAXIMO_MAGICO = 9   # Encantador e Joalheiro -- curva propria, ver decisoes.md
 
 # ---- melhoria (+1/+2) e desmanche ----
 ANDAR_MATERIAL = {           # material do andar, so' existe ferreiro nos impares ate' o 9
@@ -46,11 +48,27 @@ PROFISSOES = {
         "nome": "Alquimia", "titulo": "Alquimista", "emoji": "⚗️", "npc": "mercador",
         "desc": "Destila elixires que curam por porcentagem. Trabalha na banca dos mercadores.",
     },
+    "encantador": {
+        "nome": "Encantador", "titulo": "Encantador", "emoji": "🔯", "npc": "encantador",
+        "desc": (
+            "Encanta arma, armadura, anel ou colar já prontos com um atributo "
+            "(FOR/DES/CON/INT). Trabalha na bancada dos encantadores, andares ímpares."
+        ),
+    },
+    "joalheiro": {
+        "nome": "Joalheiro", "titulo": "Joalheiro", "emoji": "💎", "npc": "joalheiro",
+        "desc": (
+            "Lapida anel e colar do zero, escolhendo o atributo da peça. "
+            "Trabalha na bancada dos joalheiros, andares pares."
+        ),
+    },
 }
 
 APELIDOS = {
     "forja": "forja", "ferreiro": "forja", "ferraria": "forja", "forjar": "forja",
     "alquimia": "alquimia", "alquimista": "alquimia", "pocao": "alquimia",
+    "encantador": "encantador", "encantamento": "encantador", "encanto": "encantador",
+    "joalheiro": "joalheiro", "joalheria": "joalheiro", "joia": "joalheiro", "joias": "joalheiro",
 }
 
 # nivel, materiais, moedas e xp de cada receita
@@ -136,22 +154,106 @@ RECEITAS = {
 
 
 # ---------------------------------------------------------------- progressao
+# Encantador e Joalheiro nao fabricam em serie feito a Forja -- cada acao
+# (um encantamento, uma peca de joia) da XP fixo (XP_ACAO_MAGICA), e o XP
+# exigido por nivel e' proprio (nao 50*nivel). 75 acoes do zero ao nivel 9
+# (teto), contra 10 niveis pra Forja/Alquimia. Ver decisoes.md.
+XP_NIVEL_MAGICO = {1: 75, 2: 100, 3: 125, 4: 175, 5: 225, 6: 300, 7: 375, 8: 500}
+OFICIOS_MAGICOS = ("encantador", "joalheiro")
 
-def xp_para_subir(nivel):
-    """XP necessario para sair do nivel N para o N+1."""
+
+def nivel_maximo_de(profissao):
+    return NIVEL_MAXIMO_MAGICO if profissao in OFICIOS_MAGICOS else NIVEL_MAXIMO
+
+
+def xp_para_subir(nivel, profissao=None):
+    """XP necessario para sair do nivel N para o N+1 -- curva depende da
+    profissao (Forja/Alquimia: 50*nivel; Encantador/Joalheiro: tabela propria)."""
+    if profissao in OFICIOS_MAGICOS:
+        return XP_NIVEL_MAGICO[nivel]
     return 50 * nivel
 
 
-def aplicar_xp_profissao(nivel, xp_atual, ganho):
+def aplicar_xp_profissao(nivel, xp_atual, ganho, profissao=None):
+    teto = nivel_maximo_de(profissao)
     nivel, xp = nivel, xp_atual + ganho
     subiu = 0
-    while nivel < NIVEL_MAXIMO and xp >= xp_para_subir(nivel):
-        xp -= xp_para_subir(nivel)
+    while nivel < teto and xp >= xp_para_subir(nivel, profissao):
+        xp -= xp_para_subir(nivel, profissao)
         nivel += 1
         subiu += 1
-    if nivel >= NIVEL_MAXIMO:
+    if nivel >= teto:
         xp = 0
     return nivel, xp, subiu
+
+
+# ------------------------------------------------ Encantador e Joalheiro (magia)
+# As duas profissoes compartilham a mesma escada de bonus/custo/material --
+# so' o QUE elas fazem com o bonus muda (Encantador soma atributo numa peca
+# existente, Joalheiro fabrica anel/colar do zero com o atributo escolhido).
+# Ver decisoes.md § Encantador e Joalheiro.
+BONUS_POR_NIVEL_MAGICO = {1: 1, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 5, 8: 6, 9: 7}
+CUSTO_MOEDAS_POR_BONUS = {1: 400, 2: 900, 3: 1600, 4: 2600, 5: 3800, 6: 5200, 7: 6800}
+XP_ACAO_MAGICA = 25            # cada encantamento ou peca de joia, fixo
+QTD_MATERIAL_MAGICO = 3        # unidades do material do "andar do bonus"
+
+ANDARES_ENCANTADOR = (1, 3, 5, 7, 9)     # impares -- ver decisoes.md
+ANDARES_JOALHEIRO = (2, 4, 6, 8, 10)     # pares
+MATERIAL_ENCANTADOR = {
+    1: "essencia_do_vento", 3: "essencia_da_agua", 5: "essencia_do_gelo",
+    7: "essencia_de_fogo", 9: "essencia_estelar",
+}
+MATERIAL_JOALHEIRO = {
+    2: "ambar_de_seiva", 4: "lagrima_de_sal", 6: "rubi_fosco",
+    8: "vitral_partido", 10: "perola_do_eco",
+}
+# bonus -> indice na escada de andares acima (0 = mais baixo, 4 = mais alto).
+# +1/+2 no 1o andar, +3/+4 no 2o, +5 no 3o, +6 no 4o, +7 no 5o (+ eco cristalizado).
+INDICE_ANDAR_POR_BONUS = {1: 0, 2: 0, 3: 1, 4: 1, 5: 2, 6: 3, 7: 4}
+
+
+def bonus_por_nivel_magico(nivel_oficio):
+    return BONUS_POR_NIVEL_MAGICO[min(nivel_oficio, NIVEL_MAXIMO_MAGICO)]
+
+
+def material_magico(bonus, profissao):
+    """O material (e quantas unidades do andar acima) que UM bônus específico
+    exige -- separado de custo_magico() pra o mapeamento bonus -> andar/
+    material ser testável direto, sem passar pela composição nivel -> bonus."""
+    indice = INDICE_ANDAR_POR_BONUS[bonus]
+    if profissao == "encantador":
+        andar_material = ANDARES_ENCANTADOR[indice]
+        material = MATERIAL_ENCANTADOR[andar_material]
+    else:
+        andar_material = ANDARES_JOALHEIRO[indice]
+        material = MATERIAL_JOALHEIRO[andar_material]
+    extra = {"eco_cristalizado": 1} if bonus == 7 else {}
+    return material, QTD_MATERIAL_MAGICO, extra
+
+
+def custo_magico(nivel_oficio, profissao):
+    """(bonus, material, qtd_material, extra, moedas) para uma acao de
+    Encantador ou Joalheiro no nivel ATUAL do jogador -- o bonus entregue
+    nao e' escolha do jogador, e' o que o nivel dele rende agora."""
+    bonus = bonus_por_nivel_magico(nivel_oficio)
+    material, qtd_material, extra = material_magico(bonus, profissao)
+    moedas = CUSTO_MOEDAS_POR_BONUS[bonus]
+    return bonus, material, qtd_material, extra, moedas
+
+
+def _slot_equipamento(texto):
+    """arma/armadura/anel/colar a partir de texto livre -- mesmo parsing que
+    `melhorar()` já fazia pra arma/armadura, estendido pros 4 slots."""
+    alvo = H["normalizar"](texto)
+    if alvo.startswith("armad"):
+        return "armadura"
+    if alvo.startswith("arm"):
+        return "arma"
+    if alvo.startswith("anel"):
+        return "anel"
+    if alvo.startswith("col"):
+        return "colar"
+    return None
 
 
 def encontrar_profissao(texto):
@@ -333,7 +435,7 @@ def instalar(bot, contexto):
         if acao in ("trocar", "mudar"):
             nova = encontrar_profissao(resto)
             if not nova:
-                await ctx.send("Trocar para qual? `rpg profissao trocar forja` ou `alquimia`.")
+                await ctx.send("Trocar para qual? `rpg profissao trocar <forja|alquimia|encantador|joalheiro>`.")
                 return
             if not j["profissao"]:
                 await ctx.send("Você ainda não tem profissão. Manda `rpg profissao forja`.")
@@ -360,7 +462,7 @@ def instalar(bot, contexto):
         if argumento and not j["profissao"]:
             escolhida = encontrar_profissao(argumento)
             if not escolhida:
-                await ctx.send("Não conheço esse ofício. É `forja` ou `alquimia`.")
+                await ctx.send("Não conheço esse ofício. É `forja`, `alquimia`, `encantador` ou `joalheiro`.")
                 return
             db.atualizar_jogador(j["user_id"], profissao=escolhida, prof_nivel=1, prof_xp=0)
             dados = PROFISSOES[escolhida]
@@ -399,18 +501,38 @@ def instalar(bot, contexto):
 
         dados = PROFISSOES[j["profissao"]]
         nivel, xp = j["prof_nivel"], j["prof_xp"]
+        teto = nivel_maximo_de(j["profissao"])
         e = discord.Embed(
             title=f"{dados['emoji']} {dados['titulo']} nível {nivel}",
             description=dados["desc"],
             color=ANDARES[j["andar"]]["cor"],
         )
-        if nivel < NIVEL_MAXIMO:
-            e.add_field(name="Progresso", value=f"{xp}/{xp_para_subir(nivel)} XP de ofício", inline=False)
+        if nivel < teto:
+            e.add_field(
+                name="Progresso",
+                value=f"{xp}/{xp_para_subir(nivel, j['profissao'])} XP de ofício", inline=False,
+            )
         else:
             e.add_field(name="Progresso", value="Nível máximo.", inline=False)
-        destravadas = [k for k, v in receitas_da(j["profissao"]).items() if v["nivel"] <= nivel]
-        e.add_field(name="Receitas destravadas", value=str(len(destravadas)), inline=True)
-        e.set_footer(text=f"rpg receitas · rpg craftar <item> · trocar custa {CUSTO_TROCA} 🪙")
+
+        if j["profissao"] in OFICIOS_MAGICOS:
+            bonus, material, qtd_material, extra, custo = custo_magico(nivel, j["profissao"])
+            extra_txt = " + 💠 Eco Cristalizado x1" if extra else ""
+            e.add_field(
+                name="No seu nível agora",
+                value=(
+                    f"+{bonus} de atributo — {ITENS[material]['emoji']} {ITENS[material]['nome']} "
+                    f"x{qtd_material}{extra_txt} + {custo} 🪙"
+                ),
+                inline=False,
+            )
+            comando = "rpg encantar <arma|armadura|anel|colar> <atributo>" if j["profissao"] == "encantador" \
+                else "rpg lapidar <anel|colar> <atributo>"
+            e.set_footer(text=f"{comando} · trocar custa {CUSTO_TROCA} 🪙")
+        else:
+            destravadas = [k for k, v in receitas_da(j["profissao"]).items() if v["nivel"] <= nivel]
+            e.add_field(name="Receitas destravadas", value=str(len(destravadas)), inline=True)
+            e.set_footer(text=f"rpg receitas · rpg craftar <item> · trocar custa {CUSTO_TROCA} 🪙")
         await ctx.send(embed=e)
 
     @bot.command(name="receitas", aliases=["receita", "craftaveis"])
@@ -420,6 +542,15 @@ def instalar(bot, contexto):
             return
         if not j["profissao"]:
             await ctx.send("Você ainda não escolheu um ofício. Manda `rpg profissao`.")
+            return
+        if j["profissao"] in OFICIOS_MAGICOS:
+            comando = "rpg encantar <arma|armadura|anel|colar> <atributo>" if j["profissao"] == "encantador" \
+                else "rpg lapidar <anel|colar> <atributo>"
+            await ctx.send(
+                f"{PROFISSOES[j['profissao']]['emoji']} {PROFISSOES[j['profissao']]['nome']} não usa "
+                f"receita de catálogo — o bônus vem do seu nível de ofício. `{comando}` · `rpg profissao` "
+                f"mostra o que seu nível de agora rende."
+            )
             return
 
         partes = argumento.split()
@@ -512,7 +643,7 @@ def instalar(bot, contexto):
         db.add_item(j["user_id"], chave, vezes)
 
         nivel, xp, subiu = aplicar_xp_profissao(
-            j["prof_nivel"], j["prof_xp"], receita["xp"] * vezes
+            j["prof_nivel"], j["prof_xp"], receita["xp"] * vezes, j["profissao"]
         )
         db.atualizar_jogador(
             j["user_id"], moedas=j["moedas"] - custo, prof_nivel=nivel, prof_xp=xp
@@ -615,7 +746,7 @@ def instalar(bot, contexto):
             e.add_field(name="✅ Sucesso", value=f"Peça agora é **+{alvo_nivel}**.", inline=False)
             if eh_forjador:
                 nivel, xp, subiu = aplicar_xp_profissao(
-                    j["prof_nivel"], j["prof_xp"], XP_UPGRADE[alvo_nivel]
+                    j["prof_nivel"], j["prof_xp"], XP_UPGRADE[alvo_nivel], "forja"
                 )
                 campos["prof_nivel"], campos["prof_xp"] = nivel, xp
                 if subiu:
@@ -694,7 +825,7 @@ def instalar(bot, contexto):
 
         if j["profissao"] == "forja" and xp_peca:
             ganho = xp_peca * vezes
-            nivel, xp, subiu = aplicar_xp_profissao(j["prof_nivel"], j["prof_xp"], ganho)
+            nivel, xp, subiu = aplicar_xp_profissao(j["prof_nivel"], j["prof_xp"], ganho, "forja")
             db.atualizar_jogador(j["user_id"], prof_nivel=nivel, prof_xp=xp)
             e.add_field(name="Ofício", value=f"+{ganho} XP de Forja.", inline=False)
             if subiu:
@@ -702,4 +833,196 @@ def instalar(bot, contexto):
 
         await ctx.send(embed=e)
 
-    print("profissoes.py carregado — forja e alquimia no ar.")
+    # ---------------------------------------------------------------- Encantador
+    @bot.command(name="encantar", aliases=["enchant"])
+    @travas.fora_de_luta()
+    async def encantar(ctx, *, argumento: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        partes = argumento.split(None, 1)
+        if len(partes) < 2:
+            await ctx.send("Uso: `rpg encantar <arma|armadura|anel|colar> <for|des|con|int>`.")
+            return
+        slot = _slot_equipamento(partes[0])
+        atributo = at.encontrar_atributo(partes[1])
+        if not slot or not atributo:
+            await ctx.send("Uso: `rpg encantar <arma|armadura|anel|colar> <for|des|con|int>`.")
+            return
+        if j["profissao"] != "encantador":
+            atual = PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            await ctx.send(f"Isso é trabalho de Encantador — seu ofício é {atual} (`rpg profissao`).")
+            return
+
+        item_chave = j[slot]
+        if not item_chave:
+            await ctx.send(f"Você não tem {slot} equipada pra encantar.")
+            return
+
+        npc = bancada_no_andar(j["andar"], "encantador")
+        if not npc:
+            await ctx.send(
+                f"Precisa de um **encantador** pra isso, e não tem nenhum no andar {j['andar']}."
+            )
+            return
+
+        instancia_id = j.get(f"{slot}_instancia_id")
+        instancia = db.get_instancia(instancia_id)
+        if instancia and instancia["encantamento_atributo"]:
+            sigla_atual = at.ATRIBUTOS[instancia["encantamento_atributo"]]["sigla"]
+            await ctx.send(
+                f"**{ITENS[item_chave]['nome']}** já está encantada "
+                f"(**{sigla_atual} +{instancia['encantamento_valor']}**). "
+                f"Remove com `rpg desencantar {slot}` antes de encantar de novo."
+            )
+            return
+
+        bonus, material, qtd_material, extra, custo = custo_magico(j["prof_nivel"], "encantador")
+        receita = {"materiais": {material: qtd_material, **extra}}
+        faltando = falta_material(j["user_id"], receita)
+        if faltando:
+            await ctx.send(
+                "Falta material: "
+                + " · ".join(f"{ITENS[i]['emoji']} {ITENS[i]['nome']} x{q}" for i, q in faltando)
+            )
+            return
+        if j["moedas"] < custo:
+            await ctx.send(f"Faltam **{custo - j['moedas']}** moedas para esse encantamento.")
+            return
+
+        for mat, qtd in receita["materiais"].items():
+            db.remove_item(j["user_id"], mat, qtd)
+        if not instancia_id:
+            instancia_id = db.criar_instancia(j["user_id"], item_chave)
+            db.atualizar_jogador(j["user_id"], **{f"{slot}_instancia_id": instancia_id})
+        db.definir_encantamento(instancia_id, atributo, bonus)
+
+        nivel, xp, subiu = aplicar_xp_profissao(
+            j["prof_nivel"], j["prof_xp"], XP_ACAO_MAGICA, "encantador"
+        )
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] - custo, prof_nivel=nivel, prof_xp=xp)
+
+        sigla = at.ATRIBUTOS[atributo]["sigla"]
+        e = discord.Embed(
+            title=f"🔯 {ITENS[item_chave]['nome']} encantada — +{bonus} {sigla}",
+            description=(
+                f"*{npc['nome']} grava o símbolo na peça.*\n\n"
+                f"Gastou {texto_materiais(receita)} + {custo} 🪙."
+            ),
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        if subiu:
+            e.add_field(
+                name="⬆️ Ofício melhorou", value=f"**Encantador nível {nivel}**.", inline=False,
+            )
+        await ctx.send(embed=e)
+
+    @bot.command(name="desencantar", aliases=["removerencanto"])
+    @travas.fora_de_luta()
+    async def desencantar(ctx, *, argumento: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        slot = _slot_equipamento(argumento)
+        if not slot:
+            await ctx.send("Uso: `rpg desencantar <arma|armadura|anel|colar>`.")
+            return
+        item_chave = j[slot]
+        if not item_chave:
+            await ctx.send(f"Você não tem {slot} equipada.")
+            return
+
+        instancia_id = j.get(f"{slot}_instancia_id")
+        instancia = db.get_instancia(instancia_id)
+        if not instancia or not instancia["encantamento_atributo"]:
+            await ctx.send(f"**{ITENS[item_chave]['nome']}** não está encantada.")
+            return
+
+        bonus = instancia["encantamento_valor"]
+        atributo = instancia["encantamento_atributo"]
+        reembolso = CUSTO_MOEDAS_POR_BONUS[bonus] // 2
+
+        db.remover_encantamento(instancia_id)
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + reembolso)
+
+        sigla = at.ATRIBUTOS[atributo]["sigla"]
+        await ctx.send(
+            f"Removeu o encantamento (**{sigla} +{bonus}**) de **{ITENS[item_chave]['nome']}** "
+            f"— {reembolso} 🪙 de volta (metade do custo de encantar +{bonus}). "
+            f"Pode encantar de novo quando quiser."
+        )
+
+    # ---------------------------------------------------------------- Joalheiro
+    @bot.command(name="lapidar", aliases=["fabricarjoia"])
+    @travas.fora_de_luta()
+    async def lapidar(ctx, *, argumento: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        partes = argumento.split(None, 1)
+        if len(partes) < 2:
+            await ctx.send("Uso: `rpg lapidar <anel|colar> <for|des|con|int>`.")
+            return
+        tipo = H["normalizar"](partes[0])
+        if tipo.startswith("anel"):
+            item_chave = "anel_joia"
+        elif tipo.startswith("col"):
+            item_chave = "colar_joia"
+        else:
+            await ctx.send("Uso: `rpg lapidar <anel|colar> <for|des|con|int>`.")
+            return
+        atributo = at.encontrar_atributo(partes[1])
+        if not atributo:
+            await ctx.send("Não conheço esse atributo. Use FOR, DES, CON ou INT.")
+            return
+        if j["profissao"] != "joalheiro":
+            atual = PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            await ctx.send(f"Isso é trabalho de Joalheiro — seu ofício é {atual} (`rpg profissao`).")
+            return
+
+        npc = bancada_no_andar(j["andar"], "joalheiro")
+        if not npc:
+            await ctx.send(
+                f"Precisa de um **joalheiro** pra isso, e não tem nenhum no andar {j['andar']}."
+            )
+            return
+
+        bonus, material, qtd_material, extra, custo = custo_magico(j["prof_nivel"], "joalheiro")
+        receita = {"materiais": {material: qtd_material, **extra}}
+        faltando = falta_material(j["user_id"], receita)
+        if faltando:
+            await ctx.send(
+                "Falta material: "
+                + " · ".join(f"{ITENS[i]['emoji']} {ITENS[i]['nome']} x{q}" for i, q in faltando)
+            )
+            return
+        if j["moedas"] < custo:
+            await ctx.send(f"Faltam **{custo - j['moedas']}** moedas para essa lapidação.")
+            return
+
+        for mat, qtd in receita["materiais"].items():
+            db.remove_item(j["user_id"], mat, qtd)
+        db.criar_instancia(j["user_id"], item_chave, joia_atributo=atributo, joia_valor=bonus)
+
+        nivel, xp, subiu = aplicar_xp_profissao(
+            j["prof_nivel"], j["prof_xp"], XP_ACAO_MAGICA, "joalheiro"
+        )
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] - custo, prof_nivel=nivel, prof_xp=xp)
+
+        sigla = at.ATRIBUTOS[atributo]["sigla"]
+        e = discord.Embed(
+            title=f"💎 {ITENS[item_chave]['nome']} — +{bonus} {sigla}",
+            description=(
+                f"*{npc['nome']} lapida a peça sob a luz.*\n\n"
+                f"Gastou {texto_materiais(receita)} + {custo} 🪙."
+            ),
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        if subiu:
+            e.add_field(
+                name="⬆️ Ofício melhorou", value=f"**Joalheiro nível {nivel}**.", inline=False,
+            )
+        e.set_footer(text=f"Na mochila. Equipa com `rpg equipar {ITENS[item_chave]['nome']}`")
+        await ctx.send(embed=e)
+
+    print("profissoes.py carregado — forja, alquimia, encantador e joalheiro no ar.")

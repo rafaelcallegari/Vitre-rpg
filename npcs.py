@@ -82,12 +82,16 @@ NPCS = {
          "fala": "Já contei os degraus até em cima. Deu um número que não cabe na boca."},
         {"nome": "Sera", "titulo": "a Taverneira", "tipo": "taverneiro", "dialogo": "sera",
          "fala": "Aqui ninguém pergunta o motivo do cansaço. Só cobra por ele."},
+        {"nome": "Baldo", "titulo": "do Cata-Vento", "tipo": "encantador", "dialogo": "baldo",
+         "fala": "O vento não escolhe onde bate. Eu só aprendi a prender um pedaço dele na sua lâmina."},
     ],
     2: [
         {"nome": "Irmã Vell", "titulo": "da Tenda de Musgo", "tipo": "mercador", "dialogo": "irma_vell",
          "fala": "Se a árvore repetir o que você falou, não responde. Elas aprendem."},
         {"nome": "O Lenhador", "titulo": "que não corta", "tipo": "conversa", "dialogo": "lenhador",
          "fala": "Machado é bom pra apontar. Cortar, aí já é briga."},
+        {"nome": "Orin", "titulo": "da Árvore Torta", "tipo": "joalheiro", "dialogo": "orin",
+         "fala": "Toda pedra que acho aqui já nasceu torta, que nem a árvore. Eu só ajudo a torcer certo."},
     ],
     3: [
         {"nome": "Doran", "titulo": "do Bote Furado", "tipo": "mercador", "dialogo": "doran",
@@ -96,12 +100,16 @@ NPCS = {
          "fala": "Aço que já afundou uma vez não afunda de novo. É superstição, mas funciona."},
         {"nome": "Bramm", "titulo": "o Carroceiro", "tipo": "carroceiro", "dialogo": "bramm",
          "fala": "Passo quatro vezes por dia. Se você estiver aqui, sobe. Se não estiver, paciência."},
+        {"nome": "Lira", "titulo": "a Que Escuta a Maré", "tipo": "encantador", "dialogo": "lira",
+         "fala": "A maré fala baixo, mas fala sempre a mesma coisa duas vezes. Eu só repito pra sua arma."},
     ],
     4: [
         {"nome": "Ysra", "titulo": "da Caravana", "tipo": "mercador", "dialogo": "ysra",
          "fala": "Água eu não vendo. Água aqui é o que separa vivo de estátua."},
         {"nome": "O Homem de Sal", "titulo": "", "tipo": "conversa", "dialogo": "homem_de_sal",
          "fala": "..."},
+        {"nome": "Kef", "titulo": "do Poço Seco", "tipo": "joalheiro", "dialogo": "kef",
+         "fala": "O poço secou, mas o que ele guardava no fundo não. Eu só desço buscar."},
     ],
     5: [
         {"nome": "Tikk", "titulo": "do Trenó", "tipo": "mercador", "dialogo": "tikk",
@@ -110,12 +118,16 @@ NPCS = {
          "fala": "Têmpera no lago. A lâmina grita e depois nunca mais reclama."},
         {"nome": "A Pescadora", "titulo": "silenciosa", "tipo": "conversa", "dialogo": "pescadora",
          "fala": "(Ela aponta pro buraco no gelo. Tem algo olhando de volta.)"},
+        {"nome": "Corin", "titulo": "do Casaco Longo", "tipo": "encantador", "dialogo": "corin",
+         "fala": "Uso o casaco comprido porque o frio daqui gruda no encantamento antes de grudar em mim."},
     ],
     6: [
         {"nome": "Bico", "titulo": "do Vagão 7", "tipo": "mercador", "dialogo": "bico",
          "fala": "Lamparina acesa não quer dizer que tem gente. Quer dizer que teve."},
         {"nome": "Recado do Capataz", "titulo": "", "tipo": "conversa", "dialogo": "capataz",
          "fala": "«Turno cancelado. Não descer. Assinado: ninguém.»"},
+        {"nome": "Mira", "titulo": "do Trilho Morto", "tipo": "joalheiro", "dialogo": "mira",
+         "fala": "O trilho não leva a lugar nenhum mais. Mas as pedras que acho ao lado dele levam."},
     ],
     7: [
         {"nome": "Vane", "titulo": "da Tenda de Cinza", "tipo": "mercador", "dialogo": "vane",
@@ -124,12 +136,16 @@ NPCS = {
          "fala": "Não forjo com fogo. Forjo com o que sobrou dele."},
         {"nome": "O Cavaleiro", "titulo": "que espera", "tipo": "conversa", "dialogo": "cavaleiro",
          "fala": "Vou subir amanhã. Falo isso há bastante tempo."},
+        {"nome": "Talla", "titulo": "da Última Brasa", "tipo": "encantador", "dialogo": "talla",
+         "fala": "Guardo uma brasa só, a última que não virou cinza. É o suficiente pra encantar o resto."},
     ],
     8: [
         {"nome": "Irmão Cael", "titulo": "", "tipo": "mercador", "dialogo": "irmao_cael",
          "fala": "Reze se quiser. Mas paga a poção primeiro."},
         {"nome": "A Corista", "titulo": "sem voz", "tipo": "conversa", "dialogo": "corista",
          "fala": "(Ela move os lábios. O som chega três segundos depois, de outro lugar.)"},
+        {"nome": "Vesna", "titulo": "do Altar Lateral", "tipo": "joalheiro", "dialogo": "vesna",
+         "fala": "O altar principal é pra rezar. O lateral, onde eu fico, é pra lapidar. Os dois pedem silêncio."},
     ],
     9: [
         {"nome": "Ori", "titulo": "do Balão", "tipo": "mercador", "dialogo": "ori",
@@ -138,6 +154,8 @@ NPCS = {
          "fala": "O que eu faço aqui, ninguém faz mais acima. Escolhe com calma."},
         {"nome": "O Cartógrafo", "titulo": "do Vazio", "tipo": "conversa", "dialogo": "cartografo",
          "fala": "Mapeei os dez. O décimo primeiro se recusa a ficar no papel."},
+        {"nome": "Astrea", "titulo": "Contadora de Estrelas", "tipo": "encantador", "dialogo": "astrea",
+         "fala": "Cada estrela que conto daqui já morreu há tempos. O brilho que sobra é o que eu uso pra encantar."},
     ],
     10: [
         {"nome": "Eco de um Mercador", "titulo": "", "tipo": "mercador", "dialogo": "eco_mercador",
@@ -146,6 +164,8 @@ NPCS = {
          "fala": "Descansa. Não vai ajudar, mas descansa."},
         {"nome": "A Porta", "titulo": "", "tipo": "conversa", "dialogo": "porta",
          "fala": "(Não é um NPC. Mas responde quando você fala com ela.)"},
+        {"nome": "Eco de uma Joalheira", "titulo": "", "tipo": "joalheiro", "dialogo": "eco_joalheira",
+         "fala": "Já lapidei isso. Você já usou. Nós duas já esquecemos — só a pedra lembra."},
     ],
 
     # ---- acima do selo: só A Guia. Sem loja, ferreiro nem carroça de propósito

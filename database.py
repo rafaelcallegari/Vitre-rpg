@@ -204,6 +204,18 @@ COLUNAS_INSTANCIA_ACESSORIOS = {
     "colar_instancia_id": "INTEGER",
 }
 
+COLUNAS_INSTANCIA_JOIA = {
+    # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
+    # isso não entra nos dicts acima, que a migração aplica só na tabela de
+    # jogadores). O Joalheiro fabrica anel/colar ESCOLHENDO o atributo -- o
+    # bônus resultante não cabe nas colunas `encantamento_*` (essas são do
+    # Encantador, e as duas camadas precisam somar independente: um anel de
+    # Joalheiro encantado pelo Encantador tem UM valor de joia_* e OUTRO de
+    # encantamento_* na mesma linha). Ver decisoes.md § Encantador e Joalheiro.
+    "joia_atributo": "TEXT",
+    "joia_valor": "INTEGER",
+}
+
 # grant histórico e único — não é reconcedido em migrações futuras
 HANZO_USER_ID = 330816605963681792
 
@@ -434,6 +446,19 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_INSTANCIA_ACESSORIOS[coluna]}"
                 )
             print("Banco migrado: colunas de instância criadas pra anel e colar (sem melhoria neles ainda).")
+
+        # migração 14: joia_atributo/joia_valor em `instancias` -- bônus
+        # base do Joalheiro (ver COLUNAS_INSTANCIA_JOIA acima). Coluna nova
+        # numa tabela que não é `jogadores`, então checa PRAGMA table_info
+        # de `instancias`, não de `jogadores` como as migrações de cima.
+        colunas_instancias = [r["name"] for r in conn.execute("PRAGMA table_info(instancias)")]
+        novas_joia = [c for c in COLUNAS_INSTANCIA_JOIA if c not in colunas_instancias]
+        if novas_joia:
+            for coluna in novas_joia:
+                conn.execute(
+                    f"ALTER TABLE instancias ADD COLUMN {coluna} {COLUNAS_INSTANCIA_JOIA[coluna]}"
+                )
+            print("Banco migrado: colunas de joia (Joalheiro) criadas em instancias.")
 
 
 def _migrar_upgrades_para_instancias(conn):
@@ -1007,11 +1032,15 @@ def get_inventario(user_id):
 # estado é derivado (pertence ao dono e nenhum slot dele aponta pro id
 # dela). Substitui a tabela `upgrades` (que fica no schema, sem uso, por
 # nunca se dropar tabela com dado real -- ver decisoes.md § Instâncias).
-def criar_instancia(dono, item, nivel_melhoria=0):
+def criar_instancia(dono, item, nivel_melhoria=0, joia_atributo=None, joia_valor=None):
+    """joia_atributo/joia_valor só são passados pelo Joalheiro, na hora de
+    fabricar anel/colar -- toda outra instância (melhoria de arma/armadura)
+    nasce com os dois em NULL. Ver decisoes.md § Encantador e Joalheiro."""
     with conectar() as conn:
         cur = conn.execute(
-            "INSERT INTO instancias (dono, item, nivel_melhoria) VALUES (?, ?, ?)",
-            (dono, item, nivel_melhoria),
+            """INSERT INTO instancias (dono, item, nivel_melhoria, joia_atributo, joia_valor)
+               VALUES (?, ?, ?, ?, ?)""",
+            (dono, item, nivel_melhoria, joia_atributo, joia_valor),
         )
     return cur.lastrowid
 
@@ -1027,6 +1056,26 @@ def get_instancia(instancia_id):
 def set_nivel_melhoria(instancia_id, nivel):
     with conectar() as conn:
         conn.execute("UPDATE instancias SET nivel_melhoria = ? WHERE id = ?", (nivel, instancia_id))
+
+
+def definir_encantamento(instancia_id, atributo, valor):
+    """Aplicado pelo Encantador -- só entra em peça que ainda não está
+    encantada (checado por quem chama, `profissoes.encantar`). Convive com
+    `joia_atributo`/`joia_valor` (Joalheiro) e `nivel_melhoria` (Forjador)
+    na mesma linha -- as três camadas de bônus são independentes."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE instancias SET encantamento_atributo = ?, encantamento_valor = ? WHERE id = ?",
+            (atributo, valor, instancia_id),
+        )
+
+
+def remover_encantamento(instancia_id):
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE instancias SET encantamento_atributo = NULL, encantamento_valor = NULL WHERE id = ?",
+            (instancia_id,),
+        )
 
 
 def excluir_instancia(instancia_id):

@@ -46,7 +46,10 @@ GUIA_A_CADA_ACOES = 3   # acima do Selo, a Guia comenta a cada N comandos fora d
 # decisoes.md § Teto de viajar acima do Selo.
 LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1
 
-ICONES_NPC = {"mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬", "taverneiro": "🍺", "guia": "🕯️"}
+ICONES_NPC = {
+    "mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬",
+    "taverneiro": "🍺", "guia": "🕯️", "encantador": "🔯", "joalheiro": "💎",
+}
 
 # categoria onde `rpg priv` cria as salas. Se não existir, o bot cria.
 CATEGORIA_SALAS = "Torre — Salas"
@@ -146,55 +149,63 @@ def separar_quantidade(texto):
     return texto.strip(), 1
 
 
-def com_bonus_upgrade(item_dado, instancia_id, campo):
-    """Copia o item aplicando +12% no atk/def por nivel de melhoria (+1/+2).
-    A melhoria mora na instância agora (id no slot), não mais no par
-    (jogador, item) -- ver decisoes.md § Instâncias de item."""
-    if not instancia_id or campo not in item_dado:
+def com_instancia(item_dado, instancia_id, campo_upgrade=None):
+    """Copia o item com o que a instância acrescenta: +12%/nível no
+    atk/def (campo_upgrade, só arma/armadura), o atributo+bônus base de uma
+    joia do Joalheiro (joia_atributo/joia_valor -- só existe em anel/colar
+    fabricado, nunca em item de loja/raide) e o encantamento do Encantador
+    (encantamento_atributo/valor, guardado em `_encantamento_*` pra não
+    colidir com "atributo"/"bonus" do catálogo -- as duas camadas precisam
+    somar independente, ver decisoes.md § Encantador e Joalheiro).
+    Substitui os antigos com_bonus_upgrade/com_instancia (um único helper,
+    uma leitura de banco por peça em vez de duas)."""
+    if not instancia_id:
         return item_dado
     instancia = db.get_instancia(instancia_id)
-    nivel = instancia["nivel_melhoria"] if instancia else 0
-    if not nivel:
-        return item_dado
-    item_dado = dict(item_dado)
-    item_dado[campo] = int(item_dado[campo] * (1 + 0.12 * nivel))
-    item_dado["_nivel_melhoria"] = nivel
-    return item_dado
-
-
-def com_instancia(item_dado, instancia_id):
-    """Anexa o id da instância (se houver) ao dict do item, sem aplicar
-    bônus nenhum -- anel/colar não melhoram (só arma/armadura, via
-    com_bonus_upgrade). Preparo pro Arcano: quando o encantamento existir,
-    ele lê `_instancia_id` daqui em vez de reconsultar o banco -- ver
-    decisoes.md § Instâncias de item -- anel e colar também carregam
-    instância."""
-    if not instancia_id:
+    if not instancia:
         return item_dado
     item_dado = dict(item_dado)
     item_dado["_instancia_id"] = instancia_id
+    nivel = instancia["nivel_melhoria"]
+    if nivel and campo_upgrade and campo_upgrade in item_dado:
+        item_dado[campo_upgrade] = int(item_dado[campo_upgrade] * (1 + 0.12 * nivel))
+        item_dado["_nivel_melhoria"] = nivel
+    if instancia["joia_atributo"]:
+        item_dado["atributo"] = instancia["joia_atributo"]
+        item_dado["bonus"] = instancia["joia_valor"]
+    if instancia["encantamento_atributo"]:
+        item_dado["_encantamento_atributo"] = instancia["encantamento_atributo"]
+        item_dado["_encantamento_valor"] = instancia["encantamento_valor"]
     return item_dado
 
 
 def bonus_atributo_equipamento(*pecas):
     """Soma o bônus de atributo de qualquer peça equipada que declare
-    "atributo"+"bonus" — anel, colar, e agora as armas elementais dos
-    andares 11+ também. Não passa por com_bonus_upgrade de propósito:
-    `rpg melhorar` só mexe em atk/def, nunca nesse bônus."""
+    "atributo"+"bonus" — anel, colar, joia do Joalheiro, e as armas
+    elementais dos andares 11+ — MAIS o encantamento do Encantador
+    (`_encantamento_atributo`/`_valor`, ver com_instancia), que pode
+    existir em qualquer uma das 4 peças e soma por cima, nunca substitui.
+    Não passa por melhoria de propósito: `rpg melhorar` só mexe em atk/def,
+    nunca nesse bônus."""
     bonus = {}
     for peca in pecas:
-        if peca and "atributo" in peca and "bonus" in peca:
+        if not peca:
+            continue
+        if "atributo" in peca and "bonus" in peca:
             bonus[peca["atributo"]] = bonus.get(peca["atributo"], 0) + peca["bonus"]
+        if peca.get("_encantamento_atributo"):
+            atributo = peca["_encantamento_atributo"]
+            bonus[atributo] = bonus.get(atributo, 0) + peca["_encantamento_valor"]
     return bonus
 
 
 def stats(j):
-    arma = com_bonus_upgrade(ITENS.get(j["arma"], {}), j["arma_instancia_id"], "atk")
-    armadura = com_bonus_upgrade(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
+    arma = com_instancia(ITENS.get(j["arma"], {}), j["arma_instancia_id"], "atk")
+    armadura = com_instancia(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
     anel = com_instancia(ITENS.get(j["anel"], {}), j["anel_instancia_id"])
     colar = com_instancia(ITENS.get(j["colar"], {}), j["colar_instancia_id"])
     atribs_base = at.extrair(j)
-    bonus = bonus_atributo_equipamento(arma, anel, colar)
+    bonus = bonus_atributo_equipamento(arma, armadura, anel, colar)
     atribs = {k: atribs_base[k] + bonus.get(k, 0) for k in atribs_base}
     s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"])
     s["atribs"] = atribs
@@ -225,20 +236,30 @@ def texto_equipamento(s):
         nome = f"{dado.get('emoji', '')} **{dado['nome']}**".strip()
         return f"{nome} — {rotulo_fn(chave, dado)}"
 
+    def sufixo_encantamento(dado):
+        """+{valor} {SIGLA} (encantado) se a peça tiver encantamento do
+        Encantador -- vale pras 4 peças, sempre em cima do resto."""
+        if not dado.get("_encantamento_atributo"):
+            return ""
+        sigla = at.ATRIBUTOS[dado["_encantamento_atributo"]]["sigla"]
+        return f" · +{dado['_encantamento_valor']} {sigla} (encantado)"
+
     def rotulo_arma(chave, dado):
         nivel = dado.get("_nivel_melhoria", 0)
         sufixo = f" +{nivel}" if nivel else ""
         sigla = at.ATRIBUTOS[s["atributo_arma"]]["sigla"]
-        return f"+{dado['atk']} ATK{sufixo} ({sigla})"
+        return f"+{dado['atk']} ATK{sufixo} ({sigla}){sufixo_encantamento(dado)}"
 
     def rotulo_armadura(chave, dado):
         nivel = dado.get("_nivel_melhoria", 0)
         sufixo = f" +{nivel}" if nivel else ""
-        return f"+{dado['def']} DEF{sufixo}"
+        return f"+{dado['def']} DEF{sufixo}{sufixo_encantamento(dado)}"
 
     def rotulo_acessorio(chave, dado):
+        if "atributo" not in dado:
+            return f"sem bônus{sufixo_encantamento(dado)}"
         sigla = at.ATRIBUTOS[dado["atributo"]]["sigla"]
-        return f"+{dado['bonus']} {sigla}"
+        return f"+{dado['bonus']} {sigla}{sufixo_encantamento(dado)}"
 
     return (
         f"🗡️ Arma: {peca('arma', rotulo_arma)}\n"

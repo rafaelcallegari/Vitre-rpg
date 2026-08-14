@@ -119,3 +119,39 @@ def test_migracao_13_anel_colar_nao_reexecuta_a_migracao_12():
     colunas = _colunas_jogadores()
     assert "anel_instancia_id" in colunas and "colar_instancia_id" in colunas
     assert _contar_instancias() == 1   # não duplicou -- continua 1, não 2
+
+
+# ---- migração 14: joia_atributo/joia_valor em `instancias` (Joalheiro) ----
+def _colunas_instancias():
+    with db.conectar() as conn:
+        return {r["name"] for r in conn.execute("PRAGMA table_info(instancias)")}
+
+
+def test_migracao_14_cria_colunas_de_joia_em_instancias():
+    colunas = _colunas_instancias()
+    assert {"joia_atributo", "joia_valor", "encantamento_atributo", "encantamento_valor"} <= colunas
+
+
+def test_migracao_14_e_idempotente():
+    antes = _colunas_instancias()
+    db.init_db()
+    assert _colunas_instancias() == antes
+
+
+def test_migracao_14_nao_reprocessa_upgrades_quando_falta_so_a_coluna_de_joia():
+    """Mesmo espírito do teste da migração 13: uma coluna nova em outra
+    tabela não pode disparar `_migrar_upgrades_para_instancias` de novo."""
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, arma="espada_ferro")
+    _upgrade_bruto(1, "espada_ferro", 1)
+    with db.conectar() as conn:
+        db._migrar_upgrades_para_instancias(conn)
+    assert _contar_instancias() == 1
+
+    with db.conectar() as conn:
+        conn.execute("ALTER TABLE instancias DROP COLUMN joia_atributo")
+        conn.execute("ALTER TABLE instancias DROP COLUMN joia_valor")
+
+    db.init_db()
+    assert "joia_atributo" in _colunas_instancias()
+    assert _contar_instancias() == 1

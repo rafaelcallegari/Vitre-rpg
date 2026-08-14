@@ -100,6 +100,18 @@ def _opcoes_destino(j):
     return opcoes[:25]
 
 
+def _opcoes_atributo():
+    """FOR/DES/CON/INT -- segundo passo de Encantar e de Lapidar, mesmo
+    vocabulário de `at.encontrar_atributo` (profissoes.py chama a mesma
+    função quando o comando de texto roda por trás do botão)."""
+    return [
+        discord.SelectOption(label="Força (FOR)", value="forca", emoji="💪"),
+        discord.SelectOption(label="Destreza (DES)", value="destreza", emoji="🎯"),
+        discord.SelectOption(label="Constituição (CON)", value="constituicao", emoji="🛡️"),
+        discord.SelectOption(label="Inteligência (INT)", value="inteligencia", emoji="🔮"),
+    ]
+
+
 def _opcoes_equipamento_inventario(user_id):
     """Pra desmanchar -- não filtra por `vendavel` (desmanchar não checa
     isso, e o item nunca fica sem dono: vira material de volta)."""
@@ -397,6 +409,92 @@ class FerreiroView(PainelComercioBase):
         await self._executar(interaction, invocar)
 
 
+class EncantadorView(PainelComercioBase):
+    # -------- Encantar: peça equipada -> atributo (dois selects em sequência,
+    # mesmo padrão de _pedir_quantidade_e_comprar) -- recusa ephemeral se o
+    # jogador não é Encantador, igual ao "Forjar" do FerreiroView.
+    @discord.ui.button(label="Encantar", style=discord.ButtonStyle.primary, row=0)
+    async def encantar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
+        if j["profissao"] != "encantador":
+            atual = profissoes.PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            await interaction.response.send_message(
+                f"Essa bancada é de Encantador — seu ofício é {atual}. "
+                f"Precisa ser Encantador pra isso (`rpg profissao`).",
+                ephemeral=True,
+            )
+            return
+        opcoes = [
+            discord.SelectOption(label=f"{slot.capitalize()} — {ITENS[j[slot]]['nome']}"[:100], value=slot)
+            for slot in ("arma", "armadura", "anel", "colar") if j[slot]
+        ]
+        await self.abrir_selecao(
+            interaction, opcoes, "Você não tem nada equipado pra encantar.", self._escolher_peca,
+        )
+
+    async def _escolher_peca(self, interaction, slot):
+        async def escolher_atributo(interaction2, atributo):
+            async def invocar(ctx):
+                await H["_bot"].get_command("encantar").callback(ctx, argumento=f"{slot} {atributo}")
+            await self._executar(interaction2, invocar)
+
+        await self.abrir_selecao(
+            interaction, _opcoes_atributo(), "Item não encontrado.", escolher_atributo,
+        )
+
+    # -------- Desencantar: só mostra peça que já está encantada
+    @discord.ui.button(label="Desencantar", style=discord.ButtonStyle.danger, row=0)
+    async def desencantar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
+        opcoes = []
+        for slot in ("arma", "armadura", "anel", "colar"):
+            if not j[slot]:
+                continue
+            instancia = db.get_instancia(j.get(f"{slot}_instancia_id"))
+            if instancia and instancia["encantamento_atributo"]:
+                opcoes.append(discord.SelectOption(
+                    label=f"{slot.capitalize()} — {ITENS[j[slot]]['nome']}"[:100], value=slot,
+                ))
+        await self.abrir_selecao(
+            interaction, opcoes, "Você não tem nada encantado pra remover.", self._escolher_desencantar,
+        )
+
+    async def _escolher_desencantar(self, interaction, slot):
+        async def invocar(ctx):
+            await H["_bot"].get_command("desencantar").callback(ctx, argumento=slot)
+        await self._executar(interaction, invocar)
+
+
+class JoalheiroView(PainelComercioBase):
+    # -------- Lapidar: anel/colar -> atributo, mesmo padrão de dois selects
+    @discord.ui.button(label="Lapidar", style=discord.ButtonStyle.primary, row=0)
+    async def lapidar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
+        if j["profissao"] != "joalheiro":
+            atual = profissoes.PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            await interaction.response.send_message(
+                f"Essa bancada é de Joalheiro — seu ofício é {atual}. "
+                f"Precisa ser Joalheiro pra isso (`rpg profissao`).",
+                ephemeral=True,
+            )
+            return
+        opcoes = [
+            discord.SelectOption(label="Anel", value="anel", emoji="💍"),
+            discord.SelectOption(label="Colar", value="colar", emoji="📿"),
+        ]
+        await self.abrir_selecao(interaction, opcoes, "Nada pra lapidar.", self._escolher_tipo)
+
+    async def _escolher_tipo(self, interaction, tipo):
+        async def escolher_atributo(interaction2, atributo):
+            async def invocar(ctx):
+                await H["_bot"].get_command("lapidar").callback(ctx, argumento=f"{tipo} {atributo}")
+            await self._executar(interaction2, invocar)
+
+        await self.abrir_selecao(
+            interaction, _opcoes_atributo(), "Item não encontrado.", escolher_atributo,
+        )
+
+
 class TaverneiroView(PainelComercioBase):
     @discord.ui.button(label="Descansar", style=discord.ButtonStyle.success, row=0)
     async def descansar_btn(self, interaction, button):
@@ -442,6 +540,8 @@ VIEW_POR_TIPO = {
     "ferreiro": FerreiroView,
     "taverneiro": TaverneiroView,
     "carroceiro": CarroceiroView,
+    "encantador": EncantadorView,
+    "joalheiro": JoalheiroView,
 }
 
 

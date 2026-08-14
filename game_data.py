@@ -141,6 +141,30 @@ ITENS = {
     "pena_do_trovao": {"nome": "Pena do Trovão", "emoji": "⚡", "tipo": "material", "preco": 330},
     "eco_cristalizado": {"nome": "Eco Cristalizado", "emoji": "💠", "tipo": "material", "preco": 400},
     "fragmento_selo": {"vendavel": False, "nome": "Fragmento do Selo", "emoji": "🔷", "tipo": "material", "preco": 500},
+
+    # ---------------- materiais de Encantador (andares ímpares) e Joalheiro
+    # (andares pares) -- mesma escada de preço dos materiais de chão do
+    # andar correspondente (12 no 1 até 400 no 10). Ver decisoes.md § Encantador
+    # e Joalheiro pra quantidade por receita (tier do bônus -> andar do material).
+    "essencia_do_vento": {"nome": "Essência do Vento", "emoji": "🍃", "tipo": "material", "preco": 12},
+    "ambar_de_seiva": {"nome": "Âmbar de Seiva", "emoji": "🟠", "tipo": "material", "preco": 30},
+    "essencia_da_agua": {"nome": "Essência da Água", "emoji": "💧", "tipo": "material", "preco": 55},
+    "lagrima_de_sal": {"nome": "Lágrima de Sal", "emoji": "🤍", "tipo": "material", "preco": 85},
+    "essencia_do_gelo": {"nome": "Essência do Gelo", "emoji": "🧊", "tipo": "material", "preco": 120},
+    "rubi_fosco": {"nome": "Rubi Fosco", "emoji": "🔴", "tipo": "material", "preco": 160},
+    "essencia_de_fogo": {"nome": "Essência de Fogo", "emoji": "🔥", "tipo": "material", "preco": 210},
+    "vitral_partido": {"nome": "Vitral Partido", "emoji": "🟣", "tipo": "material", "preco": 265},
+    "essencia_estelar": {"nome": "Essência Estelar", "emoji": "🌟", "tipo": "material", "preco": 330},
+    "perola_do_eco": {"nome": "Pérola do Eco", "emoji": "⚪", "tipo": "material", "preco": 400},
+
+    # ---------------- Joalheiro (fabrica, jogador escolhe o atributo) ----------------
+    # Ao contrário do resto do catálogo, estas duas chaves NÃO têm "atributo"
+    # nem "bonus" fixos -- variam por instância (joia_atributo/joia_valor em
+    # `instancias`, escalando com o nível do Joalheiro que fabricou). "preco"
+    # aqui só serve de base pra `rpg vender` (não há custo de craft fixo --
+    # ver decisoes.md, o custo em moedas segue a mesma tabela do Encantador).
+    "anel_joia": {"loja": False, "nome": "Anel Lapidado", "emoji": "💍", "tipo": "anel", "preco": 3800, "andar_min": 1},
+    "colar_joia": {"loja": False, "nome": "Colar Lapidado", "emoji": "📿", "tipo": "colar", "preco": 3800, "andar_min": 1},
 }
 
 
@@ -151,9 +175,9 @@ ANDARES = {
         "cor": 0x7FB069,
         "descricao": "Grama alta até o joelho e o céu de pedra do andar de cima. Todo mundo começa aqui.",
         "monstros": [
-            {"nome": "Javali das Planícies", "hp": 42, "atk": 8, "def": 1, "xp": 18, "moedas": 26, "drops": [("presa_javali", 0.55)]},
-            {"nome": "Lobo da Névoa", "hp": 38, "atk": 9, "def": 1, "xp": 19, "moedas": 24, "drops": [("presa_javali", 0.45)]},
-            {"nome": "Slime Azulado", "hp": 52, "atk": 6, "def": 2, "xp": 17, "moedas": 28, "drops": [("presa_javali", 0.60)]},
+            {"nome": "Javali das Planícies", "hp": 42, "atk": 8, "def": 1, "xp": 18, "moedas": 26, "drops": [("presa_javali", 0.55), ("essencia_do_vento", 0.55)]},
+            {"nome": "Lobo da Névoa", "hp": 38, "atk": 9, "def": 1, "xp": 19, "moedas": 24, "drops": [("presa_javali", 0.45), ("essencia_do_vento", 0.45)]},
+            {"nome": "Slime Azulado", "hp": 52, "atk": 6, "def": 2, "xp": 17, "moedas": 28, "drops": [("presa_javali", 0.60), ("essencia_do_vento", 0.50)]},
         ],
         "boss": {"nome": "«Vargash, o Kobold Coroado»", "hp": 165, "atk": 13, "def": 2, "xp": 150, "moedas": 260, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -162,9 +186,9 @@ ANDARES = {
         "cor": 0x3E7C59,
         "descricao": "As árvores repetem, com meio segundo de atraso, tudo o que você fala.",
         "monstros": [
-            {"nome": "Aranha Tecelã", "hp": 72, "atk": 13, "def": 3, "xp": 32, "moedas": 45, "drops": [("seda_sussurrante", 0.55)]},
-            {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "drops": [("seda_sussurrante", 0.50)]},
-            {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "drops": [("seda_sussurrante", 0.45)]},
+            {"nome": "Aranha Tecelã", "hp": 72, "atk": 13, "def": 3, "xp": 32, "moedas": 45, "drops": [("seda_sussurrante", 0.55), ("ambar_de_seiva", 0.55)]},
+            {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "drops": [("seda_sussurrante", 0.50), ("ambar_de_seiva", 0.50)]},
+            {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "drops": [("seda_sussurrante", 0.45), ("ambar_de_seiva", 0.45)]},
         ],
         "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -173,9 +197,9 @@ ANDARES = {
         "cor": 0x5C6B73,
         "descricao": "Uma cidade inteira submersa até a metade. Alguma coisa ainda anda lá embaixo.",
         "monstros": [
-            {"nome": "Esqueleto Enferrujado", "hp": 102, "atk": 18, "def": 5, "xp": 46, "moedas": 65, "drops": [("osso_enferrujado", 0.55)]},
-            {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "drops": [("osso_enferrujado", 0.50)]},
-            {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "drops": [("osso_enferrujado", 0.45)]},
+            {"nome": "Esqueleto Enferrujado", "hp": 102, "atk": 18, "def": 5, "xp": 46, "moedas": 65, "drops": [("osso_enferrujado", 0.55), ("essencia_da_agua", 0.55)]},
+            {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "drops": [("osso_enferrujado", 0.50), ("essencia_da_agua", 0.50)]},
+            {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "drops": [("osso_enferrujado", 0.45), ("essencia_da_agua", 0.45)]},
         ],
         "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -184,9 +208,9 @@ ANDARES = {
         "cor": 0xD9C5A0,
         "descricao": "Branco até onde a vista alcança. O chão range quando você pisa.",
         "monstros": [
-            {"nome": "Escorpião de Cristal", "hp": 132, "atk": 23, "def": 7, "xp": 60, "moedas": 85, "drops": [("cristal_de_sal", 0.55)]},
-            {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "drops": [("cristal_de_sal", 0.45)]},
-            {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "drops": [("cristal_de_sal", 0.50)]},
+            {"nome": "Escorpião de Cristal", "hp": 132, "atk": 23, "def": 7, "xp": 60, "moedas": 85, "drops": [("cristal_de_sal", 0.55), ("lagrima_de_sal", 0.55)]},
+            {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "drops": [("cristal_de_sal", 0.45), ("lagrima_de_sal", 0.45)]},
+            {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "drops": [("cristal_de_sal", 0.50), ("lagrima_de_sal", 0.50)]},
         ],
         "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -195,9 +219,9 @@ ANDARES = {
         "cor": 0x8ECAE6,
         "descricao": "O gelo é grosso o bastante pra andar e fino o bastante pra ouvir.",
         "monstros": [
-            {"nome": "Lobo de Gelo", "hp": 162, "atk": 28, "def": 9, "xp": 74, "moedas": 105, "drops": [("nucleo_gelado", 0.55)]},
-            {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "drops": [("nucleo_gelado", 0.45)]},
-            {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "drops": [("nucleo_gelado", 0.50)]},
+            {"nome": "Lobo de Gelo", "hp": 162, "atk": 28, "def": 9, "xp": 74, "moedas": 105, "drops": [("nucleo_gelado", 0.55), ("essencia_do_gelo", 0.55)]},
+            {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "drops": [("nucleo_gelado", 0.45), ("essencia_do_gelo", 0.45)]},
+            {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "drops": [("nucleo_gelado", 0.50), ("essencia_do_gelo", 0.50)]},
         ],
         "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -206,9 +230,9 @@ ANDARES = {
         "cor": 0x6B4E31,
         "descricao": "As lamparinas ainda estão acesas. Ninguém apagou porque ninguém saiu.",
         "monstros": [
-            {"nome": "Golem de Minério", "hp": 205, "atk": 31, "def": 13, "xp": 88, "moedas": 125, "drops": [("minerio_negro", 0.55)]},
-            {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "drops": [("minerio_negro", 0.45)]},
-            {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "drops": [("minerio_negro", 0.50)]},
+            {"nome": "Golem de Minério", "hp": 205, "atk": 31, "def": 13, "xp": 88, "moedas": 125, "drops": [("minerio_negro", 0.55), ("rubi_fosco", 0.55)]},
+            {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "drops": [("minerio_negro", 0.45), ("rubi_fosco", 0.45)]},
+            {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "drops": [("minerio_negro", 0.50), ("rubi_fosco", 0.50)]},
         ],
         "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -217,9 +241,9 @@ ANDARES = {
         "cor": 0xB5651D,
         "descricao": "Não chove aqui. Cai cinza, e ela é quente.",
         "monstros": [
-            {"nome": "Cavaleiro Queimado", "hp": 232, "atk": 38, "def": 14, "xp": 102, "moedas": 145, "drops": [("brasa_eterna", 0.55)]},
-            {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "drops": [("brasa_eterna", 0.45)]},
-            {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "drops": [("brasa_eterna", 0.50)]},
+            {"nome": "Cavaleiro Queimado", "hp": 232, "atk": 38, "def": 14, "xp": 102, "moedas": 145, "drops": [("brasa_eterna", 0.55), ("essencia_de_fogo", 0.55)]},
+            {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "drops": [("brasa_eterna", 0.45), ("essencia_de_fogo", 0.45)]},
+            {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "drops": [("brasa_eterna", 0.50), ("essencia_de_fogo", 0.50)]},
         ],
         "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -228,9 +252,9 @@ ANDARES = {
         "cor": 0x9A8C98,
         "descricao": "O teto sumiu, os bancos continuam ocupados.",
         "monstros": [
-            {"nome": "Estátua Animada", "hp": 265, "atk": 42, "def": 17, "xp": 116, "moedas": 165, "drops": [("fragmento_sino", 0.55)]},
-            {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "drops": [("fragmento_sino", 0.45)]},
-            {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "drops": [("fragmento_sino", 0.50)]},
+            {"nome": "Estátua Animada", "hp": 265, "atk": 42, "def": 17, "xp": 116, "moedas": 165, "drops": [("fragmento_sino", 0.55), ("vitral_partido", 0.55)]},
+            {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "drops": [("fragmento_sino", 0.45), ("vitral_partido", 0.45)]},
+            {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "drops": [("fragmento_sino", 0.50), ("vitral_partido", 0.50)]},
         ],
         "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -239,9 +263,9 @@ ANDARES = {
         "cor": 0x4361EE,
         "descricao": "O andar acabou e vira ponte. Não olhe pra baixo — não tem baixo.",
         "monstros": [
-            {"nome": "Harpia Tempestade", "hp": 292, "atk": 48, "def": 18, "xp": 130, "moedas": 185, "drops": [("pena_do_trovao", 0.55)]},
-            {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "drops": [("pena_do_trovao", 0.45)]},
-            {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "drops": [("pena_do_trovao", 0.50)]},
+            {"nome": "Harpia Tempestade", "hp": 292, "atk": 48, "def": 18, "xp": 130, "moedas": 185, "drops": [("pena_do_trovao", 0.55), ("essencia_estelar", 0.55)]},
+            {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "drops": [("pena_do_trovao", 0.45), ("essencia_estelar", 0.45)]},
+            {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "drops": [("pena_do_trovao", 0.50), ("essencia_estelar", 0.50)]},
         ],
         "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -250,9 +274,9 @@ ANDARES = {
         "cor": 0x2B2D42,
         "descricao": "Dez portas atrás de você. Uma na frente. Nenhuma janela.",
         "monstros": [
-            {"nome": "Cavaleiro Espelhado", "hp": 325, "atk": 53, "def": 20, "xp": 144, "moedas": 205, "drops": [("eco_cristalizado", 0.55)]},
-            {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "drops": [("eco_cristalizado", 0.45)]},
-            {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "drops": [("eco_cristalizado", 0.50)]},
+            {"nome": "Cavaleiro Espelhado", "hp": 325, "atk": 53, "def": 20, "xp": 144, "moedas": 205, "drops": [("eco_cristalizado", 0.55), ("perola_do_eco", 0.55)]},
+            {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "drops": [("eco_cristalizado", 0.45), ("perola_do_eco", 0.45)]},
+            {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "drops": [("eco_cristalizado", 0.50), ("perola_do_eco", 0.50)]},
         ],
         "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
     },
@@ -481,8 +505,18 @@ TITULOS = {
 
 ANDAR_MAXIMO = max(ANDARES)
 
-# só o que "Sua Majestade do Andar Nenhum" derruba — ver raide.py
-ACESSORIOS_RAIDE = tuple(k for k, v in ITENS.items() if v.get("tipo") in ("anel", "colar"))
+# só o que "Sua Majestade do Andar Nenhum" derruba — ver raide.py. Lista
+# EXPLÍCITA de propósito (não mais `tuple(k for k,v in ITENS.items() if
+# v.get("tipo") in ("anel","colar"))`): a versão derivada por tipo juntava
+# QUALQUER anel/colar novo à mesa de loot da raide sem ninguém pedir --
+# armadilha que pegaria em cheio os dois itens do Joalheiro (anel_joia,
+# colar_joia) assim que existissem. Estes 8 são os únicos acessórios da
+# raide e não mudam nesta carta nem em nenhuma futura sem decisão explícita
+# -- ver decisoes.md § Encantador e Joalheiro.
+ACESSORIOS_RAIDE = (
+    "anel_forca", "anel_destreza", "anel_constituicao", "anel_inteligencia",
+    "colar_forca", "colar_destreza", "colar_constituicao", "colar_inteligencia",
+)
 
 # ---------------- raide de guilda ----------------
 # Fixa, fora da progressão da torre — não fica em ANDARES porque não

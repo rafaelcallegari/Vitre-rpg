@@ -148,28 +148,53 @@ receitas de nível 9 (armas e manto de selo).
 | 💠 Eco Cristalizado | 400 | 10 |
 | 🔷 Fragmento do Selo | 500 | drop de qualquer chefe, **não vendável** |
 
+### Materiais de Encantador (ímpares) e Joalheiro (pares)
+
+Mesma escada de preço dos materiais de chão acima — dropam junto deles em
+`rpg cacar`/`rpg explorar` (mesmo monstro, mesma chance, segunda entrada em
+`drops`). Ver `balanceamento.md` pra quanto de cada um uma ação de
+Encantador/Joalheiro consome.
+
+| Item | Preço 🪙 | Andar | Ofício |
+|---|---|---|---|
+| 🍃 Essência do Vento | 12 | 1 | Encantador |
+| 🟠 Âmbar de Seiva | 30 | 2 | Joalheiro |
+| 💧 Essência da Água | 55 | 3 | Encantador |
+| 🤍 Lágrima de Sal | 85 | 4 | Joalheiro |
+| 🧊 Essência do Gelo | 120 | 5 | Encantador |
+| 🔴 Rubi Fosco | 160 | 6 | Joalheiro |
+| 🔥 Essência de Fogo | 210 | 7 | Encantador |
+| 🟣 Vitral Partido | 265 | 8 | Joalheiro |
+| 🌟 Essência Estelar | 330 | 9 | Encantador |
+| ⚪ Pérola do Eco | 400 | 10 | Joalheiro |
+
 ## NPCs por andar
 
 Tipos: `mercador` (vende poção + é a bancada de Alquimia), `ferreiro` (vende
 arma/armadura do andar + é a bancada de Forja), `carroceiro` (viagem grátis,
-só a partir do andar 3), `conversa` (sem função de jogo, só ambientação).
+só a partir do andar 3), `encantador` (bancada de Encantador, ímpares),
+`joalheiro` (bancada de Joalheiro, pares), `conversa` (sem função de jogo,
+só ambientação).
 
-| Andar | Mercador | Ferreiro | Outro |
-|---|---|---|---|
-| 1 | Elna, da Barraca Torta | Torv, o Ferreiro Aposentado | Pip, o Menino que Conta *(conversa)* |
-| 2 | Irmã Vell, da Tenda de Musgo | — | O Lenhador, que não corta *(conversa)* |
-| 3 | Doran, do Bote Furado | Kesh, da Forja Submersa | Bramm, o Carroceiro *(carroceiro — desbloqueia aqui)* |
-| 4 | Ysra, da Caravana | — | O Homem de Sal *(conversa)* |
-| 5 | Tikk, do Trenó | Hjalmar, o Sopro Frio | A Pescadora, silenciosa *(conversa)* |
-| 6 | Bico, do Vagão 7 | — | Recado do Capataz *(conversa)* |
-| 7 | Vane, da Tenda de Cinza | Ignatia, a Bigorna Viva | O Cavaleiro, que espera *(conversa)* |
-| 8 | Irmão Cael | — | A Corista, sem voz *(conversa)* |
-| 9 | Ori, do Balão | Selen, a Última Forja | O Cartógrafo, do Vazio *(conversa)* |
-| 10 | Eco de um Mercador | — | A Porta *(conversa)* |
+| Andar | Mercador | Ferreiro | Mágico | Outro |
+|---|---|---|---|---|
+| 1 | Elna, da Barraca Torta | Torv, o Ferreiro Aposentado | Baldo, do Cata-Vento *(encantador)* | Pip, o Menino que Conta *(conversa)* |
+| 2 | Irmã Vell, da Tenda de Musgo | — | Orin, da Árvore Torta *(joalheiro)* | O Lenhador, que não corta *(conversa)* |
+| 3 | Doran, do Bote Furado | Kesh, da Forja Submersa | Lira, a Que Escuta a Maré *(encantador)* | Bramm, o Carroceiro *(carroceiro — desbloqueia aqui)* |
+| 4 | Ysra, da Caravana | — | Kef, do Poço Seco *(joalheiro)* | O Homem de Sal *(conversa)* |
+| 5 | Tikk, do Trenó | Hjalmar, o Sopro Frio | Corin, do Casaco Longo *(encantador)* | A Pescadora, silenciosa *(conversa)* |
+| 6 | Bico, do Vagão 7 | — | Mira, do Trilho Morto *(joalheiro)* | Recado do Capataz *(conversa)* |
+| 7 | Vane, da Tenda de Cinza | Ignatia, a Bigorna Viva | Talla, da Última Brasa *(encantador)* | O Cavaleiro, que espera *(conversa)* |
+| 8 | Irmão Cael | — | Vesna, do Altar Lateral *(joalheiro)* | A Corista, sem voz *(conversa)* |
+| 9 | Ori, do Balão | Selen, a Última Forja | Astrea, Contadora de Estrelas *(encantador)* | O Cartógrafo, do Vazio *(conversa)* |
+| 10 | Eco de um Mercador | — | Eco de uma Joalheira *(joalheiro)* | A Porta *(conversa)* |
 
 Andares pares (2, 4, 6, 8, 10) não têm ferreiro — não vendem equipamento,
 só poção. É por isso que equipamento só sai nos ímpares: cada arma/armadura
-tem `andar_min` igual ao andar onde o ferreiro dela mora.
+tem `andar_min` igual ao andar onde o ferreiro dela mora. Encantador e
+Joalheiro seguem a régua inversa entre si (Encantador só nos ímpares,
+Joalheiro só nos pares) — as falas dos 10 NPCs mágicos são inventadas pra
+fechar a carta, não são do Rafael (ver `decisoes.md`).
 
 ### Carroça do Bramm (viagem grátis)
 
@@ -186,12 +211,15 @@ silenciosamente (só loga no console, não derruba o resto do bot).
 ## Profissões (`rpg profissao`)
 
 Cada jogador escolhe **uma só**. Trocar custa 1000 🪙 e zera o nível de
-ofício. Nível máximo 10.
+ofício. Nível máximo 10 pra Forja/Alquimia, **9** pra Encantador/Joalheiro
+(curva própria, ver `balanceamento.md`).
 
 | Ofício | Título | Bancada | O que faz |
 |---|---|---|---|
 | ⚒️ Forja | Ferreiro | NPC `ferreiro` | Bate as armaduras forjadas (não vendidas em loja) e as 3 peças de selo (nível 9) |
 | ⚗️ Alquimia | Alquimista | NPC `mercador` | Destila os elixires de cura por porcentagem |
+| 🔯 Encantador | Encantador | NPC `encantador` (ímpares) | `rpg encantar <arma\|armadura\|anel\|colar> <atributo>` — soma um atributo numa peça já existente. `rpg desencantar <peça>` remove por metade do custo |
+| 💎 Joalheiro | Joalheiro | NPC `joalheiro` (pares) | `rpg lapidar <anel\|colar> <atributo>` — fabrica anel/colar do zero, escolhendo o atributo. O bônus escala com o nível do Joalheiro |
 
 ### Receitas
 
@@ -245,6 +273,35 @@ mínimo 1) + 1 por nível de melhoria que a peça tinha, e zera esse nível.
 Dá 40% do XP de craft daquela peça — de novo, só se o jogador for Forjador.
 Peça comprada em loja (sem receita própria, ex. Espada de Ferro) desmancha
 pelo material do andar dela, com a mesma conta de 50%.
+
+### Encantador e Joalheiro
+
+Não fabricam em série como Forja/Alquimia — o bônus entregue é o que o
+**nível atual** do ofício rende, não escolha do jogador. Mesma tabela pros
+dois:
+
+| Nível do ofício | Bônus | Custo 🪙 |
+|---|---|---|
+| 1-2 | +1 | 400 |
+| 3 | +2 | 900 |
+| 4 | +3 | 1.600 |
+| 5 | +4 | 2.600 |
+| 6-7 | +5 | 3.800 |
+| 8 | +6 | 5.200 |
+| 9 | +7 | 6.800 |
+
+Material: 3x do material do ofício no "andar do bônus" (bônus 1/2 → andar
+mais baixo da escada, ..., bônus 7 → andar mais alto + 1x 💠 Eco
+Cristalizado). Ver `balanceamento.md` pra tabela completa de bônus→andar.
+
+- **Encantador**: soma o atributo escolhido (FOR/DES/CON/INT) numa peça já
+  existente (arma, armadura, anel ou colar). Não conta pra requisito de
+  skill. Peça já encantada recusa reencantar — `rpg desencantar` remove por
+  metade do custo de encantar aquele valor, e dá pra encantar de novo
+  depois (ganha XP outra vez).
+- **Joalheiro**: fabrica anel/colar do zero (`anel_joia`/`colar_joia`),
+  jogador escolhe o atributo na hora. Soma com um encantamento por cima
+  sem trava nenhuma.
 
 ## Efeitos temporários (`rpg efeitos`)
 
