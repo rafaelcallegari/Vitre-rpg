@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import andares_altos
 import atributos as at
 import database as db
+import despertar
 import dialogos
 import habilidades as hab
 import paginacao
@@ -49,6 +50,19 @@ LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1
 ICONES_NPC = {
     "mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬",
     "taverneiro": "🍺", "guia": "🕯️", "encantador": "🔯", "joalheiro": "💎",
+}
+
+# Papel exibido em `rpg npcs` por tipo. Acesso sempre via .get() com padrão —
+# ver decisoes.md § mapa de domínio + subscript direto.
+PAPEL_NPC = {
+    "mercador": "vende poções",
+    "ferreiro": "vende equipamento daqui",
+    "carroceiro": "viagem grátis nos horários",
+    "conversa": "",
+    "taverneiro": "cura HP e mana cheios por moedas",
+    "guia": f"leva de volta pro andar {andares_altos.ANDAR_ACIMA_DO_SELO} de graça",
+    "encantador": "encanta equipamento com um atributo extra",
+    "joalheiro": "lapida anel e colar do zero",
 }
 
 # categoria onde `rpg priv` cria as salas. Se não existir, o bot cria.
@@ -92,14 +106,19 @@ def encontrar_item(texto, chaves_validas=None):
 
 
 def encontrar_classe(texto):
+    """`dados["nome"]` carrega marcador de pronomes.concordar() ("Mag{o|a}")
+    -- casa contra as duas formas concordadas, nunca contra o marcador cru,
+    então `rpg classe maga` acha "mago" igual a `rpg classe mago`."""
     alvo = normalizar(texto)
     if not alvo:
         return None
     for k, dados in CLASSES.items():
-        if normalizar(k) == alvo or normalizar(dados["nome"]) == alvo:
+        formas = (pronomes.concordar(dados["nome"], "ele"), pronomes.concordar(dados["nome"], "ela"))
+        if normalizar(k) == alvo or any(normalizar(f) == alvo for f in formas):
             return k
     for k, dados in CLASSES.items():
-        if alvo in normalizar(dados["nome"]):
+        formas = (pronomes.concordar(dados["nome"], "ele"), pronomes.concordar(dados["nome"], "ela"))
+        if any(alvo in normalizar(f) for f in formas):
             return k
     return None
 
@@ -466,33 +485,18 @@ async def falar_guia_acima_do_selo(ctx):
 # ==================== progressão ====================
 @bot.command(name="comecar", aliases=["start", "iniciar"])
 async def comecar(ctx):
-    if db.get_jogador(ctx.author.id):
+    """O gate é `classe`, não "linha existe": reset de temporada zera classe
+    (database.resetar_temporada) mas mantém a linha do jogador (título,
+    mortes, criado_em). Quem foi resetado cai de novo no despertar -- não
+    existe retrofit, todo mundo passa pela sequência inteira. Ver
+    decisoes.md § despertar."""
+    j = db.get_jogador(ctx.author.id)
+    if j and j["classe"]:
         await ctx.send("Você já está na torre. Manda `rpg perfil`.")
         return
-    db.criar_jogador(ctx.author.id, ctx.author.display_name)
-    db.add_item(ctx.author.id, "pocao_p", 3)
-    e = discord.Embed(
-        title="Você acordou no 1º andar",
-        description=(
-            "A porta atrás de você não abre mais.\n\n"
-            "Dez andares acima existe um selo. Cada andar tem um chefe, e cada chefe "
-            "guarda a escada.\n\n"
-            "Comece com `rpg cacar`. Fale com quem mora aqui: `rpg npcs`."
-        ),
-        color=ANDARES[1]["cor"],
+    await despertar.iniciar_despertar(
+        ctx, dialogo_view_cls=DialogoView, obter_canal_privado=obter_ou_criar_canal_privado,
     )
-    e.add_field(name="Você recebeu", value="🧪 Poção Pequena x3", inline=False)
-    e.add_field(
-        name="Atributos",
-        value=(
-            f"Você começa com {at.BASE} em cada um. A cada nível vêm "
-            f"**{at.PONTOS_POR_NIVEL} pontos** para distribuir — `rpg status`."
-        ),
-        inline=False,
-    )
-    e.set_footer(text="A lista completa de comandos vem logo abaixo.")
-    await ctx.send(embed=e)
-    await ctx.send(embed=embed_ajuda())
 
 
 @bot.command(name="perfil", aliases=["profile", "p", "eu"])
@@ -536,8 +540,8 @@ async def perfil(ctx, membro: discord.Member = None):
     classe_dados = CLASSES.get(j["classe"])
     e.add_field(
         name="Classe",
-        value=f"{classe_dados['emoji']} {classe_dados['nome']}" if classe_dados
-              else "— `rpg classe` para escolher",
+        value=f"{classe_dados['emoji']} {pronomes.concordar(classe_dados['nome'], j['pronome'])}"
+              if classe_dados else "— `rpg classe` para escolher",
         inline=True,
     )
     e.add_field(
@@ -855,10 +859,7 @@ async def listar_npcs(ctx):
     a = ANDARES[j["andar"]]
     linhas = []
     for n in pessoas:
-        papel = {"mercador": "vende poções", "ferreiro": "vende equipamento daqui",
-                 "carroceiro": "viagem grátis nos horários", "conversa": "",
-                 "taverneiro": "cura HP e mana cheios por moedas",
-                 "guia": f"leva de volta pro andar {andares_altos.ANDAR_ACIMA_DO_SELO} de graça"}[n["tipo"]]
+        papel = PAPEL_NPC.get(n["tipo"], "")
         nome = f"{n['nome']} {n['titulo']}".strip()
         linhas.append(f"{ICONES_NPC.get(n['tipo'], '•')} **{nome}**" + (f" — {papel}" if papel else ""))
     e = discord.Embed(
@@ -977,60 +978,6 @@ async def falar(ctx, *, quem: str = ""):
     # descansar e carroca já funcionavam sem exigir o NPC físico por perto,
     # então o comando avulso não morreu, só ganhou uma porta a mais.
     await comercio.abrir_comercio(ctx, j, n)
-
-
-class PronomeView(discord.ui.View):
-    """Só o autor escolhe o próprio pronome — resto do canal fica de fora,
-    diferente da DialogoView (que é pública de propósito). PROVISÓRIO: este
-    comando é um jeito de escolher enquanto o novo início do jogo (patch
-    0.3) não existe. Quando ele nascer, a escolha muda pra lá e `rpg
-    pronome` deixa de fazer sentido como comando solto — não esquecer de
-    tirar. Ver decisoes.md § pronomes do jogador."""
-
-    def __init__(self, autor_id):
-        super().__init__(timeout=60)
-        self.autor_id = autor_id
-
-    async def interaction_check(self, interaction):
-        if interaction.user.id != self.autor_id:
-            await interaction.response.send_message(
-                "Essa escolha não é sua. Manda `rpg pronome` você mesmo.", ephemeral=True
-            )
-            return False
-        return True
-
-    async def _escolher(self, interaction, pronome):
-        db.atualizar_jogador(interaction.user.id, pronome=pronome)
-        for item in self.children:
-            item.disabled = True
-        await interaction.response.edit_message(
-            content=f"Pronome definido: **{pronome}**.", view=self
-        )
-
-    @discord.ui.button(label="ele / dele", style=discord.ButtonStyle.primary)
-    async def ele(self, interaction, button):
-        await self._escolher(interaction, "ele")
-
-    @discord.ui.button(label="ela / dela", style=discord.ButtonStyle.primary)
-    async def ela(self, interaction, button):
-        await self._escolher(interaction, "ela")
-
-    @discord.ui.button(label="elu / delu", style=discord.ButtonStyle.primary)
-    async def elu(self, interaction, button):
-        await self._escolher(interaction, "elu")
-
-
-@bot.command(name="pronome")
-async def pronome_cmd(ctx):
-    """PROVISÓRIO — ver PronomeView."""
-    j = await pegar_jogador(ctx)
-    if not j:
-        return
-    await ctx.send(
-        f"Pronome atual: **{j['pronome']}**. Escolhe um (afeta concordância de "
-        f"gênero nos textos, não muda nada mecânico):",
-        view=PronomeView(ctx.author.id),
-    )
 
 
 @bot.command(name="descansar", aliases=["rest", "descanso"])
@@ -1474,13 +1421,13 @@ async def titulo(ctx, *, argumento: str = ""):
     )
 
 
-def embed_info_classe(chave):
+def embed_info_classe(chave, pronome=None):
     """Prévia das 2 habilidades base de uma classe, sem exigir que o jogador
     já seja dela — é o que falta pra `rpg classe <classe>` não ser uma
     escolha às cegas (a escolha trava, sem troca depois)."""
     dados = CLASSES[chave]
     e = discord.Embed(
-        title=f"{dados['emoji']} {dados['nome']} — habilidades base",
+        title=f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)} — habilidades base",
         description=dados["desc"],
         color=0x6A4C93,
     )
@@ -1512,13 +1459,14 @@ async def classe_cmd(ctx, *, argumento: str = ""):
         if not alvo:
             await ctx.send("Não conheço essa classe. `rpg classe` mostra as opções.")
             return
-        await ctx.send(embed=embed_info_classe(alvo))
+        await ctx.send(embed=embed_info_classe(alvo, j["pronome"]))
         return
 
     if j["classe"]:
         dados = CLASSES[j["classe"]]
+        nome = pronomes.concordar(dados["nome"], j["pronome"])
         await ctx.send(
-            f"Você já é **{dados['emoji']} {dados['nome']}**. Escolha travada, não dá pra trocar."
+            f"Você já é **{dados['emoji']} {nome}**. Escolha travada, não dá pra trocar."
         )
         return
 
@@ -1534,7 +1482,7 @@ async def classe_cmd(ctx, *, argumento: str = ""):
         )
         for chave, dados in CLASSES.items():
             e.add_field(
-                name=f"{dados['emoji']} {dados['nome']}",
+                name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], j['pronome'])}",
                 value=f"{dados['desc']}\n`rpg classe {chave}` · `rpg classe {chave} info`",
                 inline=False,
             )
@@ -1547,14 +1495,17 @@ async def classe_cmd(ctx, *, argumento: str = ""):
         return
     db.atualizar_jogador(j["user_id"], classe=escolhida)
     dados = CLASSES[escolhida]
+    nome = pronomes.concordar(dados["nome"], j["pronome"])
     await ctx.send(
-        f"{dados['emoji']} Você agora é **{dados['nome']}**. Escolha travada.\n"
+        f"{dados['emoji']} Você agora é **{nome}**. Escolha travada.\n"
         f"`rpg ascencao` mostra o caminho lá na frente."
     )
 
 
 @bot.command(name="ascencao", aliases=["ascensao", "ascensão", "ascenção"])
 async def ascencao(ctx):
+    j = db.get_jogador(ctx.author.id)
+    pronome = j["pronome"] if j else None
     e = discord.Embed(
         title="As 4 bases e as 12 ascensões",
         description=(
@@ -1566,7 +1517,7 @@ async def ascencao(ctx):
     for chave, dados in CLASSES.items():
         ramos = ", ".join(a["nome"] for a in ASCENSOES.values() if a["base"] == chave)
         e.add_field(
-            name=f"{dados['emoji']} {dados['nome']}",
+            name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)}",
             value=f"{dados['desc']}\nAscensões: {ramos}",
             inline=False,
         )
@@ -1574,26 +1525,26 @@ async def ascencao(ctx):
 
 
 # ==================== servidor ====================
-@bot.command(name="priv", aliases=["sala", "privado", "meucanal"])
-async def priv(ctx):
-    j = await pegar_jogador(ctx)
-    if not j:
-        return
+async def obter_ou_criar_canal_privado(ctx):
+    """Acha ou cria a sala privada do autor -- lógica de `priv`, reaproveitada
+    pelo fim do despertar (despertar.py) pra não duplicar a criação de
+    categoria/overwrites/canal. Erros já saem por `ctx.send` daqui mesmo;
+    quem chama só olha se `canal` veio `None`. `criado_agora=False` cobre
+    tanto "sala já existia" quanto qualquer recusa do Discord."""
     if ctx.guild is None:
         await ctx.send("Esse comando só funciona dentro de um servidor.")
-        return
+        return None, False
     if not ctx.guild.me.guild_permissions.manage_channels:
         await ctx.send(
             "Não tenho permissão de **Gerenciar Canais** neste servidor, "
             "então não consigo criar sua sala. Fala com quem administra."
         )
-        return
+        return None, False
 
     nome = nome_de_canal(ctx.author)
     existente = discord.utils.get(ctx.guild.text_channels, name=nome)
     if existente:
-        await ctx.send(f"Sua sala já existe: {existente.mention}")
-        return
+        return existente, False
 
     categoria = discord.utils.get(ctx.guild.categories, name=CATEGORIA_SALAS)
     overwrites = {
@@ -1616,9 +1567,24 @@ async def priv(ctx):
         )
     except discord.Forbidden:
         await ctx.send("O Discord recusou: falta permissão pra criar canal ou categoria.")
-        return
+        return None, False
     except discord.HTTPException as erro:
         await ctx.send(f"O Discord recusou a criação da sala ({erro.status}). Tenta de novo.")
+        return None, False
+
+    return canal, True
+
+
+@bot.command(name="priv", aliases=["sala", "privado", "meucanal"])
+async def priv(ctx):
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    canal, criado_agora = await obter_ou_criar_canal_privado(ctx)
+    if not canal:
+        return
+    if not criado_agora:
+        await ctx.send(f"Sua sala já existe: {canal.mention}")
         return
 
     e = discord.Embed(

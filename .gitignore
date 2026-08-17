@@ -9,3 +9,4 @@ __pycache__/
 backups/
 *.zip
 .pytest_cache/
+resetar.py

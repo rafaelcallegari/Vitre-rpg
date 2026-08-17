@@ -9,6 +9,7 @@ import discord
 import atributos as at
 import database as db
 import paginacao
+import pronomes
 import travas
 from game_data import ITENS, ANDARES
 
@@ -40,8 +41,13 @@ PCT_XP_DESMANCHE = 0.40
 
 
 PROFISSOES = {
+    # "nome" e "titulo" carregam o marcador de concordância de
+    # pronomes.concordar() quando descrevem a pessoa (ex. "Forjador{|a}").
+    # "nome" do ofício em si (Forja, Alquimia) não varia por pronome -- só o
+    # título de quem exerce. Ver decisoes.md § nomes de classe e ofício com
+    # gênero.
     "forja": {
-        "nome": "Forja", "titulo": "Ferreiro", "emoji": "⚒️", "npc": "ferreiro",
+        "nome": "Forja", "titulo": "Forjador{|a}", "emoji": "⚒️", "npc": "ferreiro",
         "desc": "Bate armaduras que loja nenhuma vende. Trabalha na bigorna dos ferreiros.",
     },
     "alquimia": {
@@ -49,14 +55,14 @@ PROFISSOES = {
         "desc": "Destila elixires que curam por porcentagem. Trabalha na banca dos mercadores.",
     },
     "encantador": {
-        "nome": "Encantador", "titulo": "Encantador", "emoji": "🔯", "npc": "encantador",
+        "nome": "Encantador{|a}", "titulo": "Encantador{|a}", "emoji": "🔯", "npc": "encantador",
         "desc": (
             "Encanta arma, armadura, anel ou colar já prontos com um atributo "
             "(FOR/DES/CON/INT). Trabalha na bancada dos encantadores, andares ímpares."
         ),
     },
     "joalheiro": {
-        "nome": "Joalheiro", "titulo": "Joalheiro", "emoji": "💎", "npc": "joalheiro",
+        "nome": "Joalheir{o|a}", "titulo": "Joalheir{o|a}", "emoji": "💎", "npc": "joalheiro",
         "desc": (
             "Lapida anel e colar do zero, escolhendo o atributo da peça. "
             "Trabalha na bancada dos joalheiros, andares pares."
@@ -66,6 +72,7 @@ PROFISSOES = {
 
 APELIDOS = {
     "forja": "forja", "ferreiro": "forja", "ferraria": "forja", "forjar": "forja",
+    "forjador": "forja", "forjadora": "forja",
     "alquimia": "alquimia", "alquimista": "alquimia", "pocao": "alquimia",
     "encantador": "encantador", "encantamento": "encantador", "encanto": "encantador",
     "joalheiro": "joalheiro", "joalheria": "joalheiro", "joia": "joalheiro", "joias": "joalheiro",
@@ -441,7 +448,7 @@ def instalar(bot, contexto):
                 await ctx.send("Você ainda não tem profissão. Manda `rpg profissao forja`.")
                 return
             if nova == j["profissao"]:
-                await ctx.send(f"Você já é da **{PROFISSOES[nova]['nome']}**.")
+                await ctx.send(f"Você já é da **{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}**.")
                 return
             if j["moedas"] < CUSTO_TROCA:
                 await ctx.send(
@@ -453,7 +460,8 @@ def instalar(bot, contexto):
                 moedas=j["moedas"] - CUSTO_TROCA,
             )
             await ctx.send(
-                f"{PROFISSOES[nova]['emoji']} Agora você é da **{PROFISSOES[nova]['nome']}** "
+                f"{PROFISSOES[nova]['emoji']} Agora você é da "
+                f"**{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}** "
                 f"— nível 1, do zero. Custou {CUSTO_TROCA} 🪙."
             )
             return
@@ -467,14 +475,16 @@ def instalar(bot, contexto):
             db.atualizar_jogador(j["user_id"], profissao=escolhida, prof_nivel=1, prof_xp=0)
             dados = PROFISSOES[escolhida]
             await ctx.send(
-                f"{dados['emoji']} Você agora é **{dados['titulo']}**, nível 1.\n"
+                f"{dados['emoji']} Você agora é "
+                f"**{pronomes.concordar(dados['titulo'], j['pronome'])}**, nível 1.\n"
                 f"{dados['desc']}\nManda `rpg receitas` pra ver o que já consegue fazer."
             )
             return
 
         if argumento and j["profissao"]:
+            atual_nome = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"])
             await ctx.send(
-                f"Você já é da **{PROFISSOES[j['profissao']]['nome']}**. "
+                f"Você já é da **{atual_nome}**. "
                 f"Pra mudar: `rpg profissao trocar <nova>` ({CUSTO_TROCA} 🪙, zera o nível)."
             )
             return
@@ -492,7 +502,7 @@ def instalar(bot, contexto):
             )
             for chave, dados in PROFISSOES.items():
                 e.add_field(
-                    name=f"{dados['emoji']} {dados['nome']}",
+                    name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], j['pronome'])}",
                     value=f"{dados['desc']}\n`rpg profissao {chave}`",
                     inline=False,
                 )
@@ -503,7 +513,7 @@ def instalar(bot, contexto):
         nivel, xp = j["prof_nivel"], j["prof_xp"]
         teto = nivel_maximo_de(j["profissao"])
         e = discord.Embed(
-            title=f"{dados['emoji']} {dados['titulo']} nível {nivel}",
+            title=f"{dados['emoji']} {pronomes.concordar(dados['titulo'], j['pronome'])} nível {nivel}",
             description=dados["desc"],
             color=ANDARES[j["andar"]]["cor"],
         )
@@ -546,8 +556,9 @@ def instalar(bot, contexto):
         if j["profissao"] in OFICIOS_MAGICOS:
             comando = "rpg encantar <arma|armadura|anel|colar> <atributo>" if j["profissao"] == "encantador" \
                 else "rpg lapidar <anel|colar> <atributo>"
+            nome_oficio = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"])
             await ctx.send(
-                f"{PROFISSOES[j['profissao']]['emoji']} {PROFISSOES[j['profissao']]['nome']} não usa "
+                f"{PROFISSOES[j['profissao']]['emoji']} {nome_oficio} não usa "
                 f"receita de catálogo — o bônus vem do seu nível de ofício. `{comando}` · `rpg profissao` "
                 f"mostra o que seu nível de agora rende."
             )
@@ -563,9 +574,10 @@ def instalar(bot, contexto):
         onde = (f"Tem um aqui no andar {j['andar']}." if npc
                 else f"Não tem nenhum no andar {j['andar']} — precisa viajar.")
 
+        nome_oficio = pronomes.concordar(dados["nome"], j["pronome"])
         if modo_tudo:
             entradas = entradas_receitas(j, apenas_prontas=False)
-            titulo = f"{dados['emoji']} Receitas de {dados['nome']} — lista completa"
+            titulo = f"{dados['emoji']} Receitas de {nome_oficio} — lista completa"
             rodape_extra = "rpg craftar <item> <qtd>"
         else:
             entradas = entradas_receitas(j, apenas_prontas=True)
@@ -603,7 +615,7 @@ def instalar(bot, contexto):
             if fora:
                 dono = PROFISSOES[RECEITAS[fora]["profissao"]]
                 await ctx.send(
-                    f"**{ITENS[fora]['nome']}** é receita de **{dono['nome']}**, "
+                    f"**{ITENS[fora]['nome']}** é receita de **{pronomes.concordar(dono['nome'], None)}**, "
                     f"não da sua. Alguém com esse ofício faz pra você."
                 )
             else:
@@ -612,8 +624,9 @@ def instalar(bot, contexto):
 
         receita = minhas[chave]
         if receita["nivel"] > j["prof_nivel"]:
+            nome_oficio = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"])
             await ctx.send(
-                f"**{ITENS[chave]['nome']}** exige {PROFISSOES[j['profissao']]['nome']} "
+                f"**{ITENS[chave]['nome']}** exige {nome_oficio} "
                 f"nível {receita['nivel']} — você está no {j['prof_nivel']}."
             )
             return
@@ -659,9 +672,10 @@ def instalar(bot, contexto):
             color=ANDARES[j["andar"]]["cor"],
         )
         if subiu:
+            nome_oficio = pronomes.concordar(dados["nome"], j["pronome"])
             e.add_field(
                 name="⬆️ Ofício melhorou",
-                value=f"**{dados['nome']} nível {nivel}** — `rpg receitas` pra ver o que abriu.",
+                value=f"**{nome_oficio} nível {nivel}** — `rpg receitas` pra ver o que abriu.",
                 inline=False,
             )
         e.set_footer(text=f"Na mochila. Equipa com `rpg equipar {ITENS[chave]['nome']}`"
@@ -850,7 +864,7 @@ def instalar(bot, contexto):
             await ctx.send("Uso: `rpg encantar <arma|armadura|anel|colar> <for|des|con|int>`.")
             return
         if j["profissao"] != "encantador":
-            atual = PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            atual = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"]) if j["profissao"] else "nenhum"
             await ctx.send(f"Isso é trabalho de Encantador — seu ofício é {atual} (`rpg profissao`).")
             return
 
@@ -976,7 +990,7 @@ def instalar(bot, contexto):
             await ctx.send("Não conheço esse atributo. Use FOR, DES, CON ou INT.")
             return
         if j["profissao"] != "joalheiro":
-            atual = PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            atual = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"]) if j["profissao"] else "nenhum"
             await ctx.send(f"Isso é trabalho de Joalheiro — seu ofício é {atual} (`rpg profissao`).")
             return
 

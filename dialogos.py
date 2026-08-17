@@ -388,3 +388,45 @@ DIALOGOS = {
         "saida": "Ela já está arrumando um lugar vazio, como se mais alguém fosse chegar.",
     },
 }
+
+# ---- despertar (patch 0.3 -- `rpg comecar`) --------------------------------
+# Texto exato do Rafael pra sequência de início. Fora do dict DIALOGOS de
+# propósito -- não é indexado por NPC, não é alcançável por `rpg falar`, só
+# pela sequência de despertar.py. Não mexer numa vírgula deste texto.
+#
+# "{classe}"/"{oficio}" são placeholders de str.format(), preenchidos por
+# despertar.py DEPOIS de pronomes.concordar() já ter resolvido os marcadores
+# {opcao|opcao} -- nessa ordem sempre, senão sobra "{|a}" cru pro .format()
+# tropeçar (ele não sabe o que fazer com um campo sem nome e com "|" dentro).
+DESPERTAR = {
+    "abertura": (
+        "Você sente uma brisa forte e fresca em seu rosto, abaixo de você, "
+        "você sente uma grama fofa e alta. Em meio a essa tranquilidade, "
+        "você começa a lembrar de batalhas...guerras...e um propósito..."
+    ),
+    "pergunta_classe": "Qual era seu propósito em batalha?",
+    "confirmacao_classe": (
+        "Você ainda se lembra! Você era um{|a} {classe}! Mas, você nem "
+        "sempre foi só isso, você era alguém fora do campo de batalha, você "
+        "fazia algo fora do campo de batalha...aquilo que te movia em "
+        "noites escuras, aquilo que te mantinha acordado."
+    ),
+    "pergunta_oficio": "Qual era o seu oficio?",
+    "confirmacao_oficio": (
+        "Sim, claro! Você era um{|a} {oficio}, o mais dedicad{o|a} em suas "
+        "terras. Mas agora, tão longe de casa, quem é você?"
+    ),
+    "elna_acorda": (
+        "Ei, Acorda! O que está fazendo no meio do mato? Esta tod{o|a} "
+        "suj{o|a} de grama, apanhou para os javalis? Toma aqui, vai ajudar."
+    ),
+    "elna_agradecer": "Não tem de que aventureir{o|a}, sempre tem um de vocês caido no mato",
+    "elna_onde_esta": (
+        "Vai entender melhor com o tempo, mas saiba que a resposta para "
+        "isso, esta lá em cima, e quanto mais alto, maior o perigo"
+    ),
+    "elna_olhar_envolta": (
+        "Você vê uma planicie com grama alta, clima extremamente agradável. "
+        "E você vê um aventureiro de fundo sendo derrubado por um javali"
+    ),
+}

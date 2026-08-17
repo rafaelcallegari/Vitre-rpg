@@ -2109,11 +2109,9 @@ o contrato de dado importa mais que o conteúdo.
   de guilda" citado no card como um dos lugares onde pronome de terceira
   pessoa aparece — provavelmente um esquecimento na lista de arquivos, não
   uma exclusão de propósito.
-- **`rpg pronome` é PROVISÓRIO — está escrito no código (docstring da
-  `PronomeView`) pra não virar comando permanente por esquecimento.** Some
-  quando o novo início do jogo (patch 0.3, carta própria) nascer e a
-  escolha migrar pra lá. Até lá é o único jeito de trocar o default, então
-  precisa existir.
+- **`rpg pronome` era PROVISÓRIO e saiu.** Removido junto com `PronomeView`
+  quando o novo início (patch 0.3) nasceu e a escolha migrou pra lá — ver
+  § Despertar (patch 0.3).
 
 ### Botão Sair do diálogo
 
@@ -2848,4 +2846,144 @@ criadas, idempotente, não reprocessa `upgrades`).
 `rpg encantar`/`rpg lapidar` sem passar pelo botão (coberto indiretamente
 pelos testes de comércio, que chamam o `.callback()` de verdade via
 `ShimCtx`, igual ao resto do craft).
+
+## Despertar (patch 0.3)
+
+`rpg comecar` deixou de ser um embed único e virou sequência por botão:
+abertura → classe → ofício → pronome → Elna acorda o jogador com as poções →
+diálogo com ela. Módulo novo, `despertar.py`, mesmo padrão de `npcs.py`
+(concentra a plumbing sem mexer em `game_data.py`).
+
+- **Abandonar no meio recomeça do zero, de propósito.** Nada é gravado no
+  banco até o botão de pronome ser clicado — classe e ofício ficam só como
+  atributo da própria `View` (`EscolhaOficioView.classe`, por exemplo),
+  repassados adiante a cada `edit_message`. Fechar o Discord no meio, ou só
+  deixar o botão expirar (timeout de 300s), não deixa registro parcial: como
+  não existe jogador nenhum pra achar, `rpg comecar` de novo é
+  indistinguível de começar pela primeira vez. A alternativa (gravar a cada
+  passo e ter um "estado de criação" no banco) resolveria o mesmo problema,
+  mas com mais uma coluna e mais um jeito de o jogador ficar preso num
+  estado esquisito se travar no meio — não gravar nada é mais simples e
+  cobre o requisito sozinho.
+- **Nomes de classe/ofício com gênero usam o marcador de
+  `pronomes.concordar()`, não um par de campos.** `CLASSES[x]["nome"]` e
+  `PROFISSOES[x]["nome"/"titulo"]` viraram string com marcador
+  (`"Ladin{o|a}"`, `"Forjador{|a}"`) em vez de, por exemplo,
+  `{"nome_m": ..., "nome_f": ...}`. Reaproveita a mesma função que já existe
+  pra concordância de frase — todo lugar que lia `dados["nome"]` cru passou
+  a chamar `pronomes.concordar(dados["nome"], pronome)` (bot.py,
+  profissoes.py, comercio.py — a mesma troca se repete). `Alquimista` ficou
+  sem marcador — o regex de `concordar()` exige um `|` dentro das chaves,
+  então uma string sem marcador nenhum simplesmente volta igual, sem
+  precisar de `if` nenhum pra invariável. Efeito colateral que precisou de
+  ajuste: `bot.encontrar_classe` comparava `texto normalizado` contra
+  `dados["nome"]` cru pra casar `rpg classe guerreiro`; com marcador, isso
+  ia comparar contra a string `"Guerreir{o|a}"` literal e nunca casar —
+  agora compara contra as duas formas já concordadas (`concordar(nome,
+  "ele")` e `concordar(nome, "ela")`), o que também deixou `rpg classe
+  guerreira` funcionar como sinônimo de `rpg classe guerreiro`, de graça.
+- **`Ferreiro` virou `Forjador`/`Forjadora`** — `PROFISSOES["forja"]["titulo"]`,
+  em todo lugar que aparece (não só no despertar): `rpg profissao`, troca de
+  ofício, recusa de bancada errada. `FerreiroView` (comercio.py) e o NPC
+  `tipo: "ferreiro"`/"o Ferreiro Aposentado" (npcs.py, Torv) são conceito
+  diferente — loja/NPC, não o título do jogador — e não mudaram. `APELIDOS`
+  ganhou `forjador`/`forjadora` como sinônimo de `forja`; `ferreiro` como
+  apelido continua valendo, ninguém que já digitava isso precisa aprender
+  de novo.
+- **O gate de `rpg comecar` é `classe is None`, não "a linha existe".**
+  `database.resetar_temporada()` zera classe/profissão mas **mantém** a
+  linha do jogador (título equipado, mortes, `criado_em`) — é assim desde
+  antes deste cartão. O reset de temporada do 0.3 bundle exige que os 13
+  jogadores atuais passem pela sequência inteira de novo, sem atalho —
+  então o gate de `comecar` (bot.py) precisou trocar de "existe jogador?"
+  pra "esse jogador já tem classe?": quem foi resetado (linha existe,
+  classe `NULL`) cai de novo no despertar e sai do outro lado com título e
+  mortes intactos, só classe/ofício/pronome escolhidos de novo. **Este
+  cartão só mudou a lógica do gate — `resetar_temporada()` em si não foi
+  executado contra o banco de produção; o Rafael decide quando rodar o
+  reset de verdade.**
+- **Os 8 cards de explicação (um por classe, um por ofício, mostrados antes
+  da escolha) são texto PROVISÓRIO, escrito pra fechar o cartão — não são
+  do Rafael.** Moram em `despertar.CARDS_CLASSE`/`CARDS_OFICIO`, separados
+  de `dialogos.DESPERTAR` de propósito: essa segunda constante é só o texto
+  exato do Rafael (abertura, confirmações de classe/ofício, falas da Elna),
+  colado sem alterar vírgula. Mesmo acordo já usado nos 10 NPCs de
+  Encantador/Joalheiro — ele revisa/reescreve os cards quando quiser.
+- **`{classe}`/`{oficio}` são placeholder de `str.format()`, resolvidos
+  DEPOIS do marcador `{opcao|opcao}` de `concordar()`, nunca antes.**
+  `dialogos.DESPERTAR["confirmacao_classe"]` tem os dois tipos de chave na
+  mesma string (`"...era um{|a} {classe}!..."`). Como o regex de
+  `concordar()` exige um `|` dentro das chaves, ele ignora `{classe}` (sem
+  `|`) e resolve só o marcador de gênero — sobra só o placeholder de nome
+  pro `.format()` seguinte. Se a ordem fosse invertida, `.format()` bateria
+  primeiro no `{|a}` sobrando e quebraria (campo sem nome com `|` dentro não
+  é sintaxe válida de `.format()`).
+- **A confirmação de classe/ofício concorda no pronome ANTES de o pronome
+  existir.** A pergunta de pronome só vem depois da de ofício — nesse
+  meio-tempo, `pronomes.concordar(texto, None)` resolve pra forma ele/elu,
+  que é o mesmo fallback que a função já tem documentado pra pronome
+  ausente/inválido (mesmo espírito do default `'elu'` da coluna). Não é
+  gambiarra nova pro despertar, é o comportamento padrão já existente sendo
+  usado no único lugar onde o pronome genuinamente ainda não existe.
+- **`obter_ou_criar_canal_privado` (bot.py) é a lógica de `rpg priv`
+  extraída pra função**, reaproveitada pelo fim do despertar em vez de
+  duplicar categoria/overwrites/`create_text_channel`. `despertar.py` não
+  importa `bot.py` (evita import circular, já que `bot.py` importa
+  `despertar.py`) — recebe essa função e a `DialogoView` real por parâmetro
+  em `iniciar_despertar()`, não por import direto.
+- **`rpg comecar` aponta pra `rpg ajuda` no fechamento, não pra `rpg
+  h`/`rpg adv`** — de propósito, pra empurrar quem acabou de chegar a
+  explorar o mundo antes de aprender os atalhos de grind.
+
+### Teste
+
+`tests/test_despertar.py`: sequência não grava nada até o pronome, grava
+classe/ofício/pronome/3 poções juntos no clique do pronome, concordância nas
+confirmações e na fala da Elna (pronome ainda não escolhido cai em ele/elu,
+depois do escolhido usa o de verdade), segunda sequência não sobrescreve
+quem já terminou a primeira, autor errado recebe recusa sem mudar o painel,
+o gate de `rpg comecar` (recusa quem já tem classe, libera quem foi
+resetado mesmo com título/mortes, libera jogador novo), `rpg pronome`
+sumiu. Segue a mesma estratégia de `tests/test_comercio.py` — interação
+fake, sem discord.py conectado de verdade; a `DialogoView` da Elna em si
+não é recoberta aqui de novo, já é indiretamente testada via `bot.py`.
+
+**Não testado automaticamente**: os 8 cards (conteúdo, não lógica, mesma
+situação dos diálogos de NPC) e a sequência de verdade jogando no Discord —
+criação do canal privado, abandonar de fato fechando o cliente, timeout de
+300s expirando.
+
+## Padrão — mapa de domínio nunca é subscript direto
+
+Terceira vez que o mesmo formato de bug derruba um comando: um dict literal
+indexado direto por uma chave que vem de dado (`ANDAR_MATERIAL[andar_min]`
+pras armas elementais, o dict de material de upgrade duplicado entre
+`custo_melhorar`/`refund_desmanche`, e agora `bot.py:849` — o papel de cada
+NPC em `rpg npcs` montado com `{"mercador": ..., ...}[n["tipo"]]`, sem chave
+pra `encantador`/`joalheiro`, que derrubava o comando inteiro em qualquer
+andar com um dos dois ofícios mágicos).
+
+Nas três vezes o mapa cobria os tipos que existiam quando foi escrito e ficou
+pra trás quando um tipo novo (andar, item, ofício, NPC) foi semeado no banco
+sem ninguém lembrar de voltar no dict.
+
+**Padrão do projeto a partir daqui**: todo mapa de domínio (tipo de NPC, tipo
+de item, andar → algo) é uma **constante nomeada no topo do módulo**, nunca
+um dict literal dentro da função que usa, e o acesso é sempre **com padrão**
+(`.get(chave, default_seguro)`), nunca subscript direto (`dict[chave]`) — a
+não ser que a chave já tenha sido validada antes (ex.: contra
+`ITENS`/`CLASSES` no momento da criação). Um tipo sem entrada vira
+comportamento degradado (linha sem descrição, custo zero, o que fizer sentido
+no contexto), nunca `KeyError` derrubando o comando pro jogador.
+
+- **`bot.py` — `PAPEL_NPC`**: extraído do literal dentro de `listar_npcs`
+  pra constante ao lado de `ICONES_NPC` (que já usava `.get()` corretamente
+  desde antes — só o dict de papel tinha regredido pro subscript direto).
+  Ganhou as entradas de `encantador`/`joalheiro` que faltavam.
+- **Teste-contrato, não teste-de-lista-fixa**: `tests/test_npcs_listagem.py`
+  varre os tipos que EXISTEM em `npcs.NPCS` (todos os andares) e afirma que
+  cada um tem entrada em `PAPEL_NPC` — não fixa "mercador, ferreiro, ..." a
+  mão, senão o teste passaria mudo no próximo tipo esquecido, do mesmo jeito
+  que o bug passou mudo três vezes. Cobre também que montar a listagem pra
+  todo andar semeado não levanta exceção nenhuma.
 `test_database_migracao.py` ganhou as duas colunas novas.

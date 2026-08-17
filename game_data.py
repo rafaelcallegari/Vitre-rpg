@@ -385,29 +385,32 @@ CONDICOES_ELEMENTO = {
 
 # Fase 2: as 4 bases. Os 12 ramos (ascensões) entram depois.
 CLASSES = {
+    # "nome" carrega o marcador de concordância de pronomes.concordar() --
+    # "Mag{o|a}" -> "Mago" (ele/elu) / "Maga" (ela). Ver decisoes.md § nomes
+    # de classe e ofício com gênero.
     "mago": {
-        "nome": "Mago", "emoji": "🔮",
+        "nome": "Mag{o|a}", "emoji": "🔮",
         "atributo_habilidade": "inteligencia",   # dano de habilidade escala com isso
         "afinidade_arma": "inteligencia",        # rende cheio com cajado
         "recurso": "mana",
         "desc": "Dano de habilidade em INT. Rende cheio com cajado na mão.",
     },
     "guerreiro": {
-        "nome": "Guerreiro", "emoji": "🗡️",
+        "nome": "Guerreir{o|a}", "emoji": "🗡️",
         "atributo_habilidade": "forca",
         "afinidade_arma": "forca",
         "recurso": "furia",
         "desc": "Dano de habilidade em FOR. Rende cheio com espada, machado ou martelo.",
     },
     "ladino": {
-        "nome": "Ladino", "emoji": "🏹",
+        "nome": "Ladin{o|a}", "emoji": "🏹",
         "atributo_habilidade": "destreza",
         "afinidade_arma": "destreza",
         "recurso": "energia",
         "desc": "Dano de habilidade em DES. Rende cheio com adaga, arco ou foice.",
     },
     "orador": {
-        "nome": "Orador", "emoji": "🙏",
+        "nome": "Orador{|a}", "emoji": "🙏",
         "atributo_habilidade": "inteligencia",   # dano de habilidade em INT, apesar da arma ser de DES
         "afinidade_arma": "destreza",            # rende cheio desarmado ou de manopla/faixa
         "recurso": "mana",

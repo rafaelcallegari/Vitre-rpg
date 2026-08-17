@@ -346,7 +346,10 @@ class FerreiroView(PainelComercioBase):
     async def forjar_btn(self, interaction, button):
         j = db.get_jogador(interaction.user.id)
         if j["profissao"] != "forja":
-            atual = profissoes.PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            atual = (
+                pronomes.concordar(profissoes.PROFISSOES[j["profissao"]]["nome"], j["pronome"])
+                if j["profissao"] else "nenhum"
+            )
             await interaction.response.send_message(
                 f"Essa bancada é de Forja — seu ofício é {atual}. "
                 f"Precisa ser Forjador pra fabricar aqui (`rpg profissao`).",
@@ -417,7 +420,10 @@ class EncantadorView(PainelComercioBase):
     async def encantar_btn(self, interaction, button):
         j = db.get_jogador(interaction.user.id)
         if j["profissao"] != "encantador":
-            atual = profissoes.PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            atual = (
+                pronomes.concordar(profissoes.PROFISSOES[j["profissao"]]["nome"], j["pronome"])
+                if j["profissao"] else "nenhum"
+            )
             await interaction.response.send_message(
                 f"Essa bancada é de Encantador — seu ofício é {atual}. "
                 f"Precisa ser Encantador pra isso (`rpg profissao`).",
@@ -471,7 +477,10 @@ class JoalheiroView(PainelComercioBase):
     async def lapidar_btn(self, interaction, button):
         j = db.get_jogador(interaction.user.id)
         if j["profissao"] != "joalheiro":
-            atual = profissoes.PROFISSOES[j["profissao"]]["nome"] if j["profissao"] else "nenhum"
+            atual = (
+                pronomes.concordar(profissoes.PROFISSOES[j["profissao"]]["nome"], j["pronome"])
+                if j["profissao"] else "nenhum"
+            )
             await interaction.response.send_message(
                 f"Essa bancada é de Joalheiro — seu ofício é {atual}. "
                 f"Precisa ser Joalheiro pra isso (`rpg profissao`).",
