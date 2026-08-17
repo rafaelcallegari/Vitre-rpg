@@ -17,6 +17,7 @@ CANAL_TORRE_ID = os.getenv("CANAL_TORRE_ID")
 _HORARIOS_TASK = [dt.time(hour=h, minute=m, tzinfo=FUSO) for h, m in HORARIOS_CARROCA]
 
 INTERVALO_BACKUP_HORAS = 2
+GUARDA_RECENTE_SEG = 3600
 UM_DIA_SEG = 24 * 3600
 UMA_SEMANA_SEG = 7 * 24 * 3600
 
@@ -37,13 +38,24 @@ def _rotacionar_backups():
     Decide o que sobrescrever pelo mtime do arquivo que já está em backups/,
     nunca por estado guardado no banco ou em memória — assim o esquema
     continua correto mesmo se o bot reiniciar no meio do ciclo, sem precisar
-    de tabela nova."""
+    de tabela nova.
+
+    `tasks.loop` roda a primeira iteração assim que o `before_loop` termina,
+    então todo restart do bot dispara uma rotação. Em produção isso é bom
+    (backup fresco ao subir); em desenvolvimento, com o bot reiniciando a
+    cada mudança, restarts seguidos sobrescreviam os 3 recentes em minutos
+    e a janela de ~6h de profundidade virava inútil. Por isso, se o mais
+    novo dos três já tem menos de GUARDA_RECENTE_SEG, a rotação dos recentes
+    é pulada — diário e semanal não entram nessa guarda, os dois já se
+    protegem sozinhos (24h/7 dias) e continuam sendo avaliados embaixo."""
     os.makedirs(db.BACKUP_DIR, exist_ok=True)
     agora = time.time()
 
     recentes = [os.path.join(db.BACKUP_DIR, f"recente_{i}.db") for i in (1, 2, 3)]
-    alvo = min(recentes, key=_mtime_ou_nunca)
-    db.backup_banco_para(alvo)
+    mtime_mais_novo = max(_mtime_ou_nunca(c) for c in recentes)
+    if mtime_mais_novo < 0 or agora - mtime_mais_novo >= GUARDA_RECENTE_SEG:
+        alvo = min(recentes, key=_mtime_ou_nunca)
+        db.backup_banco_para(alvo)
 
     diario = os.path.join(db.BACKUP_DIR, "diario.db")
     if _mtime_ou_nunca(diario) < agora - UM_DIA_SEG:

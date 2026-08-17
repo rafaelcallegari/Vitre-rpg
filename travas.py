@@ -77,3 +77,93 @@ async def bloqueado(ctx):
         await ctx.send(MENSAGEM_BLOQUEIO)
         return True
     return False
+
+
+# ---------------------------------------------------------------- manutenção
+# Janela do dono que bloqueia abrir luta NOVA (`rpg boss`/`rpg party`/`rpg
+# raide`) sem interromper luta em andamento — mesmo raciocínio de estado em
+# memória do resto do módulo: reiniciar o bot já destrava tudo sozinho, e é
+# esse o comportamento certo depois de um restart (ver decisoes.md § Modo
+# manutenção).
+_manutencao_fim = None          # timestamp epoch de quando a janela acaba, ou None se desligada
+_manutencao_owner_id = None     # quem ligou — pra onde manda o DM de "pode reiniciar"
+_manutencao_notificada = False  # já mandou o DM desta janela?
+
+
+class ManutencaoAtiva(commands.CheckFailure):
+    """Levantado quando `rpg boss`/`rpg party`/`rpg raide` é chamado com a
+    janela de manutenção ligada. `restante_seg` vai pra mensagem de recusa —
+    negar sem dizer quanto falta deixa quem tentou sem saber se tenta nem
+    daqui a 1 minuto ou daqui a 1 hora."""
+
+    def __init__(self, restante_seg):
+        self.restante_seg = restante_seg
+
+
+def ligar_manutencao(minutos, owner_id):
+    global _manutencao_fim, _manutencao_owner_id, _manutencao_notificada
+    _manutencao_fim = time.time() + minutos * 60
+    _manutencao_owner_id = owner_id
+    _manutencao_notificada = False
+
+
+def desligar_manutencao():
+    global _manutencao_fim
+    _manutencao_fim = None
+
+
+def manutencao_ativa():
+    """True se a janela está ligada e ainda não passou do prazo. Expirada
+    conta como desligada e já limpa o estado — mesmo padrão de em_luta()."""
+    global _manutencao_fim
+    if _manutencao_fim is None:
+        return False
+    if time.time() >= _manutencao_fim:
+        _manutencao_fim = None
+        return False
+    return True
+
+
+def manutencao_restante():
+    if not manutencao_ativa():
+        return 0
+    return _manutencao_fim - time.time()
+
+
+def manutencao_owner_id():
+    return _manutencao_owner_id
+
+
+def manutencao_notificada():
+    return _manutencao_notificada
+
+
+def marcar_manutencao_notificada():
+    global _manutencao_notificada
+    _manutencao_notificada = True
+
+
+def ninguem_em_luta():
+    """True se não há ninguém travado por luta agora — usado pra saber se a
+    manutenção já pode avisar o dono que dá pra reiniciar."""
+    return len(_em_luta) == 0
+
+
+def fora_de_manutencao():
+    """Check pra comando que ABRE luta nova — `rpg boss`/`rpg party`/`rpg
+    raide`. Luta já em andamento não passa por aqui de novo (o motor de
+    combate não rechama o comando), só a abertura de uma luta nova é
+    barrada."""
+    async def predicado(ctx):
+        if manutencao_ativa():
+            raise ManutencaoAtiva(manutencao_restante())
+        return True
+    return commands.check(predicado)
+
+
+def fmt_restante(segundos):
+    segundos = int(segundos)
+    if segundos < 60:
+        return f"{segundos}s"
+    minutos, segundos = divmod(segundos, 60)
+    return f"{minutos}m {segundos}s"

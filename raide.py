@@ -260,6 +260,7 @@ def instalar(bot, contexto):
     H.update(contexto)
 
     @bot.command(name="raide", aliases=["audiencia", "raid"])
+    @travas.fora_de_manutencao()
     async def raide_cmd(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:

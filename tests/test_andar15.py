@@ -19,7 +19,7 @@ def test_nome_do_andar_continua_trono_vazio():
 def test_chefe_fase1_tem_nome_novo_e_stats_intactos():
     assert BOSS["nome"] == "«Espectro do rei»"
     assert BOSS["hp"] == 5580
-    assert BOSS["atk"] == 335
+    assert BOSS["atk"] == 275  # 335 - 60, ver decisoes.md § ATK dos chefes 11-15 reduzido em 60
     assert BOSS["def"] == 59
     assert BOSS["xp"] == 2420
     assert BOSS["moedas"] == 4050
@@ -38,7 +38,7 @@ def test_fase2_troca_nome_mantem_stats_e_carrega_fala_derrota():
 
     assert luta.chefe["nome"] == "«A Ruína do Rei»"
     assert luta.chefe["hp"] == 5580            # hp máximo herda da fase 1, não muda
-    assert luta.chefe["atk"] == 375
+    assert luta.chefe["atk"] == 315  # 375 - 60, ver decisoes.md § ATK dos chefes 11-15 reduzido em 60
     assert luta.chefe["def"] == 65
     assert luta.chefe["elemento"] == "divino"
     assert luta.chefe["drops"] == [("prego_de_luz", 1.0)]

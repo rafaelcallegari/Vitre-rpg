@@ -204,6 +204,16 @@ COLUNAS_INSTANCIA_ACESSORIOS = {
     "colar_instancia_id": "INTEGER",
 }
 
+COLUNAS_AVATAR = {
+    # avatar_msg_id é a fonte da verdade -- id da mensagem repostada em
+    # CANAL_ARQUIVO_ID (avatar.py). avatar_url é só cache: a URL assinada
+    # do CDN do Discord expira (parâmetro `ex`), o arquivo não -- ver
+    # decisoes.md § avatar do jogador. Cosmético como `titulo`: não entra
+    # em resetar_temporada().
+    "avatar_msg_id": "INTEGER",
+    "avatar_url": "TEXT",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -460,6 +470,18 @@ def init_db():
                 )
             print("Banco migrado: colunas de joia (Joalheiro) criadas em instancias.")
 
+        # migração 15: avatar cosmético -- avatar_msg_id é a fonte da
+        # verdade, avatar_url só cache (ver COLUNAS_AVATAR acima e
+        # decisoes.md § avatar do jogador). NULL pra todo mundo -- ninguém
+        # tinha avatar antes desta carta.
+        novas_avatar = [c for c in COLUNAS_AVATAR if c not in colunas]
+        if novas_avatar:
+            for coluna in novas_avatar:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_AVATAR[coluna]}"
+                )
+            print("Banco migrado: avatar cosmético criado -- ninguém tem avatar ainda.")
+
 
 def _migrar_upgrades_para_instancias(conn):
     """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída
@@ -627,6 +649,11 @@ def resetar_temporada():
     Zera nível/XP/moedas/HP/mana/atributos/equipamento/classe/ofício e
     apaga inventário, cooldowns e upgrades por inteiro.
 
+    Guildas sobrevivem inteiras -- guilda, membros, cargo do Discord e home
+    continuam de pé, ninguém refunda nem paga os 5.000 de novo. Só o caixa
+    zera: `guilda_bau` esvazia e `guildas.moedas` volta a 0, senão quem tem
+    guilda começa a temporada rico enquanto quem não tem começa do zero.
+
     Tudo dentro do `with conectar()` de baixo: se qualquer execute() aqui
     lançar, o commit no fim do context manager nunca roda e o SQLite
     descarta a transação inteira ao fechar a conexão sem commit — ou reseta
@@ -656,6 +683,8 @@ def resetar_temporada():
         conn.execute("DELETE FROM upgrades")
         conn.execute("DELETE FROM instancias")
         conn.execute("DELETE FROM chefes_derrotados")
+        conn.execute("DELETE FROM guilda_bau")
+        conn.execute("UPDATE guildas SET moedas = 0")
     return afetados
 
 

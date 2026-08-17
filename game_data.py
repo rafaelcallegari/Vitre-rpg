@@ -295,7 +295,7 @@ ANDARES = {
             {"nome": "Corrente de Vento", "hp": 375, "atk": 60, "def": 20, "xp": 154, "moedas": 220, "drops": [("pluma_eterea", 0.45)]},
         ],
         "boss": {
-            "nome": "«Guardiã do Terraço»", "hp": 4140, "atk": 231, "def": 35,
+            "nome": "«Guardiã do Terraço»", "hp": 4140, "atk": 171, "def": 35,
             "xp": 1460, "moedas": 2450, "elemento": "ar",
             "drops": [("sopro_contido", 1.0)],
         },
@@ -310,7 +310,7 @@ ANDARES = {
             {"nome": "Servo de Cobre", "hp": 400, "atk": 62, "def": 27, "xp": 166, "moedas": 235, "drops": [("farpa_eletrica", 0.45)]},
         ],
         "boss": {
-            "nome": "«Arauto do Pátio»", "hp": 4500, "atk": 257, "def": 41,
+            "nome": "«Arauto do Pátio»", "hp": 4500, "atk": 197, "def": 41,
             "xp": 1700, "moedas": 2850, "elemento": "raio",
             "drops": [("semente_de_trovao", 1.0)],
         },
@@ -325,7 +325,7 @@ ANDARES = {
             {"nome": "Vigia Sem Rosto", "hp": 425, "atk": 74, "def": 24, "xp": 178, "moedas": 250, "drops": [("estilhaco_gelido", 0.45)]},
         ],
         "boss": {
-            "nome": "«Curadora da Ala Branca»", "hp": 4860, "atk": 283, "def": 47,
+            "nome": "«Curadora da Ala Branca»", "hp": 4860, "atk": 223, "def": 47,
             "xp": 1940, "moedas": 3250, "elemento": "gelo",
             "drops": [("lasca_de_silencio", 1.0)],
         },
@@ -340,7 +340,7 @@ ANDARES = {
             {"nome": "Estátua de Sal Requentado", "hp": 450, "atk": 82, "def": 26, "xp": 190, "moedas": 265, "drops": [("cinza_quente", 0.45)]},
         ],
         "boss": {
-            "nome": "«Guardião do Solário»", "hp": 5220, "atk": 309, "def": 53,
+            "nome": "«Guardião do Solário»", "hp": 5220, "atk": 249, "def": 53,
             "xp": 2180, "moedas": 3650, "elemento": "fogo",
             "drops": [("brasa_sem_fumaca", 1.0)],
         },
@@ -357,11 +357,11 @@ ANDARES = {
         # duas fases, ver decisoes.md § Andar 15 — combate.py troca pra
         # "fase2" sozinho quando o hp cruza 50%, sem resetar nada da luta.
         "boss": {
-            "nome": "«Espectro do rei»", "hp": 5580, "atk": 335, "def": 59,
+            "nome": "«Espectro do rei»", "hp": 5580, "atk": 275, "def": 59,
             "xp": 2420, "moedas": 4050, "elemento": "sombrio",
             "drops": [("sombra_dobrada", 1.0)],
             "fase2": {
-                "nome": "«A Ruína do Rei»", "atk": 375, "def": 65,
+                "nome": "«A Ruína do Rei»", "atk": 315, "def": 65,
                 "elemento": "divino", "drops": [("prego_de_luz", 1.0)],
                 "fala_derrota": "De novo não, como você está aqui, se já subiu essa torre",
             },

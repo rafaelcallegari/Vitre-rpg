@@ -430,6 +430,9 @@ def instalar(bot, contexto):
 
     @bot.command(name="profissao", aliases=["profissão", "oficio", "ofício", "prof"])
     async def profissao(ctx, *, argumento: str = ""):
+        """Só wiki + troca -- a escolha inicial de ofício acontece dentro do
+        despertar (`rpg comecar`), não mais aqui. A troca continua aqui, é
+        onde sempre morou. Ver decisoes.md § despertar."""
         j = await H["pegar_jogador"](ctx)
         if not j:
             return
@@ -445,7 +448,7 @@ def instalar(bot, contexto):
                 await ctx.send("Trocar para qual? `rpg profissao trocar <forja|alquimia|encantador|joalheiro>`.")
                 return
             if not j["profissao"]:
-                await ctx.send("Você ainda não tem profissão. Manda `rpg profissao forja`.")
+                await ctx.send("Você ainda não tem ofício — o despertar (`rpg comecar`) escolhe por você.")
                 return
             if nova == j["profissao"]:
                 await ctx.send(f"Você já é da **{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}**.")
@@ -466,22 +469,11 @@ def instalar(bot, contexto):
             )
             return
 
-        # ---- escolher pela primeira vez
-        if argumento and not j["profissao"]:
-            escolhida = encontrar_profissao(argumento)
-            if not escolhida:
-                await ctx.send("Não conheço esse ofício. É `forja`, `alquimia`, `encantador` ou `joalheiro`.")
-                return
-            db.atualizar_jogador(j["user_id"], profissao=escolhida, prof_nivel=1, prof_xp=0)
-            dados = PROFISSOES[escolhida]
-            await ctx.send(
-                f"{dados['emoji']} Você agora é "
-                f"**{pronomes.concordar(dados['titulo'], j['pronome'])}**, nível 1.\n"
-                f"{dados['desc']}\nManda `rpg receitas` pra ver o que já consegue fazer."
-            )
+        if not j["profissao"]:
+            await ctx.send("Você ainda não tem ofício — o despertar (`rpg comecar`) escolhe por você.")
             return
 
-        if argumento and j["profissao"]:
+        if argumento:
             atual_nome = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"])
             await ctx.send(
                 f"Você já é da **{atual_nome}**. "
@@ -489,26 +481,7 @@ def instalar(bot, contexto):
             )
             return
 
-        # ---- sem argumento: ficha ou menu
-        if not j["profissao"]:
-            e = discord.Embed(
-                title="Escolha um ofício",
-                description=(
-                    "Você só pode ter **um**. Trocar depois custa "
-                    f"{CUSTO_TROCA} 🪙 e zera o nível — então converse com a galera "
-                    "antes: dois ferreiros e nenhum alquimista deixa todo mundo sem elixir."
-                ),
-                color=ANDARES[j["andar"]]["cor"],
-            )
-            for chave, dados in PROFISSOES.items():
-                e.add_field(
-                    name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], j['pronome'])}",
-                    value=f"{dados['desc']}\n`rpg profissao {chave}`",
-                    inline=False,
-                )
-            await ctx.send(embed=e)
-            return
-
+        # ---- sem argumento: ficha do próprio ofício
         dados = PROFISSOES[j["profissao"]]
         nivel, xp = j["prof_nivel"], j["prof_xp"]
         teto = nivel_maximo_de(j["profissao"])

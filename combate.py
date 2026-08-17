@@ -187,6 +187,7 @@ class Combatente:
         self.fugiu = False
         self.saiu = False
         self.dono = True   # Luta.__init__ ajusta pra quem entrou só de ajuda
+        self._estado_final_salvo = False   # ver salvar_estado()
 
     @property
     def ativo(self):
@@ -198,6 +199,21 @@ class Combatente:
         return {"mana": self.mana, "furia": self.furia, "energia": self.energia}.get(recurso, 0)
 
     def salvar_estado(self):
+        """Grava HP/mana no banco -- exceto se o combatente já saiu da luta
+        (fugiu/saiu/caiu) e essa saída já foi salva uma vez. Os laços que
+        rodam por cima de `Luta.participantes` (fim de rodada, timeout)
+        continuam chamando isso pra TODO MUNDO a cada rodada, inclusive
+        quem já não está mais lutando -- sem a guarda, cada chamada
+        seguinte regravava o HP CONGELADO no momento da saída por cima de
+        qualquer cura que acontecesse depois (poção fora da luta, por
+        exemplo), porque `self.hp` nunca mais muda depois que a pessoa sai.
+        Uma vez que o estado final foi salvo, mais nenhuma escrita acontece
+        pra esse combatente. Ver decisoes.md § HP final é congelado ao sair
+        da luta."""
+        if not self.ativo:
+            if self._estado_final_salvo:
+                return
+            self._estado_final_salvo = True
         db.atualizar_jogador(self.id, hp=max(0, self.hp), mana=max(0, self.mana))
 
     def barra(self):
@@ -241,7 +257,17 @@ class Luta:
         for c in combatentes:
             c.dono = c.id in donos_ids
         num_donos = sum(1 for c in combatentes if c.dono)
-        self.hp_chefe = chefe["hp"] * max(1, num_donos)
+        # acima do Selo (andar 11+) o HP do chefe é fixo, igual ao solo,
+        # não importa quantos donos entraram -- decisão do Rafael: 11-15 é
+        # conteúdo de grupo, e é esperado que a party fique bem mais forte
+        # lá em cima. Do 1 ao 10 continua escalando por dono (raide.py usa
+        # esse mesmo caminho com andar_num=ANDAR_REFERENCIA_RAIDE=7, sempre
+        # abaixo do limiar, então a raide não muda). Ver decisoes.md § HP
+        # de chefe fixo acima do Selo.
+        if andar_num > ANDAR_ACIMA_DO_SELO:
+            self.hp_chefe = chefe["hp"]
+        else:
+            self.hp_chefe = chefe["hp"] * max(1, num_donos)
         self.hp_chefe_max = self.hp_chefe
         self.rodada = 1
         self.carregando = False
@@ -1157,6 +1183,15 @@ class PainelLuta(discord.ui.View):
 
 # ------------------------------------------------------------ sala de espera
 
+def texto_regra_hp_chefe(andar_num, chefe):
+    """Frase da sala de party sobre como o HP do chefe escala -- tem que
+    bater com a conta de `Luta.__init__` pra não anunciar uma regra que o
+    andar não segue mais. Ver decisoes.md § HP de chefe fixo acima do Selo."""
+    if andar_num > ANDAR_ACIMA_DO_SELO:
+        return f"**{chefe['hp']} HP fixo, não escala com o tamanho da party** (andar de grupo)"
+    return f"**{chefe['hp']} HP por dono do andar**"
+
+
 class SalaDeEspera(discord.ui.View):
     def __init__(self, anfitriao, jogador, andar_num):
         super().__init__(timeout=TIMEOUT_SALA)
@@ -1177,7 +1212,7 @@ class SalaDeEspera(discord.ui.View):
             title=f"Party para {chefe['nome']}",
             description=(
                 f"Andar {self.andar_num}. O chefe entra com "
-                f"**{chefe['hp']} HP por dono do andar** — quem só está ajudando não infla "
+                f"{texto_regra_hp_chefe(self.andar_num, chefe)} — quem só está ajudando não infla "
                 f"o chefe e leva XP/moedas reduzidos, sem fragmento e sem progresso.\n\n"
                 f"Precisa estar fisicamente no andar {self.andar_num} (`rpg viajar {self.andar_num}`) "
                 f"e com pelo menos {int(HP_MINIMO_PARA_ENTRAR * 100)}% de HP."
@@ -1363,6 +1398,7 @@ def instalar(bot, contexto):
 
     @bot.command(name="boss", aliases=["chefe"])
     @travas.fora_de_luta()
+    @travas.fora_de_manutencao()
     async def boss(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:
@@ -1376,6 +1412,7 @@ def instalar(bot, contexto):
         await iniciar_luta(ctx, [j["user_id"]], j["andar"])
 
     @bot.command(name="party", aliases=["grupo"])
+    @travas.fora_de_manutencao()
     async def party(ctx):
         j = await H["pegar_jogador"](ctx)
         if not j:

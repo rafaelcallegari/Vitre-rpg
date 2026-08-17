@@ -13,6 +13,7 @@ COLUNAS_ESPERADAS = {
     "mana_em", "anel", "colar", "acoes_andar_alto", "pronome",
     "arma_instancia_id", "armadura_instancia_id",
     "anel_instancia_id", "colar_instancia_id",
+    "avatar_msg_id", "avatar_url",
 }
 
 

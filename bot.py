@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 import andares_altos
 import atributos as at
+import avatar
 import database as db
 import despertar
 import dialogos
@@ -494,6 +495,7 @@ def conheceu_bramm(j):
 async def on_ready():
     db.init_db()
     agenda.iniciar()
+    await avatar.diagnosticar_canal(bot)
     print(f"Online como {bot.user} — prefixo: rpg")
 
 
@@ -501,8 +503,30 @@ async def on_ready():
 async def on_command_error(ctx, erro):
     if isinstance(erro, commands.CommandNotFound):
         return
+    # Comando com `@comando.error` próprio (admin.py: resetartemporada,
+    # resetarjogador, aviso, manutencao) já respondeu — discord.py dispara
+    # esse handler global DE QUALQUER JEITO depois do local (dispatch_error
+    # em discord/ext/commands/core.py sempre chama
+    # `ctx.bot.dispatch('command_error', ...)` no fim, com ou sem handler
+    # local), então sem essa guarda todo comando com handler próprio
+    # mostrava a mensagem certa e, logo embaixo, "a Torre engasgou" por
+    # cima. `has_error_handler()` é a forma que o próprio discord.py expõe
+    # pra saber se já tem alguém cuidando do erro desse comando.
+    if ctx.command is not None and ctx.command.has_error_handler():
+        return
     if isinstance(erro, travas.EmLutaDeChefe):
         await ctx.send(travas.MENSAGEM_BLOQUEIO)
+        return
+    if isinstance(erro, travas.ManutencaoAtiva):
+        await ctx.send(
+            f"🔧 A Torre está em manutenção — abrir luta nova volta em "
+            f"**{travas.fmt_restante(erro.restante_seg)}**."
+        )
+        return
+    if isinstance(erro, commands.MissingRequiredArgument):
+        await ctx.send(
+            f"Faltou `{erro.param.name}`. Uso: `rpg {ctx.command.qualified_name} {ctx.command.signature}`."
+        )
         return
     if isinstance(erro, commands.BadArgument):
         await ctx.send("Não entendi os argumentos. Confere `rpg ajuda`.")
@@ -543,14 +567,22 @@ async def comecar(ctx):
     (database.resetar_temporada) mas mantém a linha do jogador (título,
     mortes, criado_em). Quem foi resetado cai de novo no despertar -- não
     existe retrofit, todo mundo passa pela sequência inteira. Ver
-    decisoes.md § despertar."""
+    decisoes.md § despertar.
+
+    A sala privada nasce aqui, antes da primeira pergunta -- não mais no fim
+    do despertar. Nada grava no banco até o pronome, então desistir na tela
+    de classe deixa uma sala órfã (sem personagem); a segunda tentativa
+    reaproveita o mesmo canal via obter_ou_criar_canal_privado. Se a sala não
+    sai (permissão, limite de canais), o despertar nem começa."""
     j = db.get_jogador(ctx.author.id)
     if j and j["classe"]:
         await ctx.send("Você já está na torre. Manda `rpg perfil`.")
         return
-    await despertar.iniciar_despertar(
-        ctx, dialogo_view_cls=DialogoView, obter_canal_privado=obter_ou_criar_canal_privado,
-    )
+    canal, _ = await obter_ou_criar_canal_privado(ctx)
+    if not canal:
+        return
+    await ctx.send(f"Sua sala é {canal.mention} — o despertar te espera lá.")
+    await despertar.iniciar_despertar(ctx, canal, dialogo_view_cls=DialogoView)
 
 
 @bot.command(name="perfil", aliases=["profile", "p", "eu"])
@@ -568,6 +600,9 @@ async def perfil(ctx, membro: discord.Member = None):
         if titulo_dados else j["nome"]
     )
     e = discord.Embed(title=nome_exibido, color=andar["cor"])
+    url_avatar = await avatar.obter_avatar_atualizado(bot, j)
+    if url_avatar:
+        e.set_thumbnail(url=url_avatar)
     e.add_field(name="Está em", value=f"**Andar {j['andar']}** — {andar['nome']}", inline=True)
     e.add_field(name="Nível", value=f"**{j['nivel']}**", inline=True)
     e.add_field(name="XP", value=f"{j['xp']}/{xp_necessario(j['nivel'])}", inline=True)
@@ -595,7 +630,7 @@ async def perfil(ctx, membro: discord.Member = None):
     e.add_field(
         name="Classe",
         value=f"{classe_dados['emoji']} {pronomes.concordar(classe_dados['nome'], j['pronome'])}"
-              if classe_dados else "— `rpg classe` para escolher",
+              if classe_dados else "— `rpg comecar` te dá uma no despertar",
         inline=True,
     )
     e.add_field(
@@ -1501,12 +1536,14 @@ async def titulo(ctx, *, argumento: str = ""):
 
 
 def embed_info_classe(chave, pronome=None):
-    """Prévia das 2 habilidades base de uma classe, sem exigir que o jogador
-    já seja dela — é o que falta pra `rpg classe <classe>` não ser uma
-    escolha às cegas (a escolha trava, sem troca depois)."""
+    """Wiki de uma classe: o que ela faz, as habilidades base e os ramos de
+    ascensão que ela abre mais pra frente. Tudo lido de game_data
+    (CLASSES/HABILIDADES/ASCENSOES) -- texto solto aqui desatualizaria sozinho
+    na primeira mudança de balanceamento. Não escolhe nada; a escolha
+    acontece só no despertar (`rpg comecar`), veja `classe_cmd`."""
     dados = CLASSES[chave]
     e = discord.Embed(
-        title=f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)} — habilidades base",
+        title=f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)}",
         description=dados["desc"],
         color=0x6A4C93,
     )
@@ -1521,64 +1558,35 @@ def embed_info_classe(chave, pronome=None):
             value=skill["desc"],
             inline=False,
         )
-    e.set_footer(text=f"Prévia — `rpg classe {chave}` ainda trava a escolha, sem troca depois.")
+    ramos = [a["nome"] for a in ASCENSOES.values() if a["base"] == chave]
+    if ramos:
+        e.add_field(name="Ascensão (ainda não jogável)", value=", ".join(ramos), inline=False)
+    e.set_footer(text="Classe travada — escolhida uma vez, no despertar (`rpg comecar`), sem troca.")
     return e
 
 
 @bot.command(name="classe", aliases=["class", "vocacao", "vocação"])
 async def classe_cmd(ctx, *, argumento: str = ""):
+    """Só wiki -- a escolha de classe acontece dentro do despertar
+    (`rpg comecar`), não aqui. Sem argumento, mostra a classe do próprio
+    jogador; com argumento, mostra a classe pedida (curiosidade, não
+    escolha). Ver decisoes.md § despertar."""
     j = await pegar_jogador(ctx)
     if not j:
         return
 
-    partes = argumento.strip().split()
-    pedir_info = len(partes) >= 2 and normalizar(partes[-1]) == "info"
-    if pedir_info:
-        alvo = encontrar_classe(" ".join(partes[:-1]))
+    if argumento:
+        alvo = encontrar_classe(argumento)
         if not alvo:
-            await ctx.send("Não conheço essa classe. `rpg classe` mostra as opções.")
+            await ctx.send("Não conheço essa classe. `rpg classe` mostra a sua.")
             return
-        await ctx.send(embed=embed_info_classe(alvo, j["pronome"]))
-        return
+    else:
+        alvo = j["classe"]
+        if not alvo:
+            await ctx.send("Você ainda não tem classe — o despertar (`rpg comecar`) escolhe por você.")
+            return
 
-    if j["classe"]:
-        dados = CLASSES[j["classe"]]
-        nome = pronomes.concordar(dados["nome"], j["pronome"])
-        await ctx.send(
-            f"Você já é **{dados['emoji']} {nome}**. Escolha travada, não dá pra trocar."
-        )
-        return
-
-    if not argumento:
-        e = discord.Embed(
-            title="Escolha uma classe",
-            description=(
-                "Travada assim que escolher — não tem troca. `rpg classe <classe> info` mostra "
-                "as habilidades base antes de decidir. `rpg ascencao` mostra no que cada uma "
-                "vira mais pra frente."
-            ),
-            color=ANDARES[j["andar"]]["cor"],
-        )
-        for chave, dados in CLASSES.items():
-            e.add_field(
-                name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], j['pronome'])}",
-                value=f"{dados['desc']}\n`rpg classe {chave}` · `rpg classe {chave} info`",
-                inline=False,
-            )
-        await ctx.send(embed=e)
-        return
-
-    escolhida = encontrar_classe(argumento)
-    if not escolhida:
-        await ctx.send("Não conheço essa classe. `rpg classe` mostra as opções.")
-        return
-    db.atualizar_jogador(j["user_id"], classe=escolhida)
-    dados = CLASSES[escolhida]
-    nome = pronomes.concordar(dados["nome"], j["pronome"])
-    await ctx.send(
-        f"{dados['emoji']} Você agora é **{nome}**. Escolha travada.\n"
-        f"`rpg ascencao` mostra o caminho lá na frente."
-    )
+    await ctx.send(embed=embed_info_classe(alvo, j["pronome"]))
 
 
 @bot.command(name="ascencao", aliases=["ascensao", "ascensão", "ascenção"])
@@ -1727,7 +1735,7 @@ def embed_ajuda():
             "`rpg upar <atributo> <qtd>` · `rpg respec`\n"
             "`rpg usar <item> <qtd>` · `rpg equipar <item>`\n"
             "`rpg titulo` — títulos conquistados e como equipar\n"
-            "`rpg classe` · `rpg ascencao` — escolha travada, mapa das 12 ascensões\n"
+            "`rpg classe` — sua classe: skills e ascensão · `rpg ascencao` — mapa das 12 ascensões\n"
             "`rpg habilidades` — o que você já destravou (só se lança contra chefe)"
         ),
         inline=False,
@@ -1735,7 +1743,7 @@ def embed_ajuda():
     e.add_field(
         name="Ofício",
         value=(
-            "`rpg profissao` — escolhe entre Forja e Alquimia\n"
+            "`rpg profissao` — seu ofício: progresso e receitas · `rpg profissao trocar <novo>`\n"
             "`rpg receitas` — o que você consegue fabricar\n"
             "`rpg craftar <item> <qtd>` — fabrica na bancada do NPC\n"
             "`rpg melhorar <arma|armadura>` — tenta +1/+2 no ferreiro, qualquer jogador\n"
@@ -1828,6 +1836,10 @@ agenda.instalar(bot)
 import admin
 
 admin.instalar(bot)
+
+# avatar — imagem cosmética no rpg perfil; importado lá em cima (não aqui
+# embaixo com os outros) porque perfil() chama avatar.obter_avatar_atualizado()
+avatar.instalar(bot)
 
 if __name__ == "__main__":
     # guarda de main: importar este módulo (testes, um shell, outro script)

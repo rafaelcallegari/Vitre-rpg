@@ -4,6 +4,204 @@ Registro do que já foi decidido, com o motivo — o porquê por trás de cada
 escolha, não o status de implementação. Progresso, prioridade e o que ainda
 está em aberto vivem no Kanban Vitre, no Notion.
 
+## ATK dos chefes 11-15 reduzido em 60
+
+Pedido direto do Rafael, sem diagnóstico prévio dele — só a conta de
+confirmação depois. `game_data.ANDARES[11..15]["boss"]["atk"]`, e a
+`fase2` do andar 15 junto (mesmo corte, pra manter a mesma folga entre fase
+1 e fase 2 que já existia): 231→171, 257→197, 283→223, 309→249, 335→275
+(fase1 do 15), 375→315 (fase2 do 15). Penetração de armadura
+(`PENETRACAO_POR_ANDAR`), HP e DEF dos chefes não mudaram — só o ATK.
+
+Dano resultante simulado com o motor de combate de verdade
+(`combate.dano_do_chefe`, 200k amostras por andar — cobre a variância de
+±15% e a chance de crítico), não conta na mão, contra a mesma build de
+referência da calibração original dos andares 11-15 (nível 20, Guerreiro,
+FOR 40/CON 22, `lamina_selo`+`manto_selo`, sem acessório/upgrade — DEF 56,
+HP 470):
+
+| Andar | ATK antes | ATK depois | Golpe normal (média) | % do HP |
+|---|---|---|---|---|
+| 11 | 231 | 171 | ~114 | 24% |
+| 12 | 257 | 197 | ~133 | 28% |
+| 13 | 283 | 223 | ~152 | 32% |
+| 14 | 309 | 249 | ~171 | 36% |
+| 15 (fase 1) | 335 | 275 | ~191 | 41% |
+| 15 (fase 2) | 375 | 315 | ~219 | 47% |
+
+Golpe carregado (30% de chance por rodada, ATK×3 e +25% de penetração)
+continua desproporcional mesmo depois do corte — andar 12+ ainda passa de
+100% do HP da build de referência num carregado médio (ex.: andar 12 ~483
+de dano médio carregado contra 470 de HP). Não mexi nisso: não foi pedido,
+e cortar o carregado junto teria sido uma segunda mudança de design não
+autorizada — se isso também estiver puxado demais, é ajuste separado
+(`MULTIPLICADOR_CARREGADO`/`PENETRACAO_CARREGADO`, `combate.py`).
+
+`tests/test_andar15.py` tinha os valores antigos de ATK (335/375) hardcoded
+como trava de regressão do rename do chefe — atualizados pros novos
+(275/315) porque esse teste não era sobre o número em si, era sobre nome/
+HP/def/drops sobrevivendo ao rename. Nenhum outro teste nem reference doc
+tinha os números de ATK 11-15 hardcoded.
+
+## Erro genérico escondia a mensagem certa — `has_error_handler()`
+
+Bug descoberto investigando "`rpg aviso` sem argumento mostra a linha de uso
+E, logo abaixo, 'a Torre engasgou'": **todo comando com `@comando.error`
+próprio já sofria disso**, não só o `aviso`. `discord.py` sempre dispara o
+`on_command_error` global depois de rodar o handler local — `dispatch_error`
+(`discord/ext/commands/core.py`) chama `ctx.bot.dispatch('command_error', ...)`
+num `finally`, com ou sem handler local registrado. Sem guarda, o handler
+local mandava a mensagem certa e o global, sem saber que já tinha dono,
+caía direto no ramo genérico ("engasgou" + `raise erro`) por cima. Confirmado
+com um `commands.Bot` de teste isolado (sem rede) antes de mexer no código de
+produção: sem guarda, dá as duas mensagens; com guarda, só uma.
+
+- **Correção em `bot.py:on_command_error`**: primeira linha do handler agora
+  é `if ctx.command is not None and ctx.command.has_error_handler(): return`.
+  `has_error_handler()` é método do próprio discord.py (`Command`, desde a
+  1.7) — exatamente pra essa checagem, não precisou de flag nem estado novo.
+  Resolve de uma vez os quatro comandos de `admin.py` que já tinham handler
+  local (`resetartemporada`, `resetarjogador`, `aviso`, `manutencao`), sem
+  precisar tocar em nenhum deles.
+- **`MissingRequiredArgument` ganhou ramo próprio no handler global** — pra
+  todo comando SEM handler local (a maioria: `viajar`, `upar`, `comprar` etc.
+  já usam parâmetro opcional com valor-padrão e tratam "sem argumento" dentro
+  do próprio corpo, então na prática só `resetarjogador` — que tem handler
+  local — dependia de `MissingRequiredArgument` de verdade antes desse
+  cartão). Mensagem usa `ctx.command.qualified_name` + `ctx.command.signature`
+  (`Uso: rpg <comando> <assinatura>`), sem "engasgou" nem "tenta de novo".
+- **`BadArgument` já tinha ramo próprio antes desse cartão** — conferido a
+  pedido, não precisou de correção, só ganhou teste de regressão junto dos
+  outros dois.
+- **`rpg aviso` sem categoria não vira erro nenhum**: `categoria` e `resto`
+  passaram a ter `= None`, e o corpo do comando decide mostrar a ajuda em vez
+  de deixar o discord.py levantar `MissingRequiredArgument` — o handler local
+  de `aviso_cmd` perdeu o ramo desse erro porque ficou inalcançável (os dois
+  parâmetros têm default agora). Ajuda (`texto_ajuda_aviso()`) monta a lista
+  de categorias direto de `CATEGORIAS_AVISO` — mesma constante que
+  `embed_aviso` já usava pra cor/ícone — em vez de escrever a lista a mão de
+  novo, pra não desatualizar sozinha quando uma categoria mudar.
+- Testado em `tests/test_manutencao_e_aviso.py`: `rpg aviso` sem argumento
+  responde com as 5 categorias sem erro; a ajuda cai junto quando uma
+  categoria some da constante (não é lista fixa em paralelo);
+  `MissingRequiredArgument` fora do ramo genérico pra comando sem handler
+  local; comando COM handler local não recebe mensagem duplicada (o bug
+  original); `BadArgument` confirmado que já estava OK. As duas primeiras
+  falham de verdade sem a guarda em `bot.py` (validado via `git stash`
+  temporário no arquivo e restaurado em seguida).
+
+## `rpg aviso` + modo manutenção
+
+Dois comandos de dono em `admin.py`, restritos como o resto do cog já era
+(`commands.is_owner()` — sem cargo de staff, sem lista de IDs nova).
+
+### `rpg aviso <categoria> [--everyone] <mensagem>`
+
+- **`CATEGORIAS_AVISO` é constante nomeada, acesso por `.get()`** — mesma
+  regra do `PAPEL_NPC` (§ Padrão — mapa de domínio nunca é subscript
+  direto, mais abaixo neste arquivo): a chave vem de texto digitado no
+  Discord, então categoria desconhecida vira erro claro listando as
+  válidas (`embed_aviso` levanta `ValueError` com a lista pronta pra
+  mandar de volta), nunca `KeyError` derrubando o comando.
+- **Cinco categorias fechadas**: manutencao (laranja), atualizacao (verde),
+  evento (roxo), urgente (vermelho), recado (cinza) — cada uma com ícone e
+  um texto de moldura fixo no rodapé do embed, tom da Torre falando
+  ("🗼 A Torre vai fechar por um instante — nada é perdido.", etc.).
+- **`@everyone` é opt-in explícito por chamada, nunca fixo por categoria**:
+  flag `--everyone` como primeiro token depois da categoria
+  (`rpg aviso urgente --everyone Caiu o servidor`). Padrão sem a flag é
+  **não marcar** — marcar por engano é pior que esquecer, e a flag some do
+  texto da mensagem antes de virar `description` do embed. Reusa o padrão
+  de `agenda.avisar_carroca`: `allowed_mentions=discord.AllowedMentions(everyone=...)`
+  explícito e `discord.HTTPException` tratada sem derrubar o comando.
+
+### `rpg manutencao <minutos>` / `rpg manutencao fim`
+
+- **Estado em memória no `travas.py`**, junto de `_em_luta` — nada de
+  coluna nova no banco. Reiniciar o bot já limpa tudo sozinho, e esse é o
+  comportamento certo: depois de um restart não deve sobrar manutenção
+  "presa" ligada.
+- **A trava (`travas.fora_de_manutencao()`) só barra abrir luta NOVA** —
+  decorador a mais em `rpg boss`/`rpg party`/`rpg raide` (`combate.py`,
+  `raide.py`), do mesmo jeito que `travas.fora_de_luta()` já existia pra
+  `rpg boss`. Luta já em andamento nunca passa de novo pelo check do
+  comando (o motor de combate não re-invoca `boss`/`party`/`raide`), então
+  não precisou de nenhuma trava nova dentro de `combate.py`— trade, pix e
+  convite de guilda continuam de fora de propósito, o pedido foi só sobre
+  abrir luta.
+- **`ninguem_em_luta()` reusa `_em_luta` como fonte única da verdade** —
+  não abriu tabela nem contador novo. Quando `_em_luta` esvazia, a última
+  luta ativa acabou de fechar.
+- **Aviso de "pode reiniciar" por DM pro autor do comando, não pro
+  application owner via `application_info()`**: quem roda `rpg manutencao`
+  já passou por `commands.is_owner()`, então é o dono garantido — mais
+  simples que resolver o dono do app e evita uma chamada HTTP extra.
+- **Poll a cada 15s (`checar_fim_de_manutencao`, `admin.py`) em vez de
+  gancho dentro de `combate.py`/`raide.py`.** Os pontos onde uma luta
+  termina são vários — vitória, derrota, fuga, timeout, em dois arquivos
+  diferentes (`combate.py` e `raide.py`, ver `travas.destravar_todos`
+  espalhado em ~5 lugares). Encadear uma notificação em cada um desses
+  pontos acoplaria `combate.py`/`raide.py` a `admin.py` em vários lugares
+  pra um aviso que só interessa durante uma janela de manutenção — ler
+  `len(_em_luta) == 0` a cada 15s é mais simples e não toca no motor de
+  combate.
+- **O loop só nasce se havia luta pra esperar.** Se `ninguem_em_luta()` já
+  é verdade no instante em que `rpg manutencao <minutos>` roda, o aviso sai
+  synchronous, na hora, dentro do próprio comando — o loop nunca precisa
+  existir nesse caso. Se havia gente lutando, o loop começa e se auto-para
+  (`self.stop()` de dentro do próprio corpo) assim que
+  `travas.manutencao_ativa()` vira falso — por prazo vencido ou por
+  `rpg manutencao fim`.
+- **Se o prazo vence com luta ainda em andamento, não notifica.** A janela
+  já desligou sozinha (`manutencao_ativa()` limpa o próprio estado ao
+  expirar, mesmo padrão de `em_luta()`), então o aviso de "pode reiniciar
+  com a manutenção ligada" deixou de fazer sentido — o dono só saberia que
+  precisa religar a manutenção e esperar de novo. Não veio pedido explícito
+  pra isso; fica de fora até aparecer.
+- **A recusa (`ManutencaoAtiva`, tratada em `bot.py:on_command_error`) leva
+  o tempo restante formatado** (`travas.fmt_restante`) — negar sem dizer
+  quanto falta deixa quem tentou sem saber se tenta de novo em 1 minuto ou
+  em 1 hora.
+- Testado em `tests/test_manutencao_e_aviso.py`: predicado isolado E os
+  `checks` reais de `boss`/`party`/`raide` (via `import bot`, confirma que
+  o decorador está mesmo nos três comandos, não só que a função funciona
+  solta); leitura (`rpg perfil`) passa reto; janela expira sozinha; `fim`
+  corta antes do prazo; `em_luta` não é tocado pela janela; aviso dispara
+  ao esvaziar `_em_luta` e dispara na hora quando não havia luta nenhuma;
+  categoria desconhecida não derruba `rpg aviso`; `--everyone` só marca
+  quando pedido. Confirmado que o teste de integração falha de verdade
+  removendo o decorador de `combate.py`/`raide.py` (não é um teste que
+  passaria de qualquer jeito).
+
+## Guarda contra restart consumindo os backups recentes
+
+`agenda._rotacionar_backups()` roda num `tasks.loop(hours=INTERVALO_BACKUP_HORAS)`,
+e o discord.py executa a primeira iteração assim que o `before_loop` termina —
+ou seja, todo restart do bot dispara uma rotação. Em produção isso é
+desejável (backup fresco ao subir). Em desenvolvimento, com o bot
+reiniciando a cada mudança, três restarts em 20 minutos sobrescreviam
+`recente_1`, `recente_2` e `recente_3` — a janela de ~6h de profundidade da
+escada 3/1/1 virava 20 minutos, justo a camada que cobre um acidente
+recém-acontecido.
+
+Correção: `GUARDA_RECENTE_SEG` (`agenda.py`, ao lado de
+`INTERVALO_BACKUP_HORAS`) — se o mais novo dos três `recente_*.db` tiver
+menos que isso, a rotação dos recentes é pulada naquela chamada.
+
+- **A guarda vale só pros recentes, não pro diário/semanal.** Os dois já se
+ protegem sozinhos (24h e 7 dias) comparando o próprio mtime contra a
+ janela — a única camada sem guarda própria era a dos recentes, porque ela
+ gira a cada chamada por design (é o que dá profundidade de ~6h).
+- **`_mtime_ou_nunca` devolve -1 pra arquivo que não existe** — na pasta
+ vazia (primeira execução) o "mais novo" também é -1, e a guarda não pode
+ bloquear esse caso, senão o bot nunca criaria o primeiro backup. A guarda
+ é sobre backup recente demais, não sobre ausência de backup.
+- Testado em `tests/test_agenda_backup.py`, direto na função pura (não
+ importa Discord de verdade) — `tmp_path`/`os.utime()` forjam mtime.
+ Confirmado que sem a guarda o teste de "recente com 10 minutos" falha (os
+ três recentes continuam sendo sobrescritos), e com a guarda ele passa sem
+ quebrar round-robin nem diário/semanal.
+
 ## Rebalanceamento da defesa
 
 Contexto: dois jogadores terminaram o andar 10 sem usar as armas de selo e sem
@@ -230,6 +428,42 @@ solto tipo `reset_boss.py`.
  Forja escolhida mostrando só Couro Batido (única receita de `nivel: 1` no
  catálogo de Forja, `profissoes.RECEITAS`) e uma arma comprada no ferreiro
  do andar 1 saindo sem bônus de upgrade em `rpg status`.
+
+### Baú da guilda zera, a guilda sobrevive
+
+Decisão explícita do Rafael, adicionada depois da primeira leva: guildas
+**não** são apagadas no reset de temporada — `guildas`, `guilda_membros`,
+`guilda_log`, `guilda_raide`, `guilda_home_cooldown` e `guilda_convites`
+continuam intactos, mesma linha que "Cooldown de troca de home da guilda" já
+tinha registrado pra `guilda_home_cooldown`/`guilda_raide`. Ninguém refunda
+os 5.000 de fundação nem perde cargo do Discord ou home só porque a
+temporada virou.
+
+- **`DELETE FROM guilda_bau` e `UPDATE guildas SET moedas = 0`** entram em
+ `resetar_temporada()`, dentro da mesma transação do resto (`database.py`).
+ Sem isso, jogador nível 1 saca o caixa da guilda no minuto seguinte ao
+ reset — quem tem guilda começa a temporada rico, quem não tem começa do
+ zero.
+- **Log, convites e cooldowns de guilda não entram** — só o caixa
+ (item + moedas) é progresso de temporada de verdade; o resto é estado
+ estrutural da guilda (quem é membro, quando pode viajar de novo pra home),
+ igual à razão que já valia pra `guilda_raide`/`guilda_home_cooldown`.
+- **`admin.py`**: `PRESERVADO` ganhou a linha da guilda sobrevivendo e
+ `GUILDA_RESET` é um campo novo no embed de confirmação (`embed_confirmacao`),
+ separado de `TABELAS_APAGADAS` porque metade do que muda é `UPDATE`
+ (`moedas`), não `DELETE` de tabela inteira.
+
+### `chefes_derrotados` zerar é intencional — quebra a regra de "vida da conta" de propósito
+
+A regra normal (ver "Roguelike acima do Selo") é que os 100% de material de
+chefe 11+ são únicos **na vida da conta**, nunca por temporada — farm depois
+disso é o late game, de propósito. `resetar_temporada()` contraria essa regra
+por decisão explícita: temporada nova devolve o drop cheio (100%) pra todo
+mundo, mesmo quem já tinha matado aquele chefe antes do reset. Já estava
+implementado (`TABELAS_APAGADAS` em `admin.py`, linha de `chefes_derrotados`
+em `resetar_temporada()`) — este parágrafo só registra que é escolha, não
+esquecimento: as duas regras coexistem porque olham pra relógios diferentes
+("nesta conta, alguma vez" vs. "nesta temporada").
 
 ## Reset individual — `rpg resetarjogador`
 
@@ -1461,9 +1695,10 @@ momento.
  `checar_cooldown_home`/`set_cooldown_home` espelham
  `checar_cooldown_raide`/`set_cooldown_raide` linha a linha.
 - **Não entra em `resetar_temporada()`** — mesma linha que `guilda_raide` já
- seguia: estado de guilda não é zerado no reset de temporada de jogador,
+ seguia: cooldowns e estrutura de guilda não zeram no reset de temporada,
  só progresso individual (inventário, cooldown pessoal, upgrades, chefes
- derrotados).
+ derrotados) e o caixa da guilda (baú + moedas — ver "Baú da guilda zera, a
+ guilda sobrevive", que veio depois desta decisão e é a exceção).
 - **A primeira troca depois de fundar a guilda não é bloqueada** — a home
  nasce em andar 1 direto em `criar_guilda()`, não passa por `acao_home`,
  então não existe linha em `guilda_home_cooldown` até a primeira troca de
@@ -2926,14 +3161,60 @@ diálogo com ela. Módulo novo, `despertar.py`, mesmo padrão de `npcs.py`
   gambiarra nova pro despertar, é o comportamento padrão já existente sendo
   usado no único lugar onde o pronome genuinamente ainda não existe.
 - **`obter_ou_criar_canal_privado` (bot.py) é a lógica de `rpg priv`
-  extraída pra função**, reaproveitada pelo fim do despertar em vez de
-  duplicar categoria/overwrites/`create_text_channel`. `despertar.py` não
-  importa `bot.py` (evita import circular, já que `bot.py` importa
-  `despertar.py`) — recebe essa função e a `DialogoView` real por parâmetro
-  em `iniciar_despertar()`, não por import direto.
+  extraída pra função**, reaproveitada por `rpg comecar` em vez de duplicar
+  categoria/overwrites/`create_text_channel`. `despertar.py` não importa
+  `bot.py` (evita import circular, já que `bot.py` importa `despertar.py`) —
+  recebe a `DialogoView` real por parâmetro em `iniciar_despertar()`, não por
+  import direto.
 - **`rpg comecar` aponta pra `rpg ajuda` no fechamento, não pra `rpg
   h`/`rpg adv`** — de propósito, pra empurrar quem acabou de chegar a
   explorar o mundo antes de aprender os atalhos de grind.
+- **A sala privada nasce ANTES da sequência, não mais no fim dela —
+  inversão deliberada.** Até aqui, `rpg comecar` respondia no canal onde a
+  pessoa digitou e só criava/reaproveitava a sala privada
+  (`obter_ou_criar_canal_privado`) depois do clique de pronome, junto com a
+  gravação no banco — coerente com "nada grava até o pronome" (ver acima).
+  Agora `rpg comecar` cria/reaproveita a sala **primeiro**, responde no canal
+  de origem só apontando pra ela ("sua sala é #torre-fulano, o despertar te
+  espera lá"), e a sequência inteira — abertura, classe, ofício, pronome,
+  Elna, fechamento — roda dentro da sala, nunca mais no canal onde o comando
+  foi digitado. `iniciar_despertar()` recebe o canal já pronto em vez de uma
+  função de criação; cada `View` da sequência carrega esse canal (`.canal`)
+  e manda tudo pra lá (`canal.send`), não mais pra `ctx.send`.
+  - **Consequência aceita**: quem digita `rpg classe` errado e desiste na
+    primeira tela deixa uma sala criada sem personagem nenhum (nada grava
+    até o pronome, isso não mudou). Não é vazamento — a segunda tentativa de
+    `rpg comecar` acha a sala pelo nome (`obter_ou_criar_canal_privado` já
+    fazia isso pra `rpg priv`) e reaproveita a mesma, sem duplicar. Vale a
+    troca: a cena inteira (a abertura falada pela Elna, os cards de
+    classe/ofício) acontece num canal só do jogador desde o primeiro
+    segundo, em vez de vazar pro canal público até o pronome.
+  - Se a criação da sala falhar (sem permissão de Gerenciar Canais, limite
+    de canais do Discord), `obter_ou_criar_canal_privado` já manda o aviso
+    e devolve `None` — `rpg comecar` simplesmente não chama
+    `iniciar_despertar()` nesse caso, então não existe despertar pela
+    metade.
+  - Quem já tem classe continua caindo no gate de sempre ("O gate de
+    `rpg comecar` é `classe is None`", acima) sem tocar em canal nenhum — a
+    criação de sala só acontece depois de passar por esse gate.
+- **`rpg classe` e `rpg profissao` pararam de escolher — a escolha só existe
+  dentro do despertar agora.** Antes deste cartão, os dois comandos ainda
+  ofereciam escolher classe/ofício pela primeira vez (redundante com o
+  despertar, que já faz isso no clique do pronome) — dois caminhos pra
+  mesma coisa. `rpg classe` virou puramente informativo: sem argumento
+  mostra a classe do próprio jogador (habilidades base + os ramos de
+  ascensão que ela abre, sem número de nível — `game_data.ASCENSOES` não
+  carrega nenhum campo de nível, e a ascensão em si ainda não é jogável, só
+  mapa); com argumento mostra a classe pedida, por curiosidade, sem travar
+  nada. `rpg profissao` idem para o ofício, mas a **troca**
+  (`rpg profissao trocar <novo>`) continua morando ali — é onde ela morava
+  antes deste cartão também, decisão de cartão anterior, não mexida agora.
+  Quem está sem classe/ofício (pós-`resetar_temporada`, antes de rodar
+  `rpg comecar` de novo) recebe um aviso apontando pro despertar em vez do
+  menu de escolha que existia antes.
+  - Todo texto vem de `game_data.CLASSES`/`HABILIDADES`/`ASCENSOES` e
+    `profissoes.PROFISSOES`/`RECEITAS` — nada digitado solto no comando,
+    pra não desatualizar sozinho na próxima mudança de balanceamento.
 
 ### Teste
 
@@ -2944,9 +3225,25 @@ depois do escolhido usa o de verdade), segunda sequência não sobrescreve
 quem já terminou a primeira, autor errado recebe recusa sem mudar o painel,
 o gate de `rpg comecar` (recusa quem já tem classe, libera quem foi
 resetado mesmo com título/mortes, libera jogador novo), `rpg pronome`
-sumiu. Segue a mesma estratégia de `tests/test_comercio.py` — interação
-fake, sem discord.py conectado de verdade; a `DialogoView` da Elna em si
-não é recoberta aqui de novo, já é indiretamente testada via `bot.py`.
+sumiu. Cobre também a inversão da sala: `rpg comecar` cria a sala **antes**
+de chamar `iniciar_despertar()` (ordem verificada, não só presença de
+chamada), passa o mesmo canal duas vezes seguidas quando
+`obter_ou_criar_canal_privado` devolve reaproveitado (abandonar e tentar de
+novo não duplica), não chama o despertar quando a sala falha, e quem já tem
+classe nem toca em `obter_ou_criar_canal_privado`. As mensagens de fim de
+sequência (Elna, fechamento) são verificadas indo pro `canal` fake, não pro
+`ctx` do canal de origem. Segue a mesma estratégia de
+`tests/test_comercio.py` — interação fake, sem discord.py conectado de
+verdade; a `DialogoView` da Elna em si não é recoberta aqui de novo, já é
+indiretamente testada via `bot.py`.
+
+`tests/test_classe_profissao_wiki.py`: `rpg classe`/`rpg profissao` sem
+argumento não alteram o banco (snapshot antes/depois igual), apontam pro
+despertar quando o jogador está sem classe/ofício (pós-reset de temporada)
+em vez de oferecer um menu de escolha, `rpg classe <outra>` só mostra a
+wiki da classe pedida sem travar nada, a wiki reflete `game_data.HABILIDADES`
+mutado em tempo de teste (texto/custo não são hardcoded no comando), e a
+troca de ofício (`rpg profissao trocar <novo>`) continua funcionando.
 
 **Não testado automaticamente**: os 8 cards (conteúdo, não lógica, mesma
 situação dos diálogos de NPC) e a sequência de verdade jogando no Discord —
@@ -3072,4 +3369,220 @@ alcançáveis por `equipar` e por `vender` (inclusive a mais antiga, que era a
 presa); índice além da quantidade disponível recusa com mensagem clara;
 `rpg inventario` mostra atributo+valor da joia e numera (#1/#2) só quando há
 duplicata, sem número nenhum sobrando pro caso de uma instância só.
+
+## Avatar do jogador — `rpg avatar`
+
+Cosmético puro: o jogador escolhe uma imagem (anexo ou link) que aparece
+como `set_thumbnail` no `rpg perfil`. `avatar.py`, módulo próprio no padrão
+simples `instalar(bot)` de `admin.py`/`agenda.py` — não toca em stats nem
+combate, só em `jogadores.avatar_msg_id`/`avatar_url` e no canal de arquivo.
+
+**A fonte da verdade é o ID DA MENSAGEM repostada, não a URL do anexo.** A
+URL de anexo do Discord vem assinada e com prazo — os parâmetros `ex`, `is`
+e `hm` no fim do link (`ex` é o timestamp de expiração, em hex, unix
+seconds). O que expira é a ASSINATURA, não o arquivo: enquanto a mensagem
+existir, o anexo continua lá, e pedir a mensagem de novo
+(`canal.fetch_message`) devolve uma URL nova e válida pro mesmo arquivo. É o
+tipo de coisa que alguém "simplifica" depois (guardando só a URL, ou trocando
+por link cru do jogador) sem entender por que existe — documentando aqui
+pra isso não acontecer.
+
+- **Nunca guarda a imagem em BLOB nem em pasta local, nunca guarda o link
+  externo cru como fonte.** Link externo passa pelo mesmo caminho que
+  anexo: baixa (`avatar._baixar_link`, `aiohttp`) e reposta em
+  `CANAL_ARQUIVO_ID` (`.env`, canal dedicado, mesmo padrão de leitura que
+  `CANAL_TORRE_ID`) — assim o avatar não depende do imgur/Picrew do
+  jogador continuar no ar.
+- **`avatar.obter_avatar_atualizado(bot, jogador)` é o único ponto que lê
+  avatar pra exibir** — usado tanto por `rpg perfil` (`bot.py`, `perfil()`)
+  quanto por `rpg avatar` sem argumento. Se a URL em cache
+  (`jogador["avatar_url"]`) ainda não venceu (checado com
+  `MARGEM_EXPIRACAO_SEG = 300` de folga, pra nunca mandar pro Discord uma
+  URL que vence nos próximos minutos), usa direto — **zero chamada de
+  API**. Só refaz o `fetch_message` quando venceu (ou a URL é ilegível/sem
+  `ex`), e atualiza o cache no banco depois.
+- **`fetch_message` falhando (mensagem apagada, canal sumiu, `HTTPException`
+  em geral) nunca quebra `rpg perfil`** — trata como avatar ausente
+  (`None`, sem thumbnail), igual a nunca ter definido. Imagem é cosmético;
+  não pode ser motivo de um comando central do jogo quebrar.
+- **Validação com mensagem clara, nunca "erro ao processar"**: só png/jpg/
+  webp (`TIPOS_ACEITOS`, comparado contra o `content_type` normalizado —
+  corta o `; charset=...` que às vezes vem junto), até 8MB
+  (`TAMANHO_MAXIMO_BYTES`). Pra link, `_baixar_link` lê no máximo
+  `TAMANHO_MAXIMO_BYTES + 1` bytes mesmo que o `Content-Length` minta ou
+  falte — nunca lê um corpo arbitrariamente grande pra memória só pra
+  descobrir depois que passou do limite.
+- **`rpg avatar` sem argumento é lista, não frase com link costurado no
+  meio** (`_embed_avatar`): mostra o avatar atual (ou diz que não tem),
+  como trocar, e "onde fazer a arte" com o Picrew como primeiro item —
+  formato pensado pra crescer sem reescrever a mensagem quando um segundo
+  caminho (agente de IA, ainda não existe) for adicionado.
+- **`rpg removeravatar @jogador`, restrito ao dono (`admin.py`), sem
+  `ConfirmarAcao`** — diferente de `resetartemporada`/`resetarjogador`
+  (que usam a view de confirmação porque perdem progresso de jogo de
+  verdade), tirar avatar é reversível na hora e o Rafael só roda o comando
+  depois de já ter visto a imagem problemática — não precisa de "tem
+  certeza?" pra uma decisão que ele já tomou olhando.
+- **Colunas `avatar_msg_id`/`avatar_url` em `jogadores`, migração 15,
+  ambas `NULL` por padrão** (`COLUNAS_AVATAR`, `database.py`) — cosmético
+  igual `titulo`: **não entram em `resetar_temporada()`**, sobrevivem ao
+  reset de temporada como título e `criado_em`.
+
+### Teste
+
+`tests/test_avatar.py`: definir por anexo salva `avatar_msg_id`/`avatar_url`;
+definir por link baixa (`_baixar_link` isolado, com sessão HTTP fake) e
+reposta; tipo fora da lista e tamanho acima do limite recusam com a
+mensagem certa, tanto por anexo quanto por link; **URL ainda válida não
+chama `fetch_message` nenhuma vez, URL vencida chama exatamente uma e
+atualiza o cache** (`test_url_valida_nao_dispara_fetch_message` /
+`test_url_vencida_dispara_refetch_e_atualiza_cache` — o teste que prova o
+desenho inteiro, sem ele o caminho de refresh podia nunca ter sido
+exercitado até os links vencerem em massa de verdade); `fetch_message`
+levantando `NotFound` não derruba `rpg perfil` (embed sai sem thumbnail);
+avatar sobrevive a `resetar_temporada()`; `rpg removeravatar` remove o
+avatar de um jogador que não é quem chamou o comando.
 `test_database_migracao.py` ganhou as duas colunas novas.
+
+### Bug: "canal de arquivo indisponível" nos dois servidores — `CANAL_ARQUIVO_ID` lido antes do `load_dotenv()`
+
+Sintoma reportado: `rpg avatar` com anexo recusava com "canal de arquivo
+indisponível" nos dois servidores (jogo e o privado onde o canal mora),
+mesmo com o ID certo e o bot presente no canal. Causa: `bot.py` importa
+`avatar` na linha 14, mas só chama `load_dotenv()` na linha 33 — a primeira
+versão de `avatar.py` lia `CANAL_ARQUIVO_ID = os.getenv(...)` pra uma
+constante de módulo, na hora do `import`, ANTES da env var existir em
+`os.environ`. `None` congelado pra sempre, em qualquer servidor, porque o
+bug era de código, não de configuração — nenhum teste pegou porque a suíte
+inteira roda sem nunca chamar `load_dotenv()` de verdade.
+
+- **Correção adotada: ler a env var a cada chamada, não uma vez na
+  importação** (`avatar._canal_arquivo_id()`, chamado de dentro de
+  `_resolver_canal`/`diagnosticar_canal`) — opção deliberadamente mais
+  robusta que só corrigir a ordem dos imports em `bot.py`: não importa a
+  ordem de import mudar de novo no futuro, o valor nunca fica congelado
+  errado. `import avatar` continua no topo de `bot.py` (precisa estar lá
+  pra `perfil()` e `on_ready()` chamarem `avatar.obter_avatar_atualizado`/
+  `avatar.diagnosticar_canal`), mas isso deixou de importar.
+- **`get_channel` → `fetch_channel` como fallback** (`_resolver_canal`):
+  canal recém-criado pode não estar no cache de guild do bot ainda —
+  `get_channel` devolve `None` nesse caso, que não é o mesmo problema que
+  "canal não existe" ou "sem permissão". Resultado cacheado em
+  `_canal_cache` (estado de módulo) depois da primeira resolução — não
+  bate na API de novo em toda mensagem.
+- **Três mensagens de erro em vez de uma genérica** (`MENSAGENS_CANAL`,
+  chaveado por `"sem_id"`/`"nao_encontrado"`/`"sem_permissao"`):
+  `CANAL_ARQUIVO_ID` ausente, canal que não resolve nem por
+  `fetch_channel` (ID errado ou bot fora do servidor), e
+  `discord.Forbidden` na hora do `canal.send()` (bot no servidor e vendo o
+  canal, mas sem permissão de Anexar Arquivos — só aparece nesse ponto, não
+  antes). As três viravam a mesma frase antes; cada uma agora aponta pra
+  uma correção diferente.
+- **Diagnóstico no `on_ready`** (`avatar.diagnosticar_canal`, chamado em
+  `bot.py` logo depois de `agenda.iniciar()`): loga o valor lido de
+  `CANAL_ARQUIVO_ID` (ou "não configurado"), se resolveu do cache ou via
+  `fetch_channel`, e a exceção específica quando nem isso resolve —
+  responde "qual das causas é" só olhando o log depois de um restart, sem
+  precisar reproduzir o erro em servidor de verdade pra descobrir.
+
+Teste: `test_env_var_ausente_e_canal_nao_resolvido_geram_mensagens_diferentes`
+confirma que as duas causas mais fáceis de confundir batem em mensagens
+distintas; `test_bot_sem_permissao_de_anexar_gera_mensagem_propria` cobre a
+terceira; `test_repostar_cai_pra_fetch_channel_quando_cache_esta_frio` prova
+o fallback; três testes de `diagnosticar_canal` conferem o log de cada
+ramo; `test_caminho_de_sucesso_continua_funcionando_com_o_resolver_novo`
+é a regressão — confirma que nada quebrou no caminho feliz com o resolver
+novo no lugar do `if CANAL_ARQUIVO_ID` antigo.
+
+## Bug: HP final é congelado ao sair da luta, não CONGELADO por cima da cura
+
+Aconteceu em produção: jogador entrou machucado num chefe, fugiu, tomou
+poção **fora** da luta, e voltou a ficar com o HP baixo sozinho — a cura
+parecia não ter acontecido.
+
+Causa, em `turno_do_chefe()` (`combate.py`, fim de rodada):
+
+```python
+for c in self.participantes:
+    c.defendendo = False
+    c.acao = None
+    c.salvar_estado()
+```
+
+O laço percorre `Luta.participantes` (a lista inteira, criada uma vez em
+`Luta.__init__` e nunca encolhida), não `Luta.ativos`. Quem fugiu, saiu por
+timeout ou caiu continua nessa lista pro resto da luta, com `Combatente.hp`
+CONGELADO em memória no valor exato do momento da saída — nada mais muda
+esse atributo depois disso. Toda vez que a luta segue rodando (porque ainda
+sobra gente lutando) esse mesmo laço roda de novo e grava esse valor velho
+por cima do que estiver no banco, desfazendo qualquer cura que tenha
+acontecido fora da luta nesse meio-tempo. `on_timeout()` (quem some sem
+clicar) tem o mesmo padrão, com o mesmo bug.
+
+- **Correção: `Combatente.salvar_estado()` ganhou uma guarda própria**
+  (`self._estado_final_salvo`, setado em `__init__`) em vez de trocar
+  `participantes` por `ativos` só no laço de `turno_do_chefe()`. Motivo de
+  não fazer a troca simples: existem outros pontos que chamam
+  `salvar_estado()` — fuga (`fugir` callback), timeout (`on_timeout`), o
+  golpe de iniciativa (`iniciar_luta`/`iniciar_raide`) — e cura por
+  habilidade (Palavra de Alento) só persiste através desse mesmo laço de
+  fim de rodada. Um `ativos` local ali resolvia só aquele um caminho; o
+  próximo laço escrito em qualquer um desses outros pontos reintroduziria o
+  mesmo bug. A guarda dentro do método garante a regra pra sempre, não
+  importa de onde `salvar_estado()` é chamado.
+- **A regra é: o estado de quem SAIU da luta é final — grava uma vez, no
+  momento exato da saída, e nunca mais.** Enquanto `Combatente.ativo` for
+  `True`, `salvar_estado()` continua gravando toda vez (comportamento de
+  sempre, sem mudança pra quem segue lutando). No instante em que `ativo`
+  vira `False` (fugiu/saiu/caiu), a PRÓXIMA chamada a `salvar_estado()`
+  ainda escreve — é essa que captura o HP final de verdade (0 pra quem
+  caiu, o HP com que fugiu ou sumiu) — e toda chamada depois dessa vira
+  no-op.
+- **`raide.py` não precisou de nenhuma mudança** — reusa `Combatente`/`Luta`
+  de `combate.py` direto, então ganhou a correção de graça.
+
+Teste (`tests/test_combate.py`): fuga com cura externa entre a fuga e a
+rodada seguinte confirma que o valor de fora sobrevive; mesmo caso pra
+timeout; quem caiu grava 0 uma vez e uma segunda chamada forçada não
+regrava; quem continua lutando ainda tem HP/mana salvos toda rodada (não
+regride). Validado revertendo a guarda de propósito antes de fechar o
+cartão — os quatro testes relacionados quebram sem ela, confirmando que não
+são falsos positivos.
+
+## HP de chefe fixo acima do Selo (andar 11+)
+
+`Luta.__init__` multiplicava `chefe["hp"]` pelo número de donos em QUALQUER
+andar — decisão original, pensada pra chefe do 1 ao 10 (a torre principal,
+onde puxar mais gente não pode ser estratégia de graça). Decisão explícita
+do Rafael: **do andar 11 pra cima o HP do chefe passa a ser fixo, igual ao
+solo, não importa quantos donos entraram.** Ele sabe que isso deixa a party
+bem mais forte lá em cima e é exatamente o que quer — 11 a 15 é conteúdo de
+grupo, roguelike, pensado pra ser enfrentado acompanhado.
+
+- **O limiar reusa `ANDAR_ACIMA_DO_SELO` (10, `andares_altos.py`)** — já é a
+  constante nomeada pra essa fronteira exata em todo o resto do arquivo
+  (`recompensar()` já compara `luta.andar_num > ANDAR_ACIMA_DO_SELO` pra
+  decidir a chance de material). Não criei uma constante nova tipo
+  `LIMIAR_HP_FIXO = 11` — teria duplicado o mesmo número com um nome
+  diferente, e as duas podiam divergir se o Selo um dia mudar de andar.
+- **`SalaDeEspera.embed()` mentia pros andares altos** — anunciava
+  "**{hp} HP por dono do andar**" pra qualquer andar, incluindo os que
+  agora têm HP fixo. Virou `combate.texto_regra_hp_chefe(andar_num, chefe)`,
+  função à parte (não só um `if` inline no embed) pra dar pra testar a
+  frase sem montar `SalaDeEspera` inteira.
+- **`raide.py` não muda.** Ele passa por esse mesmo `Luta.__init__`, mas com
+  `andar_num=ANDAR_REFERENCIA_RAIDE` (7, `game_data.py` — só pra fórmulas de
+  penetração/destreza, não desbloqueia nada) e `donos_ids=None` (todo mundo
+  é dono, sempre). 7 nunca passa do limiar de 10, então a raide continua
+  escalando por participante como sempre escalou — conferido com teste
+  próprio, não só por leitura de código.
+- **Recompensa e "dono do andar" não mudaram** — só a conta de HP. Drop,
+  XP/moedas reduzidos pra ajuda, e a regra de quem é "dono" pra progressão
+  continuam exatamente como estavam (pedido explícito do Rafael pra não
+  mexer nisso).
+
+Teste (`tests/test_combate.py`): andar 10 com 2 donos dobra o HP; andar 11
+com 2 donos fica igual ao solo; o texto da sala de party muda de "por dono"
+pra "fixo" cruzando o limiar; a raide (`ANDAR_REFERENCIA_RAIDE`) continua
+escalando por participante. Validado revertendo a mudança de propósito
+antes de fechar o cartão — o teste do andar 11 quebra sem ela.

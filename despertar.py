@@ -3,21 +3,27 @@
 # pronome -> Elna acorda o jogador com as poções -> diálogo com ela. Chamado
 # por `rpg comecar` (bot.py) via iniciar_despertar().
 #
+# A sala privada já existe quando iniciar_despertar() começa -- `rpg comecar`
+# (bot.py) cria/reaproveita o canal ANTES de chamar esta função e passa o
+# canal pronto. A sequência inteira roda lá dentro, nunca no canal onde a
+# pessoa digitou `rpg comecar`. Ver decisoes.md § despertar.
+#
 # Nada grava no banco até o botão de pronome ser clicado -- os valores
 # escolhidos ficam só nos atributos de cada View, repassados adiante a cada
 # `edit_message`. Abandonar no meio (fechar o Discord, deixar o botão expirar)
-# não deixa registro parcial: `rpg comecar` de novo recomeça do zero, porque
-# não existe jogador nenhum pra achar. Ver decisoes.md § despertar.
+# não deixa registro parcial: `rpg comecar` de novo reaproveita a mesma sala e
+# recomeça do zero, porque não existe jogador nenhum pra achar. Ver
+# decisoes.md § despertar.
 #
 # O texto narrado (abertura, confirmações, falas da Elna) é do Rafael e mora
 # em dialogos.DESPERTAR -- não mexer nele daqui. Os 8 cards de classe/ofício
 # abaixo (CARDS_CLASSE/CARDS_OFICIO) são PROVISÓRIOS, de autoria própria desta
 # implementação -- não são texto do Rafael, ele revisa depois.
 #
-# Duas dependências vêm de bot.py (não importado aqui de propósito, pra não
+# Uma dependência vem de bot.py (não importado aqui de propósito, pra não
 # criar import circular -- bot.py que importa despertar.py): a View de
-# diálogo por botão (DialogoView) e a função que acha/cria a sala privada do
-# jogador. iniciar_despertar() recebe as duas por parâmetro.
+# diálogo por botão (DialogoView). iniciar_despertar() recebe ela por
+# parâmetro.
 
 import discord
 
@@ -134,9 +140,10 @@ class BotaoPronome(discord.ui.Button):
 
 
 class EscolhaClasseView(_ViewSoAutor):
-    def __init__(self, autor_id, ctx, deps):
+    def __init__(self, autor_id, ctx, canal, deps):
         super().__init__(autor_id)
         self.ctx = ctx
+        self.canal = canal
         self.deps = deps
         for chave in ORDEM_CLASSES:
             self.add_item(BotaoClasse(chave))
@@ -156,15 +163,16 @@ class EscolhaClasseView(_ViewSoAutor):
                 value=CARDS_OFICIO[chave], inline=False,
             )
 
-        proxima = EscolhaOficioView(self.autor_id, self.ctx, self.deps, classe)
+        proxima = EscolhaOficioView(self.autor_id, self.ctx, self.canal, self.deps, classe)
         proxima.mensagem = interaction.message
         await interaction.response.edit_message(embed=e, view=proxima)
 
 
 class EscolhaOficioView(_ViewSoAutor):
-    def __init__(self, autor_id, ctx, deps, classe):
+    def __init__(self, autor_id, ctx, canal, deps, classe):
         super().__init__(autor_id)
         self.ctx = ctx
+        self.canal = canal
         self.deps = deps
         self.classe = classe
         for chave in ORDEM_OFICIOS:
@@ -178,15 +186,16 @@ class EscolhaOficioView(_ViewSoAutor):
         e.description = texto
         e.clear_fields()
 
-        proxima = EscolhaPronomeView(self.autor_id, self.ctx, self.deps, self.classe, oficio)
+        proxima = EscolhaPronomeView(self.autor_id, self.ctx, self.canal, self.deps, self.classe, oficio)
         proxima.mensagem = interaction.message
         await interaction.response.edit_message(embed=e, view=proxima)
 
 
 class EscolhaPronomeView(_ViewSoAutor):
-    def __init__(self, autor_id, ctx, deps, classe, oficio):
+    def __init__(self, autor_id, ctx, canal, deps, classe, oficio):
         super().__init__(autor_id)
         self.ctx = ctx
+        self.canal = canal
         self.deps = deps
         self.classe = classe
         self.oficio = oficio
@@ -220,8 +229,6 @@ class EscolhaPronomeView(_ViewSoAutor):
         e.description += f"\n\n*(pronome: {pronome})*"
         await interaction.response.edit_message(embed=e, view=self)
 
-        canal, _ = await self.deps["obter_canal_privado"](self.ctx)
-
         elna_texto = pronomes.concordar(dialogos.DESPERTAR["elna_acorda"], pronome)
         e_elna = discord.Embed(description=f"*{elna_texto}*", color=COR_DESPERTAR)
         e_elna.set_author(name=f"{ICONE_ELNA} Elna da Barraca Torta")
@@ -234,7 +241,7 @@ class EscolhaPronomeView(_ViewSoAutor):
         ]
         DialogoView = self.deps["dialogo_view_cls"]
         view_elna = DialogoView(user_id, pronome, opcoes, dialogos.SAIDA_PADRAO)
-        view_elna.mensagem = await self.ctx.send(embed=e_elna, view=view_elna)
+        view_elna.mensagem = await self.canal.send(embed=e_elna, view=view_elna)
 
         e_final = discord.Embed(
             title="Você acordou no 1º andar",
@@ -254,16 +261,15 @@ class EscolhaPronomeView(_ViewSoAutor):
             ),
             inline=False,
         )
-        if canal:
-            e_final.add_field(
-                name="Sua sala", value=f"{canal.mention} — só você e o bot enxergam.", inline=False,
-            )
         e_final.set_footer(text="`rpg ajuda` mostra a lista completa de comandos.")
-        await self.ctx.send(embed=e_final)
+        await self.canal.send(embed=e_final)
 
 
-async def iniciar_despertar(ctx, *, dialogo_view_cls, obter_canal_privado):
-    deps = {"dialogo_view_cls": dialogo_view_cls, "obter_canal_privado": obter_canal_privado}
+async def iniciar_despertar(ctx, canal, *, dialogo_view_cls):
+    """`canal` já é a sala privada do jogador, criada por `rpg comecar`
+    (bot.py) antes desta chamada -- a sequência inteira roda lá, nunca no
+    canal onde a pessoa digitou o comando."""
+    deps = {"dialogo_view_cls": dialogo_view_cls}
 
     e = discord.Embed(
         description=dialogos.DESPERTAR["abertura"] + "\n\n" + dialogos.DESPERTAR["pergunta_classe"],
@@ -276,5 +282,5 @@ async def iniciar_despertar(ctx, *, dialogo_view_cls, obter_canal_privado):
             value=CARDS_CLASSE[chave], inline=False,
         )
 
-    view = EscolhaClasseView(ctx.author.id, ctx, deps)
-    view.mensagem = await ctx.send(embed=e, view=view)
+    view = EscolhaClasseView(ctx.author.id, ctx, canal, deps)
+    view.mensagem = await canal.send(embed=e, view=view)
