@@ -954,15 +954,21 @@ def instalar(bot, contexto):
 
         bonus = instancia["encantamento_valor"]
         atributo = instancia["encantamento_atributo"]
-        reembolso = CUSTO_MOEDAS_POR_BONUS[bonus] // 2
+        custo = CUSTO_MOEDAS_POR_BONUS[bonus] // 2
+
+        if j["moedas"] < custo:
+            await ctx.send(
+                f"Remover esse encantamento custa **{custo}** 🪙 — faltam **{custo - j['moedas']}**."
+            )
+            return
 
         db.remover_encantamento(instancia_id)
-        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + reembolso)
+        db.atualizar_jogador(j["user_id"], moedas=j["moedas"] - custo)
 
         sigla = at.ATRIBUTOS[atributo]["sigla"]
         await ctx.send(
             f"Removeu o encantamento (**{sigla} +{bonus}**) de **{ITENS[item_chave]['nome']}** "
-            f"— {reembolso} 🪙 de volta (metade do custo de encantar +{bonus}). "
+            f"— custou {custo} 🪙 (metade do custo de encantar +{bonus}). "
             f"Pode encantar de novo quando quiser."
         )
 

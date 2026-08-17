@@ -218,6 +218,60 @@ def bonus_atributo_equipamento(*pecas):
     return bonus
 
 
+# ---------------- rótulo de instância (mochila, equipar, vender) ----------------
+# Lê a LINHA CRUA de `instancias` (nivel_melhoria/joia_atributo+valor/
+# encantamento_atributo+valor) -- forma diferente do dict já resolvido que
+# `com_instancia` devolve pra peça EQUIPADA. Usado nos três lugares que
+# mostram uma instância solta na mochila: `rpg inventario`, e as mensagens
+# de sucesso de `rpg equipar`/`rpg vender`.
+def sufixo_bonus_instancia(instancia):
+    """" +2" pra melhoria (Forjador, formato que já existia) seguido de
+    " — INT +7" e/ou " — encantado FOR +3" quando a peça também tiver joia
+    (Joalheiro) e/ou encantamento (Encantador) — as três camadas podem
+    coexistir na mesma instância."""
+    texto = f" +{instancia['nivel_melhoria']}" if instancia["nivel_melhoria"] else ""
+    extras = []
+    if instancia["joia_atributo"]:
+        sigla = at.ATRIBUTOS[instancia["joia_atributo"]]["sigla"]
+        extras.append(f"{sigla} +{instancia['joia_valor']}")
+    if instancia["encantamento_atributo"]:
+        sigla = at.ATRIBUTOS[instancia["encantamento_atributo"]]["sigla"]
+        extras.append(f"encantado {sigla} +{instancia['encantamento_valor']}")
+    if extras:
+        texto += " — " + " · ".join(extras)
+    return texto
+
+
+def rotulo_instancia(item_chave, instancia, indice=None, total=None):
+    """Nome + bônus + posição (#N), só quando há mais de uma instância da
+    mesma chave na mochila -- é o número que `rpg equipar`/`rpg vender`
+    aceitam de volta pra escolher UMA específica (ver
+    `instancias_por_chave`)."""
+    rotulo = f"{ITENS[item_chave]['emoji']} {ITENS[item_chave]['nome']}{sufixo_bonus_instancia(instancia)}"
+    if total and total > 1:
+        rotulo += f" (#{indice})"
+    return rotulo
+
+
+def preco_venda_instancia(dado, instancia):
+    """Preço de revenda de uma instância -- cada camada de bônus soma o
+    PRÓPRIO valor de revenda (metade do que custou aplicar aquele bônus),
+    em vez de só escalar o preço de catálogo do item. Melhoria (Forjador) e
+    joia (Joalheiro) são a base e são mutuamente exclusivas na prática (uma
+    instância nunca tem as duas -- joia nunca passa por `rpg melhorar`);
+    encantamento (Encantador) soma por cima de qualquer uma das duas, porque
+    é uma camada independente que pode conviver com as outras. Ver
+    decisoes.md § Instâncias de item (revenda por camada)."""
+    if instancia["joia_valor"]:
+        base = profissoes.CUSTO_MOEDAS_POR_BONUS[instancia["joia_valor"]] // 2
+    else:
+        unitario = int(dado["preco"] * 0.5)
+        base = int(unitario * (1 + 0.12 * instancia["nivel_melhoria"]))
+    if instancia["encantamento_valor"]:
+        base += profissoes.CUSTO_MOEDAS_POR_BONUS[instancia["encantamento_valor"]] // 2
+    return base
+
+
 def stats(j):
     arma = com_instancia(ITENS.get(j["arma"], {}), j["arma_instancia_id"], "atk")
     armadura = com_instancia(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
@@ -1049,8 +1103,9 @@ async def inventario(ctx, pagina: int = 1):
         for i in itens if i["item"] in ITENS
     ]
     entradas += [
-        (f"{ITENS[i['item']]['emoji']} {ITENS[i['item']]['nome']} +{i['nivel_melhoria']}", "x1")
-        for i in db.instancias_na_mochila(j["user_id"]) if i["item"] in ITENS
+        (rotulo_instancia(chave, instancia, indice, len(lista)), "x1")
+        for chave, lista in db.instancias_por_chave(j["user_id"]).items() if chave in ITENS
+        for indice, instancia in enumerate(lista, start=1)
     ]
     await paginacao.enviar_paginado(
         ctx, entradas, f"Mochila de {j['nome']}", 0xC9ADA7,
@@ -1128,7 +1183,7 @@ async def vender(ctx, *, argumento: str = ""):
         return
     texto, qtd = separar_quantidade(argumento)
     inventario_qtd = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
-    mochila_instancias = {i["item"]: i for i in db.instancias_na_mochila(j["user_id"])}
+    mochila_instancias = db.instancias_por_chave(j["user_id"])
     item = encontrar_item(texto, set(inventario_qtd) | set(mochila_instancias))
     if not item:
         await ctx.send("Você não tem isso nessa quantidade.")
@@ -1143,7 +1198,7 @@ async def vender(ctx, *, argumento: str = ""):
 
     unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
     plain_qtd = inventario_qtd.get(item, 0)
-    instancia = mochila_instancias.get(item)
+    lista_instancias = mochila_instancias.get(item, [])
 
     if plain_qtd >= qtd:
         # prioriza cópia comum -- não mexe numa peça melhorada à toa quando
@@ -1154,13 +1209,26 @@ async def vender(ctx, *, argumento: str = ""):
         await ctx.send(f"Vendeu **{dado['nome']}** x{qtd} por {total} 🪙.")
         return
 
-    if instancia and plain_qtd == 0 and qtd == 1:
-        # única cópia é a peça melhorada -- preço reflete o bônus (mesma
-        # curva de +12%/nível do combate, ver decisoes.md § Instâncias)
-        total = int(unitario * (1 + 0.12 * instancia["nivel_melhoria"]))
+    if plain_qtd == 0 and lista_instancias:
+        # sem cópia comum sobrando -- só resta escolher ENTRE as instâncias.
+        # Sem cópia comum, o número no fim do comando deixa de significar
+        # "quantidade" e passa a escolher QUAL instância (2 anéis do
+        # Joalheiro, por exemplo, são #1 e #2 -- ver `rpg inventario` e
+        # `instancias_por_chave`).
+        if not (1 <= qtd <= len(lista_instancias)):
+            await ctx.send(
+                f"Você tem {len(lista_instancias)} **{dado['nome']}** na mochila — "
+                f"`rpg inventario` mostra qual é qual, `rpg vender {dado['nome']} <número>` escolhe."
+            )
+            return
+        instancia = lista_instancias[qtd - 1]
+        # preço reflete cada camada de bônus que a peça carrega -- melhoria
+        # do Forjador, joia do Joalheiro, encantamento do Encantador (ver
+        # decisoes.md § Instâncias de item, revenda por camada)
+        total = preco_venda_instancia(dado, instancia)
         db.excluir_instancia(instancia["id"])
         db.atualizar_jogador(j["user_id"], moedas=j["moedas"] + total)
-        sufixo = f" +{instancia['nivel_melhoria']}" if instancia["nivel_melhoria"] else ""
+        sufixo = sufixo_bonus_instancia(instancia)
         await ctx.send(f"Vendeu **{dado['nome']}{sufixo}** por {total} 🪙.")
         return
 
@@ -1212,8 +1280,9 @@ async def equipar(ctx, *, texto: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
         return
+    texto, indice = separar_quantidade(texto)
     inventario_qtd = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
-    mochila_instancias = {i["item"]: i for i in db.instancias_na_mochila(j["user_id"])}
+    mochila_instancias = db.instancias_por_chave(j["user_id"])
     item = encontrar_item(texto, set(inventario_qtd) | set(mochila_instancias))
     if not item or ITENS[item]["tipo"] not in ("arma", "armadura", "anel", "colar"):
         await ctx.send("Você não tem esse equipamento na mochila.")
@@ -1227,12 +1296,22 @@ async def equipar(ctx, *, texto: str = ""):
         return
 
     slot = ITENS[item]["tipo"]
-    # a mochila pode ter cópia comum E a instância modificada da mesma
-    # chave -- equipar prefere a instância (é sempre igual ou melhor que a
-    # comum), ver decisoes.md § Instâncias de item. Os quatro slots têm
-    # coluna de instância (arma/armadura por melhoria, anel/colar
-    # preparados pro Arcano) -- generalizado, sem checar tipo aqui.
-    instancia_nova = mochila_instancias.get(item)
+    # a mochila pode ter cópia comum E instância(s) modificada(s) da mesma
+    # chave -- equipar prefere instância (é sempre igual ou melhor que a
+    # comum), ver decisoes.md § Instâncias de item. Duas ou mais instâncias
+    # da mesma chave (ex.: dois anéis do Joalheiro) usam o número no fim do
+    # comando pra escolher qual -- sem número, pega a #1 (ver
+    # `rpg inventario` pra saber qual é qual).
+    lista_instancias = mochila_instancias.get(item, [])
+    instancia_nova = None
+    if lista_instancias:
+        if not (1 <= indice <= len(lista_instancias)):
+            await ctx.send(
+                f"Você tem {len(lista_instancias)} **{ITENS[item]['nome']}** na mochila — "
+                f"`rpg inventario` mostra qual é qual, `rpg equipar {ITENS[item]['nome']} <número>` escolhe."
+            )
+            return
+        instancia_nova = lista_instancias[indice - 1]
     if not instancia_nova:
         if not db.remove_item(j["user_id"], item, 1):
             await ctx.send("Você não tem esse item.")
@@ -1250,7 +1329,7 @@ async def equipar(ctx, *, texto: str = ""):
     campos = {slot: item, f"{slot}_instancia_id": instancia_nova["id"] if instancia_nova else None}
     db.atualizar_jogador(j["user_id"], **campos)
 
-    sufixo = f" +{instancia_nova['nivel_melhoria']}" if instancia_nova and instancia_nova["nivel_melhoria"] else ""
+    sufixo = sufixo_bonus_instancia(instancia_nova) if instancia_nova else ""
     msg = f"Equipou {ITENS[item]['emoji']} **{ITENS[item]['nome']}{sufixo}**."
     if antigo:
         msg += f" {ITENS[antigo]['nome']} voltou pra mochila."

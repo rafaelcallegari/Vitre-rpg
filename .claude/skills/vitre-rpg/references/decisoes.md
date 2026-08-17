@@ -2986,4 +2986,90 @@ no contexto), nunca `KeyError` derrubando o comando pro jogador.
   mão, senão o teste passaria mudo no próximo tipo esquecido, do mesmo jeito
   que o bug passou mudo três vezes. Cobre também que montar a listagem pra
   todo andar semeado não levanta exceção nenhuma.
+
+## Correção — Instâncias de item: três lacunas na mesma tabela
+
+Revisão pós-Patch 0.3, sem sintoma reportado em jogo ainda — achadas lendo o
+código de Encantador/Joalheiro contra o que este arquivo já dizia. As três
+moram em `instancias` (melhoria do Forjador, joia do Joalheiro, encantamento
+do Encantador). Nenhuma tinha teste antes desta correção.
+
+### `rpg desencantar` reembolsava — a decisão já registrada acima dizia o
+### contrário
+
+A seção "Encantador (`rpg encantar`/`rpg desencantar`)" já dizia **"Remover
+custa metade do custo de encantar aquele valor"** — mas o código fazia
+`moedas = moedas + reembolso`, devolvendo em vez de cobrar. O código
+divergiu da decisão já registrada, provavelmente na hora de implementar.
+Corrigido pra cobrar (`profissoes.desencantar`): recusa com a mensagem
+dizendo quanto falta quando o jogador não tem o valor, mensagem de sucesso
+passou de "X de volta" pra "custou X". Valores batem com
+`CUSTO_MOEDAS_POR_BONUS[bonus] // 2`, mesma tabela de sempre: +1=200,
++2=450, +3=800, +4=1.300, +5=1.900, +6=2.600, +7=3.400. Sem essa cobrança
+nas duas pontas, o refarm de XP (encantar → remover → encantar) parava de
+queimar dinheiro na remoção — era justamente esse custo duplo que
+justificava não travar o refarm com cooldown nenhum.
+
+**Guia da Torre**: a seção do Encantador ainda diz "devolve metade" — precisa
+virar "custa metade" quando isso subir pra produção.
+
+### `rpg vender` — cada camada de bônus soma o próprio valor de revenda
+
+Antes, o preço de uma instância só escalava por `nivel_melhoria` (+12%/nível,
+Forjador). Duas consequências: uma joia do Joalheiro nunca tem
+`nivel_melhoria`, então um Anel Lapidado +1 e um +7 vendiam pelo mesmo preço
+fixo (metade do `"preco"` de catálogo, 3.800); e uma peça encantada pelo
+Encantador tinha o valor do encantamento **sumindo** na venda, camada nenhuma
+lia `encantamento_valor`.
+
+`bot.preco_venda_instancia(dado, instancia)`: joia usa como base
+`CUSTO_MOEDAS_POR_BONUS[joia_valor] // 2` (ancorado no que a peça custou pra
+fabricar, mesma regra de "equipamento revende por metade" — não o `"preco"`
+de catálogo, que é só um placeholder pra peça comum); melhoria continua a
+conta antiga quando não é joia (as duas são mutuamente exclusivas na
+prática — joia nunca passa por `rpg melhorar`). Encantamento soma
+`CUSTO_MOEDAS_POR_BONUS[encantamento_valor] // 2` por cima de qualquer uma
+das duas bases, porque é camada independente que pode conviver com as
+outras (mesmo espírito de `bonus_atributo_equipamento`).
+
+### Duplicata da mesma chave: ordinal em vez de id de banco
+
+`equipar`/`vender` indexavam a mochila com `{i["item"]: i for i in
+instancias_na_mochila(...)}` — um dict comprehension colapsa pra UMA
+instância por chave (a última iterada). Com dois anéis do Joalheiro
+desequipados ao mesmo tempo, só um ficava alcançável; o outro não dava pra
+equipar nem vender, apesar de continuar dono do jogador — peça paga
+inacessível, o mais grave dos três.
+
+- **`db.instancias_por_chave(user_id)`**: agrupa `instancias_na_mochila` (que
+  ganhou `ORDER BY id`, ordem de criação estável) numa lista por chave, em
+  vez de colapsar num dict de valor único. A ordem é a mesma em toda
+  listagem/escolha — instância mais antiga é sempre #1.
+- **O número que já existia** (`separar_quantidade`, mesmo mecanismo de
+  `rpg vender poção 3`) virou o seletor: com cópia comum cobrindo o pedido,
+  continua significando quantidade (comportamento antigo, sem mudança);
+  sem cópia comum e mais de uma instância da mesma chave, passa a escolher
+  QUAL — `rpg equipar anel lapidado 2`, `rpg vender anel lapidado 2`. Sem
+  número, cai na #1 (mesmo comportamento de antes quando só existia uma).
+  `equipar` ganhou esse parsing (antes não tinha nenhum, não precisava).
+  Índice fora do intervalo recusa com contagem, não silencia nem escolhe
+  sozinho.
+- **`rpg inventario` mostra o bônus da instância** (`bot.rotulo_instancia`,
+  reaproveitado nas mensagens de sucesso de `equipar`/`vender`) — sigla e
+  valor da joia, "encantado SIGLA +N" quando tem encantamento, "+N" de
+  melhoria quando tem — e o `(#N)` só aparece quando há mais de uma
+  instância da mesma chave (mostrar sempre seria ruído pro caso comum de
+  uma só). Sem isso, "escolher a #2" não tinha como funcionar: o jogador não
+  tinha nenhuma pista de qual era qual.
+
+### Teste
+
+`tests/test_instancias_item.py`: desencantar cobra o valor exato por bônus
+(1 a 7) e recusa sem saldo sem tocar na instância; preço de venda da joia
+sobe com o bônus (+1 vende por 200, +7 por 3.400) e o encantamento soma por
+cima do preço em vez de sumir; duas instâncias da mesma chave são as duas
+alcançáveis por `equipar` e por `vender` (inclusive a mais antiga, que era a
+presa); índice além da quantidade disponível recusa com mensagem clara;
+`rpg inventario` mostra atributo+valor da joia e numera (#1/#2) só quando há
+duplicata, sem número nenhum sobrando pro caso de uma instância só.
 `test_database_migracao.py` ganhou as duas colunas novas.

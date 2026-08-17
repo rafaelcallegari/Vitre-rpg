@@ -1096,8 +1096,22 @@ def instancias_na_mochila(user_id):
             (user_id,),
         ).fetchone()
         equipadas = set(jog) if jog else set()
-        rows = conn.execute("SELECT * FROM instancias WHERE dono = ?", (user_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM instancias WHERE dono = ? ORDER BY id", (user_id,)
+        ).fetchall()
     return [dict(r) for r in rows if r["id"] not in equipadas]
+
+
+def instancias_por_chave(user_id):
+    """`instancias_na_mochila` agrupada por chave do item, em ordem estável
+    (criação) -- duas instâncias da mesma chave (ex.: dois anéis do
+    Joalheiro) precisam de uma posição fixa pra `rpg equipar`/`rpg vender`
+    poderem apontar pra UMA específica sem o jogador decorar id de banco.
+    Ver decisoes.md § Instâncias de item (duplicata da mesma chave)."""
+    agrupado = {}
+    for i in instancias_na_mochila(user_id):
+        agrupado.setdefault(i["item"], []).append(i)
+    return agrupado
 
 
 # ---------------- cooldowns ----------------
