@@ -436,8 +436,13 @@ Decisão explícita do Rafael, adicionada depois da primeira leva: guildas
 `guilda_log`, `guilda_raide`, `guilda_home_cooldown` e `guilda_convites`
 continuam intactos, mesma linha que "Cooldown de troca de home da guilda" já
 tinha registrado pra `guilda_home_cooldown`/`guilda_raide`. Ninguém refunda
-os 5.000 de fundação nem perde cargo do Discord ou home só porque a
-temporada virou.
+os 5.000 de fundação nem perde cargo do Discord só porque a temporada virou.
+
+**A home NÃO entra mais nessa lista de "sobrevive intacta" — revertido no
+cartão do Salão da Guilda.** Quando este parágrafo foi escrito, ainda não
+existia tier de Salão puxando a home; depois que passou a existir,
+`andar_home` também passou a zerar no reset, pelo mesmo motivo do Salão zerar
+— ver § Salão da Guilda -- home reset, mais abaixo, pro raciocínio completo.
 
 - **`DELETE FROM guilda_bau` e `UPDATE guildas SET moedas = 0`** entram em
  `resetar_temporada()`, dentro da mesma transação do resto (`database.py`).
@@ -3586,3 +3591,197 @@ com 2 donos fica igual ao solo; o texto da sala de party muda de "por dono"
 pra "fixo" cruzando o limiar; a raide (`ANDAR_REFERENCIA_RAIDE`) continua
 escalando por participante. Validado revertendo a mudança de propósito
 antes de fechar o cartão — o teste do andar 11 quebra sem ela.
+
+## Salão da Guilda — tesouros de chefe e progressão de guilda
+
+Duas metades de um pedido só: 10 tesouros novos (segundo drop, 100%, nos
+chefes 1-10, ao lado do `fragmento_selo`) e o Salão, o eixo de progressão que
+a guilda não tinha — hoje ela é idêntica no dia 1 e no mês 3.
+
+- **Tier é contado por quantidade TOTAL de tesouros depositados, não
+  distintos.** É a decisão que sustenta o desenho inteiro, travada em
+  `tests/test_salao_guilda.py::test_tier_conta_total_nao_distintos`: 3 cópias
+  do mesmo tesouro (3 membros que passaram do mesmo andar) valem o mesmo tier
+  que 3 tesouros diferentes. Por distintos, um único jogador que chega ao
+  andar 10 destrava tudo sozinho e a guilda vira carona de um carry; por
+  total, largura de gente que avançou pesa mais que profundidade de herói
+  solo — o oposto do que o ranking individual já premia. `COUNT(*)` em
+  `guilda_salao` — uma LINHA por tesouro depositado, não um contador — dá o
+  tier de graça e cada linha já carrega o crédito (`user_id`) sem precisar de
+  duas fontes de verdade.
+- **`vendavel: False` + `loja: False` nos 10 tesouros**, mesmo precedente do
+  `fragmento_selo`. `tipo: "tesouro"` (tipo novo) já os exclui de
+  equipar/craft/receita — nenhuma função por tipo (`equipar`, `RECEITAS`,
+  `itens_da_loja`) precisou de exceção nova, só não incluir "tesouro" nas
+  listas de tipos aceitos que já existiam.
+- **Piso de 3+ membros gate o BENEFÍCIO, não o depósito.** Depositar sempre
+  funciona (uma guilda de 2 pessoas ainda constrói crédito histórico); o que
+  `salao.tier_efetivo()` faz é forçar tier 0 pra home/cooldown de raide
+  quando `membros < MEMBROS_PARA_VALER`, mesmo com tesouro de sobra — mesmo
+  raciocínio que já valia pra viagem grátis (`guildas.MEMBROS_PARA_VALER`).
+  Sem isso o ótimo seria fundar guilda solo por 5.000 e ser o próprio Salão.
+- **Migração sem retroagir (grandfather).** Guildas existentes têm home
+  livre de 1 a 10 e tier 0 — aplicar o gate novo retroativamente rebaixaria
+  quem já está lá, sem aviso. Nenhum código toca `andar_home` na subida do
+  bot; o gate (`salao.tier_efetivo` dentro de `guildas.acao_home`) só entra
+  na hora de TROCAR, que já é ato voluntário com cooldown de 3h. Existe
+  precedente contrário no arquivo (migração 10, que puxou home acima do Selo
+  de volta pro andar 1) mas aquilo corrigia estado JÁ inválido; aqui o estado
+  é válido, só ganhou critério novo — não é o mesmo caso.
+- **Contador de temporada novo: `estado_temporada` (linha única, `numero`).**
+  Não existia nenhum jeito de saber "que temporada é essa" no banco antes
+  desta carta — precisei criar um pra a coluna `temporada` de `guilda_salao`
+  fazer sentido. `resetar_temporada()` só incrementa esse número (não apaga
+  `guilda_salao`): toda leitura de tier filtra por
+  `temporada = temporada_atual()`, então a contagem ativa volta a 0 sozinha
+  assim que o número muda, e as linhas antigas ficam de pé pra
+  `rpg guilda salao historico <n>`. "A mecânica reseta, a memória não."
+- **Por que `resetar_temporada()` não precisa esvaziar `guilda_salao` na
+  mão pra fechar o exploit de "guardar tesouro antes do reset e depositar
+  depois":** `DELETE FROM inventario` já roda incondicionalmente dentro do
+  mesmo reset (linha de sempre, não é coisa desta carta) — qualquer tesouro
+  ainda não depositado na hora do reset é apagado junto com o resto da
+  mochila. Não tem como um tesouro da temporada anterior sobreviver pra
+  inflar o tier da temporada nova; o único jeito de um tesouro entrar em
+  `guilda_salao` é `rpg guilda depositar` ANTES do reset (aí já é histórico
+  da temporada velha) ou vencer o chefe DEPOIS do reset (temporada nova,
+  legítimo). Verificado lendo `resetar_temporada()` antes de escrever
+  qualquer coisa pra esta carta — não precisou de tratamento especial pro
+  tipo `tesouro` dentro do `DELETE FROM inventario` porque ele já é
+  incondicional (todo item, não só uns tipos).
+- **`rpg guilda depositar` é reusado, não duplicado.** O mesmo comando que já
+  deposita item no baú agora também recebe tesouro — `salao.extrair_tesouro()`
+  casa o nome/chave do tesouro contra o INÍCIO do argumento (palavra por
+  palavra, não por índice de string — nome acentuado muda de tamanho ao
+  normalizar) e, se bater, desvia pro fluxo do Salão ANTES do parsing de
+  quantidade do fluxo antigo. O resto do texto vira a assinatura opcional —
+  não existe modal nem passo extra: a assinatura já entra junto do comando
+  que abre a confirmação obrigatória (irreversível), e aparece na própria
+  embed de confirmação pra revisão antes de clicar.
+- **Confirmação por dependency injection.** `salao.depositar()` recebe a
+  classe de confirmação (`admin.ConfirmarAcao`) por parâmetro em vez de
+  importá-la no topo do módulo — evita prender `salao.py` a `admin.py` e,
+  de brinde, deixa os testes passarem uma view fake sem precisar simular
+  interaction/botão de Discord de verdade.
+- **Sanitização em duas camadas.** Entrada: `@everyone`/`@here` (regex,
+  case-insensitive) recusam o depósito com mensagem explicando o motivo —
+  bloquear a inserção, não confiar só em não pingar depois. Saída: toda
+  embed do Salão (confirmação e vitrine paginada) sai com
+  `AllowedMentions.none()` — cinto e suspensório, porque o depósito não pode
+  ser desfeito se algo escapar. `paginacao.enviar_paginado`/`PaginacaoView`
+  ganharam um parâmetro `allowed_mentions` pra isso (default `None`, não
+  muda nenhum call site existente).
+- **Assinatura tem limite de 140 chars e é RECUSADA acima disso, nunca
+  truncada em silêncio** — o jogador reformula, o Salão nunca mostra uma
+  frase cortada no meio sem avisar.
+- **Editar/apagar assinatura nunca muda `COUNT(*)`** — é update de uma coluna
+  só (`mensagem`), sem tocar a linha em si. Autor edita a própria; líder só
+  LIMPA a de qualquer membro (não pode escrever uma nova em nome de outro).
+- **Cooldown de raide passou a ser lido do tier na hora de disparar** (
+  `raide.iniciar_raide`, via `salao.tier_efetivo`) em vez do
+  `COOLDOWN_RAIDE_SEGUNDOS` fixo de sempre — 2h nos tiers 0-1, 1h30 no 2, 1h
+  no 3 (nunca menos, `game_data.SALAO_TIERS`). Calibrado pra não destravar
+  a torneira de acessório da raide (800 moedas + 2 acessórios) rápido demais
+  — ver o teto de 1h no cartão original, não apertar sem dado de uma
+  temporada rodada.
+- Testado em `tests/test_salao_guilda.py`: os 10 andares batendo 1:1 com o
+  catálogo (sem lista escrita à mão — deriva de `ANDARES`), tesouro recusado
+  em venda/equipar/receita, tier por total vs. distinto, piso de membros,
+  depósito confirmado/cancelado/sem item, `@everyone`/`@here` recusados,
+  assinatura longa recusada, editar/limpar sem mudar contagem, grandfather da
+  home, home liberando por tier, cooldown de raide por tier, reset zerando
+  ativo e preservando histórico com assinatura, vitrine com 36 tesouros
+  assinados no limite não estourando embed.
+
+### Bug — embed de vitória não anunciava o tesouro (nem qualquer drop novo)
+
+Os tesouros entraram certo no inventário (`recompensar()` já rolava
+`chefe["drops"]` inteiro, sem lacuna) mas o embed de "Recompensas" que o
+jogador lê na hora tinha `🔷 Fragmento` **fixo, escrito na string**
+(`combate.py:finalizar_vitoria`) — sobrou de quando `fragmento_selo` era o
+único drop de chefe que existia. Mesmo formato do § Padrão — mapa de domínio
+nunca é subscript direto, mais acima: código que cobria o que existia quando
+foi escrito e ficou pra trás quando um drop novo (tesouro) foi semeado sem
+ninguém voltar aqui. Achado testando `rpg boss` no andar 1 depois do Pacote
+do Salão: a Coroa Velha chegou na mochila, a mensagem só falou em Fragmento.
+
+- **Correção**: `recompensar()` agora devolve também `itens_dropados` (o que
+  realmente foi sorteado/gravado pra aquele combatente, não o que *poderia*
+  cair) — 5-tupla em vez de 4, único call site (`finalizar_vitoria`)
+  atualizado junto. `finalizar_vitoria` monta a linha do dono a partir dessa
+  lista, via `_texto_item_dropado()` (nome+emoji de `ITENS`, com `.get()` e
+  fallback pra chave crua — chave já validada na autoria de
+  `game_data.ANDARES`, mas um typo num drop novo agora vira texto degradado
+  em vez de `KeyError` derrubando o embed de vitória inteiro). Item nenhum
+  dropado (chance de repetição falhou, andar 11+) não escreve nada — a linha
+  fica só com XP/moedas, sem sobrar texto de item nenhum.
+- **Os dois mecanismos de drop de chefe são DIFERENTES de propósito, não bug
+  duplicado**: andares 1-10 usam `H["rolar_drops"]` (cada entrada de
+  `chefe["drops"]` rola a própria chance independente — `fragmento_selo` e o
+  tesouro, os dois 100%) porque `andar == andar_max` nunca deixa refazer
+  aquele chefe na mesma temporada (destranca o próximo andar pra sempre).
+  Andares 11-15 usam o caminho de `chefes_derrotados` (100% na primeira
+  vitória da conta, 15% nas repetições) porque ali É roguelike de propósito
+  — dá pra refazer o mesmo chefe de novo (ver § Roguelike acima do Selo). Os
+  10 tesouros **não** ganham a regra de 15%: eles não precisam, o gate de
+  `andar_max` já os torna "uma vez só" sem precisar de desconto nenhum.
+- **Nenhum outro lugar tinha a mesma lacuna.** `finalizar_vitoria` é chamado
+  de um só ponto de produção (`combate.py`, fim de rodada) e serve solo E
+  party ao mesmo tempo (mesmo motor `Luta`/`PainelLuta`) — não existe resumo
+  separado, DM ou post de canal de guilda pra vitória de chefe. A única outra
+  tela que anuncia drop de chefe é `raide.finalizar_vitoria_raide`, mas essa
+  já monta o texto a partir do `random.sample()` de verdade (nunca teve texto
+  fixo) — conferido, não precisou de correção.
+- Testado em `tests/test_combate.py`: andar 1 e andar 10 (dois pontos
+  diferentes da lista de `ANDARES`, não só o primeiro) mostrando os dois
+  itens certos; andar 11 primeira vez mostrando o material; andar 11
+  repetição COM sorte mencionando o item. Os 4 quebram revertendo só
+  `combate.py` — confirmado antes de fechar o cartão.
+- **Dois testes saíram depois, por não validarem nada**: um checava "andar 11
+  repetição SEM sorte não menciona o item" e outro checava "ajudante nunca
+  lista item" — os dois passavam mesmo com `combate.py` revertido pro bug,
+  porque o texto antigo (`🔷 Fragmento` fixo) nunca citava "Sopro Contido" nem
+  aparecia na linha do ajudante por acaso. Teste que passa igual com o bug
+  presente não prova que a correção funciona — removidos a pedido do Rafael
+  na revisão seguinte, não é esquecimento.
+
+## Salão da Guilda — home reset (reversão da decisão anterior)
+
+Pedido direto do Rafael (19/08/2026), sem diagnóstico prévio dele — fecha o
+pacote do Salão. `resetar_temporada()` passa a devolver `andar_home` pro
+andar 1 pra toda guilda, revertendo "Baú da guilda zera, a guilda sobrevive"
+(mais acima neste arquivo), que dizia explicitamente que a home sobrevivia
+intacta.
+
+- **Por que reverter**: aquela decisão foi tomada antes do Salão existir. Com
+  o Salão, manter a home intacta no reset cria exatamente a inconsistência
+  que o "número a vigiar" do cartão original do Salão apontava — uma guilda
+  entraria na temporada nova com home no andar 10 (o tier 3 da temporada
+  ANTERIOR) sem ter nenhum tesouro depositado na temporada nova que
+  justifique aquele tier. O Salão já zera (`estado_temporada.numero` avança);
+  deixar a home destravada por cima do zero é a mesma armadilha, só que sem
+  gate nenhum barrando.
+- **O grandfather de `guildas.acao_home` não muda e não é o mesmo caso.** Ele
+  cobre só a migração ÚNICA que introduziu o gate de tier pra guildas que já
+  existiam antes do Salão — não é uma isenção que deveria se repetir a cada
+  reset de temporada daqui pra frente. Depois deste cartão, toda guilda
+  começa oficialmente a temporada em tier 0/home 1, e só sobe conforme
+  deposita tesouro de novo — igual quem nunca teve Salão nenhum.
+- **`guilda_home_cooldown` não é tocado no reset, de propósito.** Se uma
+  guilda trocou de home pouco antes do reset e ainda tem cooldown de 3h
+  rodando, o líder só espera vencer normal — não é um caso especial que
+  precise de tratamento, e zerar o cooldown junto seria escopo que ninguém
+  pediu.
+- **`UPDATE guildas SET moedas = 0, andar_home = 1`** — uma linha só,
+  acrescentada ao `UPDATE` que já existia pro caixa (não precisou de
+  `UPDATE` separado nem de coluna nova).
+- Testado em `tests/test_guilda_reset.py`: guilda com home 3 volta pro 1
+  (mantendo membros e cargo intactos) e guilda com home 10 (caso mais
+  realista de produção — tier alto conquistado antes do reset) também volta
+  pro 1. Confirmado que os dois quebram revertendo só a cláusula
+  `andar_home = 1` do `UPDATE` (sem mexer no resto do reset) — o resto da
+  suíte (Salão, baú, membros) não se abala.
+- **`admin.py`**: `PRESERVADO` perdeu a menção à home ("guilda em si...
+  continua de pé" já não inclui mais home) e `GUILDA_RESET` ganhou linha
+  própria explicando o motivo, separada da linha do Salão — são dois campos
+  diferentes zerando pela mesma razão, não vale esconder um dentro do outro.

@@ -165,6 +165,32 @@ ITENS = {
     # ver decisoes.md, o custo em moedas segue a mesma tabela do Encantador).
     "anel_joia": {"loja": False, "nome": "Anel Lapidado", "emoji": "💍", "tipo": "anel", "preco": 3800, "andar_min": 1},
     "colar_joia": {"loja": False, "nome": "Colar Lapidado", "emoji": "📿", "tipo": "colar", "preco": 3800, "andar_min": 1},
+
+    # ---------------- tesouros de chefe (Salão da Guilda, andares 1-10) ----------------
+    # Segundo drop do chefe, 100% de chance, ao lado do fragmento_selo (ver
+    # ANDARES abaixo). `vendavel: False` e `loja: False` seguem o precedente
+    # do fragmento_selo -- tesouro não vira moeda, não craft, não equipa,
+    # nunca. Ver decisoes.md § Salão da Guilda.
+    "coroa_velha": {"vendavel": False, "loja": False, "nome": "Coroa Velha", "emoji": "👑", "tipo": "tesouro",
+                     "descricao": "Amassada de um jeito que sugere que já caiu — e foi recolocada — mais de uma vez."},
+    "novelo_da_rainha": {"vendavel": False, "loja": False, "nome": "Novelo da Rainha", "emoji": "🧶", "tipo": "tesouro",
+                          "descricao": "A linha nunca acaba, por mais que você puxe. Melhor não puxar."},
+    "lasca_do_guardiao": {"vendavel": False, "loja": False, "nome": "Lasca do Guardião", "emoji": "🪨", "tipo": "tesouro",
+                           "descricao": "Fria mesmo em mãos quentes. Ainda vibra, baixinho, como se soubesse que falta um pedaço dela em algum lugar."},
+    "presa_de_zarhak": {"vendavel": False, "loja": False, "nome": "Presa de Zarhak", "emoji": "🦷", "tipo": "tesouro",
+                         "descricao": "Maior que qualquer boca que devesse caber nela. Ainda pinga, mesmo seca."},
+    "uivo_congelado": {"vendavel": False, "loja": False, "nome": "Uivo Congelado", "emoji": "❄️", "tipo": "tesouro",
+                        "descricao": "Um som preso em gelo — se você chegar perto o bastante, jura que ainda ouve."},
+    "batida_do_nucleo": {"vendavel": False, "loja": False, "nome": "Batida do Núcleo", "emoji": "🫀", "tipo": "tesouro",
+                          "descricao": "Pulsa devagar, no seu próprio ritmo. Não é o seu coração que está marcando o compasso."},
+    "elmo_de_ignar": {"vendavel": False, "loja": False, "nome": "Elmo de Ignar", "emoji": "⛑️", "tipo": "tesouro",
+                       "descricao": "Por dentro, ainda quente. Por fora, cinza — como tudo mais naquele andar."},
+    "sino_sem_badalo": {"vendavel": False, "loja": False, "nome": "Sino Sem Badalo", "emoji": "🔕", "tipo": "tesouro",
+                         "descricao": "Balança quando ninguém encosta. Não faz barulho nenhum. Isso é pior."},
+    "escama_de_vyrra": {"vendavel": False, "loja": False, "nome": "Escama de Vyrra", "emoji": "🐍", "tipo": "tesouro",
+                         "descricao": "Leve como papel, dura como aço. Ainda carrega um resto de estática."},
+    "martelo_do_arquiteto": {"vendavel": False, "loja": False, "nome": "Martelo do Arquiteto", "emoji": "🔨", "tipo": "tesouro",
+                              "descricao": "Pesado demais pra qualquer braço comum erguer duas vezes. A primeira já foi a última, pra ele."},
 }
 
 
@@ -179,7 +205,7 @@ ANDARES = {
             {"nome": "Lobo da Névoa", "hp": 38, "atk": 9, "def": 1, "xp": 19, "moedas": 24, "drops": [("presa_javali", 0.45), ("essencia_do_vento", 0.45)]},
             {"nome": "Slime Azulado", "hp": 52, "atk": 6, "def": 2, "xp": 17, "moedas": 28, "drops": [("presa_javali", 0.60), ("essencia_do_vento", 0.50)]},
         ],
-        "boss": {"nome": "«Vargash, o Kobold Coroado»", "hp": 165, "atk": 13, "def": 2, "xp": 150, "moedas": 260, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Vargash, o Kobold Coroado»", "hp": 165, "atk": 13, "def": 2, "xp": 150, "moedas": 260, "drops": [("fragmento_selo", 1.0), ("coroa_velha", 1.0)]},
     },
     2: {
         "nome": "Bosque Sussurrante",
@@ -190,7 +216,7 @@ ANDARES = {
             {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "drops": [("seda_sussurrante", 0.50), ("ambar_de_seiva", 0.50)]},
             {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "drops": [("seda_sussurrante", 0.45), ("ambar_de_seiva", 0.45)]},
         ],
-        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0), ("novelo_da_rainha", 1.0)]},
     },
     3: {
         "nome": "Ruínas Afundadas",
@@ -201,7 +227,7 @@ ANDARES = {
             {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "drops": [("osso_enferrujado", 0.50), ("essencia_da_agua", 0.50)]},
             {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "drops": [("osso_enferrujado", 0.45), ("essencia_da_agua", 0.45)]},
         ],
-        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0), ("lasca_do_guardiao", 1.0)]},
     },
     4: {
         "nome": "Deserto de Sal",
@@ -212,7 +238,7 @@ ANDARES = {
             {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "drops": [("cristal_de_sal", 0.45), ("lagrima_de_sal", 0.45)]},
             {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "drops": [("cristal_de_sal", 0.50), ("lagrima_de_sal", 0.50)]},
         ],
-        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0), ("presa_de_zarhak", 1.0)]},
     },
     5: {
         "nome": "Lago Congelado",
@@ -223,7 +249,7 @@ ANDARES = {
             {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "drops": [("nucleo_gelado", 0.45), ("essencia_do_gelo", 0.45)]},
             {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "drops": [("nucleo_gelado", 0.50), ("essencia_do_gelo", 0.50)]},
         ],
-        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0), ("uivo_congelado", 1.0)]},
     },
     6: {
         "nome": "Mina Abandonada",
@@ -234,7 +260,7 @@ ANDARES = {
             {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "drops": [("minerio_negro", 0.45), ("rubi_fosco", 0.45)]},
             {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "drops": [("minerio_negro", 0.50), ("rubi_fosco", 0.50)]},
         ],
-        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0), ("batida_do_nucleo", 1.0)]},
     },
     7: {
         "nome": "Campos de Cinzas",
@@ -245,7 +271,7 @@ ANDARES = {
             {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "drops": [("brasa_eterna", 0.45), ("essencia_de_fogo", 0.45)]},
             {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "drops": [("brasa_eterna", 0.50), ("essencia_de_fogo", 0.50)]},
         ],
-        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0), ("elmo_de_ignar", 1.0)]},
     },
     8: {
         "nome": "Catedral Quebrada",
@@ -256,7 +282,7 @@ ANDARES = {
             {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "drops": [("fragmento_sino", 0.45), ("vitral_partido", 0.45)]},
             {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "drops": [("fragmento_sino", 0.50), ("vitral_partido", 0.50)]},
         ],
-        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0), ("sino_sem_badalo", 1.0)]},
     },
     9: {
         "nome": "Céu Partido",
@@ -267,7 +293,7 @@ ANDARES = {
             {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "drops": [("pena_do_trovao", 0.45), ("essencia_estelar", 0.45)]},
             {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "drops": [("pena_do_trovao", 0.50), ("essencia_estelar", 0.50)]},
         ],
-        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0), ("escama_de_vyrra", 1.0)]},
     },
     10: {
         "nome": "Salão do Selo",
@@ -278,7 +304,7 @@ ANDARES = {
             {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "drops": [("eco_cristalizado", 0.45), ("perola_do_eco", 0.45)]},
             {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "drops": [("eco_cristalizado", 0.50), ("perola_do_eco", 0.50)]},
         ],
-        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0)]},
+        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0), ("martelo_do_arquiteto", 1.0)]},
     },
 
     # ---- acima do selo: sem paredes, sem loja, sem ferreiro, sem carroça ----
@@ -419,20 +445,25 @@ CLASSES = {
 }
 
 # Ramos liberados por nível dentro de cada base. Vêm depois da fase 2 —
-# por enquanto só existem pra `rpg ascencao` explicar o caminho.
+# por enquanto só existem pra `rpg ascencao` explicar o caminho. O nível de
+# cada ramo é dado, não texto: as wikis (`rpg classe`, `rpg ascencao`) leem
+# "nivel" daqui, então trocar o valor de um ramo já atualiza as duas telas
+# sem tocar em bot.py. É por ramo (e não só a constante abaixo) de propósito
+# -- permite um ramo abrir em nível diferente dos irmãos no futuro.
+NIVEL_ASCENSAO_PADRAO = 15
 ASCENSOES = {
-    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo"},
-    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo"},
-    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio"},
-    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None},
-    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None},
-    "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None},
-    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None},
-    "batedor_de_carteira": {"nome": "Batedor de Carteira", "base": "ladino", "elemento": None},
-    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None},
-    "monge": {"nome": "Monge", "base": "orador", "elemento": None},
-    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino"},
-    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino"},
+    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO},
+    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO},
+    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO},
+    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "batedor_de_carteira": {"nome": "Batedor de Carteira", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
+    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO},
+    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO},
 }
 
 # Catálogo de habilidades. Cada chave segue este formato:
@@ -536,6 +567,24 @@ ANDAR_REFERENCIA_RAIDE = 7   # só pra fórmulas de penetração/destreza — n�
 RECOMPENSA_MOEDAS_RAIDE = 800   # modesta de propósito: chefe fixo, sem risco pra late game
 QTD_ACESSORIOS_RAIDE = 2
 COOLDOWN_RAIDE_SEGUNDOS = 2 * 3600   # por guilda (não por jogador)
+
+# ---------------- Salão da Guilda ----------------
+# Tier é derivado da quantidade TOTAL de tesouros depositados, não distintos
+# -- decisão central do desenho (ver decisoes.md § Salão da Guilda). Um único
+# jogador que passa do andar 10 entrega os dez tesouros e destrancaria tudo
+# sozinho se a contagem fosse por distintos; por total, largura de gente que
+# passou de andar pesa mais que a profundidade de um herói solo. Calibrado
+# pra servidor de 5-10 pessoas ao longo de uma temporada: 6 = três membros
+# além do andar 2, 18 = três no andar 6 (ou seis no 3), 36 = seis no andar 6
+# (ou quatro no 9). O cooldown de raide nunca desce de 1h (tier 3) -- ver
+# balanceamento.md, a raide já paga 800 moedas + 2 acessórios por disparo e
+# reduzir o intervalo aumenta a torneira de acessório por dia.
+SALAO_TIERS = (
+    {"tier": 0, "nome": "Salão Vazio", "min_tesouros": 0, "andar_home_max": 3, "cooldown_raide": 2 * 3600},
+    {"tier": 1, "nome": "Salão Erguido", "min_tesouros": 6, "andar_home_max": 5, "cooldown_raide": 2 * 3600},
+    {"tier": 2, "nome": "Salão Guarnecido", "min_tesouros": 18, "andar_home_max": 8, "cooldown_raide": 90 * 60},
+    {"tier": 3, "nome": "Salão Coroado", "min_tesouros": 36, "andar_home_max": 10, "cooldown_raide": 3600},
+)
 
 
 def itens_da_loja(andar: int):

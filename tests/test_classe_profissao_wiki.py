@@ -109,6 +109,88 @@ def test_classe_wiki_lista_os_ramos_de_ascensao_da_classe():
     assert "Soldado" not in campo_ascensao.value   # ramo do guerreiro, não do mago
 
 
+def test_classe_wiki_falta_1_nivel_fica_no_singular():
+    """O tipo de coisa que some numa refatoração de string: nível 15 - 14 é
+    diferença 1, e o texto tem que sair "falta 1 nível", nunca "faltam 1"."""
+    nivel_ascensao = game_data.ASCENSOES["mago_gelo"]["nivel"]
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, classe="mago", pronome="ele", nivel=nivel_ascensao - 1)
+    ctx = _ctx()
+
+    asyncio.run(bot.classe_cmd.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    campo_ascensao = next(f for f in e.fields if "Ascens" in f.name)
+    assert "falta 1 nível" in campo_ascensao.value
+    assert "faltam 1" not in campo_ascensao.value
+
+
+def test_classe_wiki_faltam_n_niveis_conferido_contra_o_dado():
+    nivel_ascensao = game_data.ASCENSOES["mago_gelo"]["nivel"]
+    nivel_jogador = nivel_ascensao - 6
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, classe="mago", pronome="ele", nivel=nivel_jogador)
+    ctx = _ctx()
+
+    asyncio.run(bot.classe_cmd.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    campo_ascensao = next(f for f in e.fields if "Ascens" in f.name)
+    assert f"faltam {nivel_ascensao - nivel_jogador} níveis" in campo_ascensao.value
+
+
+def test_classe_wiki_nivel_do_ramo_vem_do_dado_nao_de_texto_fixo(monkeypatch):
+    """Trocar o "nivel" de um único ramo em game_data tem que mudar a wiki
+    sem editar bot.py -- é o critério 6 do cartão da ascensão."""
+    monkeypatch.setitem(game_data.ASCENSOES["mago_raio"], "nivel", 30)
+    nivel_ordinario = game_data.ASCENSOES["mago_gelo"]["nivel"]
+    nivel_jogador = nivel_ordinario - 5   # abaixo do ramo comum, bem abaixo do 30
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, classe="mago", pronome="ele", nivel=nivel_jogador)
+    ctx = _ctx()
+
+    asyncio.run(bot.classe_cmd.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    campo_ascensao = next(f for f in e.fields if "Ascens" in f.name)
+    # título perde o nível único (ramos da base já não abrem todos juntos)
+    assert "nível" not in campo_ascensao.name.lower()
+    # cada ramo passa a listar o próprio nível
+    assert "Mago de Raio — nível 30" in campo_ascensao.value
+    assert f"Mago de Gelo — nível {nivel_ordinario}" in campo_ascensao.value
+    # distância aponta pro ramo mais próximo (o nível ordinário, não o 30)
+    assert f"faltam {nivel_ordinario - nivel_jogador} níveis" in campo_ascensao.value
+
+
+def test_ascencao_sem_personagem_nao_quebra():
+    ctx = _ctx()   # sem db.criar_jogador -- simula quem nunca deu `rpg comecar`
+
+    asyncio.run(bot.ascencao.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    assert "rpg comecar" in e.footer.text
+
+
+def test_ascencao_so_marca_base_quando_a_descricao_promete(monkeypatch):
+    """Se a descrição promete marca (níveis divergem em algum lugar entre os
+    12 ramos), pelo menos uma base tem que sair marcada -- e tem que ser a
+    base cujos ramos não batem com o nível das demais. Sem esse teste, a
+    marca podia usar só divergência interna à base (que nunca acontece hoje)
+    e a descrição prometeria uma marca que a tela nunca mostra."""
+    for chave in ("mago_gelo", "mago_fogo", "mago_raio"):
+        monkeypatch.setitem(game_data.ASCENSOES[chave], "nivel", 12)
+    ctx = _ctx()
+
+    asyncio.run(bot.ascencao.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    assert "bases marcadas abaixo" in e.description
+    campo_mago = next(f for f in e.fields if "Mago" in f.name)
+    assert "divergem" in campo_mago.name
+    campo_guerreiro = next(f for f in e.fields if "Guerreiro" in f.name)
+    assert "divergem" not in campo_guerreiro.name
+
+
 # ---------------- rpg profissao ----------------
 def test_profissao_sem_argumento_mostra_a_ficha_sem_alterar_banco():
     db.criar_jogador(1, "Alice")

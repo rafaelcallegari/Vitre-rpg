@@ -75,6 +75,44 @@ receitas de nível 9 (armas e manto de selo).
 | 9 | «Vyrra, a Serpente do Trovão» | 1130 | 77 | 26 | 1100 | 1850 |
 | 10 | «O Arquiteto do Décimo Selo» | 1260 | 85 | 29 | 1220 | 2050 |
 
+### Tesouros de chefe (andares 1-10) e o Salão da Guilda
+
+Cada chefe 1-10 solta um tesouro (100%, `tipo: "tesouro"`, não vendável, não
+craftável, não equipável), ao lado do `fragmento_selo`, um por andar. Não é
+farmável — `rpg boss` só vale em `andar == andar_max`, então cada jogador
+enfrenta cada chefe uma vez só (por temporada).
+
+| Andar | Chefe | Tesouro |
+|---|---|---|
+| 1 | «Vargash, o Kobold Coroado» | 👑 Coroa Velha |
+| 2 | «Aracnia, a Rainha dos Fios» | 🧶 Novelo da Rainha |
+| 3 | «Guardião de Pedra Rachada» | 🪨 Lasca do Guardião |
+| 4 | «Zarhak, o Verme Ancião» | 🦷 Presa de Zarhak |
+| 5 | «Nivalgar, o Uivo Branco» | ❄️ Uivo Congelado |
+| 6 | «Núcleo Vivo da Mina» | 🫀 Batida do Núcleo |
+| 7 | «Ignar, o Cavaleiro de Brasas» | ⛑️ Elmo de Ignar |
+| 8 | «Coro dos Sem Rosto» | 🔕 Sino Sem Badalo |
+| 9 | «Vyrra, a Serpente do Trovão» | 🐍 Escama de Vyrra |
+| 10 | «O Arquiteto do Décimo Selo» | 🔨 Martelo do Arquiteto |
+
+`rpg guilda depositar <tesouro> [assinatura]` crava o tesouro no Salão —
+irreversível, com confirmação. O tier da guilda é a quantidade TOTAL de
+tesouros depositados na temporada ativa (não distintos — ver decisoes.md §
+Salão da Guilda), com piso de `MEMBROS_PARA_VALER` (3) membros pro benefício
+valer:
+
+| Tier | Tesouros | Home liberada | Cooldown da raide |
+|---|---|---|---|
+| 0 — Salão Vazio | 0 | andares 1-3 | 2h |
+| 1 — Salão Erguido | 6 | andares 1-5 | 2h |
+| 2 — Salão Guarnecido | 18 | andares 1-8 | 1h30 |
+| 3 — Salão Coroado | 36 | andares 1-10 | 1h |
+
+`rpg guilda salao` mostra tier/progresso/quem entregou cada um (paginado);
+`rpg guilda salao historico [temporada]` arquiva temporadas passadas —
+`resetar_temporada` zera o tier ativo (avança o contador de temporada) mas
+nunca apaga as linhas antigas.
+
 ## Itens
 
 ### Consumíveis (loja, todo andar já destrancado)

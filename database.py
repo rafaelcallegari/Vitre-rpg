@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS sidequests (
     estado   TEXT    NOT NULL,          -- 'ativa' | 'concluida'
     UNIQUE (user_id, quest_id)
 );
+CREATE TABLE IF NOT EXISTS guilda_salao (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    guilda_id     INTEGER,
+    item          TEXT,
+    user_id       INTEGER,
+    mensagem      TEXT,
+    depositado_em REAL,
+    temporada     INTEGER
+);
+CREATE TABLE IF NOT EXISTS estado_temporada (
+    id     INTEGER PRIMARY KEY CHECK (id = 1),
+    numero INTEGER NOT NULL DEFAULT 1
+);
 """
 
 COLUNAS_ATRIBUTO = {
@@ -294,6 +307,23 @@ def fechar_conexao():
 def init_db():
     with conectar() as conn:
         conn.executescript(SCHEMA)
+        # semente do contador de temporada -- guilda_salao e estado_temporada
+        # são tabelas NOVAS (CREATE TABLE IF NOT EXISTS acima, sem ALTER
+        # TABLE), então não entram na dança de migração numerada abaixo. Mas
+        # estado_temporada precisa de exatamente uma linha pra temporada_atual()
+        # nunca devolver None -- INSERT OR IGNORE garante isso sem duplicar em
+        # bancos que já rodaram este bloco antes.
+        conn.execute("INSERT OR IGNORE INTO estado_temporada (id, numero) VALUES (1, 1)")
+
+        # Salão da Guilda (guilda_salao) não retroage: guildas com home acima
+        # do andar 3 (tier 0) NÃO são rebaixadas aqui -- a home atual fica
+        # onde está, o gate do tier só passa a valer na PRÓXIMA troca de home
+        # (`rpg guilda home`, ver guildas.py/salao.py). É o oposto da migração
+        # 10 acima (que corrigia estado JÁ inválido, home acima do Selo): aqui
+        # o estado é válido, só ganhou um critério novo -- rebaixar em silêncio
+        # tiraria a home de guilda que já está lá sem aviso nenhum. Ver
+        # decisoes.md § Salão da Guilda -- migração.
+
         colunas = [r["name"] for r in conn.execute("PRAGMA table_info(jogadores)")]
 
         # migração 1: bancos criados antes da viagem entre andares
@@ -649,10 +679,34 @@ def resetar_temporada():
     Zera nível/XP/moedas/HP/mana/atributos/equipamento/classe/ofício e
     apaga inventário, cooldowns e upgrades por inteiro.
 
-    Guildas sobrevivem inteiras -- guilda, membros, cargo do Discord e home
-    continuam de pé, ninguém refunda nem paga os 5.000 de novo. Só o caixa
-    zera: `guilda_bau` esvazia e `guildas.moedas` volta a 0, senão quem tem
-    guilda começa a temporada rico enquanto quem não tem começa do zero.
+    Guildas sobrevivem inteiras -- guilda, membros e cargo do Discord
+    continuam de pé, ninguém refunda nem paga os 5.000 de novo. O caixa zera:
+    `guilda_bau` esvazia e `guildas.moedas` volta a 0, senão quem tem guilda
+    começa a temporada rico enquanto quem não tem começa do zero.
+
+    `andar_home` TAMBÉM volta pro andar 1 -- decisão do Rafael (19/08/2026),
+    reverte a escolha anterior de manter a home intacta no reset. Motivo:
+    manter a home enquanto o Salão zera é a mesma inconsistência que o
+    "número a vigiar" do cartão do Salão já apontava -- uma guilda podia
+    entrar na temporada nova com home no andar 10 (tier 3 da temporada
+    passada) sem ter nenhum tesouro depositado na temporada nova pra
+    justificar aquilo. O grandfather (`salao.tier_efetivo` em
+    `guildas.acao_home`) segue existindo, mas só cobre a migração ÚNICA que
+    introduziu o gate pra guildas antigas -- não deve se repetir a cada reset
+    de temporada daqui pra frente. Cooldown de troca de home
+    (`guilda_home_cooldown`) não é tocado aqui de propósito: se sobrar
+    cooldown de uma troca feita pouco antes do reset, o líder só espera até
+    ele vencer normalmente, igual sempre foi pra troca de home fora de reset.
+
+    O Salão zera do mesmo jeito, mas SEM apagar `guilda_salao` -- avançar
+    `estado_temporada.numero` já é suficiente: toda leitura de tier filtra
+    por `temporada = temporada_atual()`, então a contagem ativa volta a 0
+    tesouros (tier 0) sozinha assim que o número muda, e as linhas da
+    temporada anterior continuam intactas pra `rpg guilda salao historico`
+    (é o "a mecânica reseta, a memória não" -- ver decisoes.md § Salão da
+    Guilda). Sem isso a guilda entraria na temporada nova já no tier antigo
+    (home destravada e raide rápida) enquanto ninguém teria tesouro nenhum
+    depositado de verdade ainda.
 
     Tudo dentro do `with conectar()` de baixo: se qualquer execute() aqui
     lançar, o commit no fim do context manager nunca roda e o SQLite
@@ -684,7 +738,8 @@ def resetar_temporada():
         conn.execute("DELETE FROM instancias")
         conn.execute("DELETE FROM chefes_derrotados")
         conn.execute("DELETE FROM guilda_bau")
-        conn.execute("UPDATE guildas SET moedas = 0")
+        conn.execute("UPDATE guildas SET moedas = 0, andar_home = 1")
+        conn.execute("UPDATE estado_temporada SET numero = numero + 1 WHERE id = 1")
     return afetados
 
 
@@ -972,6 +1027,89 @@ def set_cooldown_home(guilda_id, segundos):
                ON CONFLICT(guilda_id) DO UPDATE SET expira_em = excluded.expira_em""",
             (guilda_id, time.time() + segundos),
         )
+
+
+# ---------------- Salão da Guilda ----------------
+# Uma LINHA por tesouro depositado, não um contador -- COUNT(*) já dá o tier
+# e cada linha carrega o crédito (user_id) e a assinatura opcional, sem
+# precisar de duas fontes de verdade (ver decisoes.md § Salão da Guilda).
+# Depósito é irreversível: não existe `remover_tesouro_salao` -- a única
+# escrita permitida numa linha depois de criada é a mensagem (assinatura).
+def temporada_atual():
+    with conectar() as conn:
+        row = conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()
+    return row["numero"] if row else 1
+
+
+def avancar_temporada():
+    """Mesma conta que `resetar_temporada()` já faz inline na própria
+    transação -- exposta à parte pra quem só precisa avançar a temporada sem
+    rodar o reset inteiro (testes, principalmente)."""
+    with conectar() as conn:
+        conn.execute("UPDATE estado_temporada SET numero = numero + 1 WHERE id = 1")
+        return conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()["numero"]
+
+
+def depositar_tesouro_salao(guilda_id, item, user_id, mensagem=None):
+    with conectar() as conn:
+        cur = conn.execute(
+            """INSERT INTO guilda_salao (guilda_id, item, user_id, mensagem, depositado_em, temporada)
+               VALUES (?, ?, ?, ?, ?, (SELECT numero FROM estado_temporada WHERE id = 1))""",
+            (guilda_id, item, user_id, mensagem, time.time()),
+        )
+    return cur.lastrowid
+
+
+def contar_tesouros_salao(guilda_id, temporada=None):
+    with conectar() as conn:
+        if temporada is None:
+            temporada = conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()["numero"]
+        return conn.execute(
+            "SELECT COUNT(*) FROM guilda_salao WHERE guilda_id = ? AND temporada = ?",
+            (guilda_id, temporada),
+        ).fetchone()[0]
+
+
+def tesouros_do_salao(guilda_id, temporada=None):
+    with conectar() as conn:
+        if temporada is None:
+            temporada = conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()["numero"]
+        rows = conn.execute(
+            "SELECT * FROM guilda_salao WHERE guilda_id = ? AND temporada = ? ORDER BY depositado_em",
+            (guilda_id, temporada),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def temporadas_com_salao(guilda_id):
+    """Números de temporada com pelo menos um tesouro dessa guilda, mais
+    recente primeiro -- alimenta a aba de histórico de `rpg guilda salao`."""
+    with conectar() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT temporada FROM guilda_salao WHERE guilda_id = ? ORDER BY temporada DESC",
+            (guilda_id,),
+        ).fetchall()
+    return [r["temporada"] for r in rows]
+
+
+def tesouro_salao_do_membro(guilda_id, item, user_id, temporada):
+    """A linha de UM depósito específico -- usada por editar/apagar
+    assinatura, que só mexe na própria linha do autor (ou, pro líder, na de
+    um membro nomeado)."""
+    with conectar() as conn:
+        row = conn.execute(
+            """SELECT * FROM guilda_salao
+               WHERE guilda_id = ? AND item = ? AND user_id = ? AND temporada = ?""",
+            (guilda_id, item, user_id, temporada),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def definir_mensagem_tesouro_salao(tesouro_id, mensagem):
+    """Só a assinatura muda -- contagem e tier nunca dependem desta coluna,
+    então editar/apagar não abre superfície de exploit nenhuma."""
+    with conectar() as conn:
+        conn.execute("UPDATE guilda_salao SET mensagem = ? WHERE id = ?", (mensagem, tesouro_id))
 
 
 # ---------------- chefes derrotados (andares 11+) ----------------

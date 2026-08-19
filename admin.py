@@ -84,7 +84,7 @@ PRESERVADO = (
     "a linha em `jogadores` — ninguém precisa rodar `rpg comecar` de novo",
     "títulos já concedidos, o título equipado e `criado_em` (data que alimenta o Beta Tester)",
     "contagem de mortes",
-    "a guilda em si — nome, membros, cargo do Discord e a home continuam de pé; "
+    "a guilda em si — nome, membros e cargo do Discord continuam de pé; "
     "ninguém refunda nem paga os 5.000 de fundação de novo",
 )
 
@@ -92,6 +92,11 @@ GUILDA_RESET = (
     "**baú da guilda** (`guilda_bau`) — todo item guardado é apagado",
     "**moedas da guilda** voltam a 0 — senão quem tem guilda começa a temporada "
     "rico enquanto quem não tem começa do zero",
+    "**Salão da guilda** volta a Tier 0 — o histórico de quem depositou o quê em "
+    "temporadas passadas fica guardado, só a contagem ativa reseta "
+    "(`rpg guilda salao historico`)",
+    "**home da guilda** volta pro andar 1 — junto do Salão, pra não sobrar home em "
+    "andar alto sem tesouro nenhum da temporada nova pra justificar aquele tier",
 )
 
 

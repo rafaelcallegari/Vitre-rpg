@@ -13,12 +13,13 @@ import atributos as at
 import combate
 import condicoes
 import database as db
+import salao
 import travas
 from game_data import (
     ITENS, RAIDE_CHEFE, ANDAR_MINIMO_RAIDE, ANDAR_REFERENCIA_RAIDE,
-    RECOMPENSA_MOEDAS_RAIDE, QTD_ACESSORIOS_RAIDE, COOLDOWN_RAIDE_SEGUNDOS,
-    ACESSORIOS_RAIDE,
+    RECOMPENSA_MOEDAS_RAIDE, QTD_ACESSORIOS_RAIDE, ACESSORIOS_RAIDE,
 )
+from guildas import MEMBROS_PARA_VALER
 
 H = {}
 
@@ -219,7 +220,15 @@ async def iniciar_raide(destino, ids, guilda_id, iniciador_id, editar=False):
     travas.travar_todos([c.id for c in combatentes])
     luta = combate.Luta(combatentes, RAIDE_CHEFE, ANDAR_REFERENCIA_RAIDE)
 
-    db.set_cooldown_raide(guilda_id, COOLDOWN_RAIDE_SEGUNDOS)
+    # Cooldown vem do tier do Salão, não é mais fixo -- Salão Vazio/Erguido
+    # ficam nas 2h de sempre, Guarnecido cai pra 1h30, Coroado pra 1h (nunca
+    # menos que isso, ver game_data.SALAO_TIERS e decisoes.md § Salão da
+    # Guilda -- o número a vigiar). tier_efetivo trata guilda com menos de 3
+    # membros como tier 0 mesmo com tesouro de sobra.
+    membros_count = db.contar_membros_guilda(guilda_id)
+    total_tesouros = db.contar_tesouros_salao(guilda_id)
+    cooldown = salao.tier_efetivo(total_tesouros, membros_count, MEMBROS_PARA_VALER)["cooldown_raide"]
+    db.set_cooldown_raide(guilda_id, cooldown)
     for c in combatentes:
         db.marcar_combate(c.id)
 
@@ -294,4 +303,4 @@ def instalar(bot, contexto):
         view = SalaDeEsperaRaide(j["user_id"], guilda, j)
         view.mensagem = await ctx.send(embed=view.embed(), view=view)
 
-    print("raide.py carregado — rpg raide (mínimo 3, a cada 2h por guilda).")
+    print("raide.py carregado — rpg raide (mínimo 3, cooldown de 2h a 1h por guilda conforme o tier do Salão).")

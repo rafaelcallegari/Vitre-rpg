@@ -11,7 +11,9 @@ import andares_altos
 import database as db
 import paginacao
 import pronomes
+import salao
 import travas
+from admin import ConfirmarAcao
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO
 
 H = {}
@@ -112,15 +114,23 @@ async def acao_status(ctx, j):
         inline=True,
     )
     e.add_field(name="Moedas no baú", value=f"🪙 {guilda['moedas']}", inline=True)
+    total_tesouros = db.contar_tesouros_salao(guilda["id"])
+    tier = salao.tier_por_total(total_tesouros)
+    e.add_field(
+        name="🏛️ Salão", value=f"{tier['nome']} — {total_tesouros} tesouro(s)", inline=True
+    )
     if not vale:
         e.add_field(
             name="⚠️ Ainda não vale",
-            value="Com menos de 3 membros a viagem pra home continua sendo cobrada normal.",
+            value=(
+                "Com menos de 3 membros a viagem pra home continua sendo cobrada normal "
+                "e o Salão não libera benefício nenhum, mesmo com tesouro de sobra."
+            ),
             inline=False,
         )
     restante = db.checar_cooldown_raide(guilda["id"])
     raide_txt = f"Raide em {H['fmt_tempo'](restante)}" if restante > 0 else "Raide disponível agora"
-    e.set_footer(text=f"{raide_txt} · rpg guilda bau · rpg guilda log")
+    e.set_footer(text=f"{raide_txt} · rpg guilda bau · rpg guilda salao · rpg guilda log")
     await ctx.send(embed=e)
 
 
@@ -481,6 +491,27 @@ async def acao_home(ctx, j, argumento):
             "acima do Selo não tem loja nem ferreiro, guilda não mora lá."
         )
         return
+    # Gate do Salão -- guildas que já tinham home acima do que o tier atual
+    # libera (de antes desse cartão existir) NÃO são rebaixadas em silêncio;
+    # o gate só entra na hora de TROCAR, que é ato voluntário e já tem
+    # cooldown de 3h (ver decisoes.md § Salão da Guilda -- migração).
+    total_tesouros = db.contar_tesouros_salao(guilda["id"])
+    membros = db.membros_da_guilda(guilda["id"])
+    tier = salao.tier_efetivo(total_tesouros, len(membros), MEMBROS_PARA_VALER)
+    if andar > tier["andar_home_max"]:
+        prox = salao.proximo_tier(total_tesouros)
+        extra = (
+            f" — faltam **{prox['min_tesouros'] - total_tesouros}** tesouros pro tier {prox['nome']} "
+            f"(libera até o andar {prox['andar_home_max']})"
+            if prox and len(membros) >= MEMBROS_PARA_VALER
+            else (f" — precisa de {MEMBROS_PARA_VALER}+ membros pro Salão valer alguma coisa"
+                  if len(membros) < MEMBROS_PARA_VALER else "")
+        )
+        await ctx.send(
+            f"O Salão da guilda está em **{tier['nome']}**, que libera home só até o andar "
+            f"{tier['andar_home_max']}{extra}."
+        )
+        return
     if andar > j["andar_max"]:
         await ctx.send(f"Você (o líder) ainda não destrancou o andar {andar}.")
         return
@@ -519,8 +550,21 @@ async def acao_depositar(ctx, j, argumento):
         await ctx.send("Você não está em uma guilda.")
         return
     if not argumento.strip():
-        await ctx.send("Uso: `rpg guilda depositar <item> <quantidade>`.")
+        await ctx.send(
+            "Uso: `rpg guilda depositar <item> <quantidade>` (baú) ou "
+            "`rpg guilda depositar <tesouro> [assinatura]` (Salão, irreversível)."
+        )
         return
+
+    # tesouro de chefe é um fluxo à parte -- irreversível, com confirmação e
+    # assinatura opcional (Salão), nunca cai no baú comum. Checa ANTES do
+    # parsing de quantidade porque tesouro não tem quantidade (sempre 1) e
+    # o resto do texto é a assinatura, não um número.
+    tesouro, assinatura = salao.extrair_tesouro(argumento)
+    if tesouro:
+        await salao.depositar(ctx, j, guilda, tesouro, assinatura, ConfirmarAcao)
+        return
+
     texto, qtd = H["separar_quantidade"](argumento)
     possuidos = [i["item"] for i in db.get_inventario(j["user_id"])]
     item = H["encontrar_item"](texto, possuidos)
@@ -576,6 +620,29 @@ async def acao_log(ctx, j):
     await ctx.send(embed=e)
 
 
+async def acao_salao(ctx, j, argumento):
+    guilda = db.guilda_do_membro(j["user_id"])
+    if not guilda:
+        await ctx.send("Você não está em uma guilda.")
+        return
+    partes = argumento.split(maxsplit=1)
+    sub = H["normalizar"](partes[0]) if partes else ""
+    resto = partes[1] if len(partes) > 1 else ""
+
+    if sub in ("historico", "historia"):
+        await salao.acao_historico(ctx, guilda, resto)
+    elif sub == "assinar":
+        await salao.acao_assinar(ctx, j, guilda, resto)
+    elif sub in ("apagar", "removerassinatura"):
+        await salao.acao_apagar_assinatura(ctx, j, guilda, resto)
+    elif sub == "limpar":
+        await salao.acao_limpar_assinatura(ctx, j, guilda, resto)
+    elif sub.isdigit():
+        await salao.acao_vitrine(ctx, guilda, pagina=int(sub))
+    else:
+        await salao.acao_vitrine(ctx, guilda)
+
+
 # ---------------------------------------------------------------- instalacao
 def instalar(bot, contexto):
     H.update(contexto)
@@ -616,13 +683,15 @@ def instalar(bot, contexto):
             await acao_sacar(ctx, j, resto)
         elif acao in ("log", "historico"):
             await acao_log(ctx, j)
+        elif acao in ("salao", "hall"):
+            await acao_salao(ctx, j, resto)
         else:
             await ctx.send(
                 "Não conheço esse comando de guilda. Opções: criar, convidar, aceitar, recusar, "
-                "convites, sair, expulsar, home, bau, depositar, sacar, log."
+                "convites, sair, expulsar, home, bau, depositar, sacar, log, salao."
             )
 
     print(
         "guildas.py carregado — rpg guilda "
-        "(criar/convidar/aceitar/recusar/convites/sair/expulsar/home/bau/depositar/sacar/log)."
+        "(criar/convidar/aceitar/recusar/convites/sair/expulsar/home/bau/depositar/sacar/log/salao)."
     )

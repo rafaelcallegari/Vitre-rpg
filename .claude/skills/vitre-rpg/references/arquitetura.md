@@ -59,9 +59,17 @@ bot.py        núcleo: conexão Discord, comandos de jogador (perfil, caçar,
   ├─ admin.py      import tardio — comandos do dono do bot (reset de
   │                temporada, reset individual de classe/profissão)
   ├─ guildas.py    import tardio — guildas: baú, cargo/canal no Discord,
-  │                viagem grátis pra home
+  │                viagem grátis pra home, `rpg guilda depositar` desvia pro
+  │                Salão quando o item é tipo "tesouro" (ver salao.py)
+  ├─ salao.py      sem instalar() — Salão da Guilda: tier por tesouro de
+  │                chefe (`guilda_salao`), vitrine paginada, sanitização de
+  │                assinatura. Só funções puras + views sem H, igual em
+  │                espírito a andares_altos.py/dialogos.py; importado por
+  │                guildas.py e raide.py (nenhum dos dois se importa de
+  │                volta — evita ciclo)
   ├─ raide.py      import tardio, depois de combate — chefe fixo de guilda,
-  │                reusa Luta/PainelLuta de combate.py via subclasse
+  │                reusa Luta/PainelLuta de combate.py via subclasse; lê
+  │                cooldown de `salao.tier_efetivo()` a cada disparo
   └─ efeitos.py    NÃO importado em lugar nenhum — ver seção própria abaixo
 ```
 
@@ -189,8 +197,13 @@ descanso), `upgrades` (`user_id, item` → `nivel` de melhoria +1/+2, ver
 `guilda_membros`, `guilda_bau`, `guilda_log`, `guilda_raide`,
 `guilda_convites` — convite pendente de guilda, `guilda_id, user_id` →
 `convidado_por, expira_em`, ver `decisoes.md` § Convite de guilda vira
-convite de verdade) e `chefes_derrotados` (`user_id, andar` → `vezes` — só
-importa acima do andar 10, ver `decisoes.md` § Morte e reconquista).
+convite de verdade), `chefes_derrotados` (`user_id, andar` → `vezes` — só
+importa acima do andar 10, ver `decisoes.md` § Morte e reconquista),
+`guilda_salao` (uma LINHA por tesouro depositado — `guilda_id, item, user_id,
+mensagem, depositado_em, temporada`; tier é `COUNT(*)` filtrado por
+`temporada`, nunca coluna guardada) e `estado_temporada` (linha única,
+`id=1, numero` — o contador de temporada global; `resetar_temporada()` só
+incrementa, nunca apaga `guilda_salao`, ver `decisoes.md` § Salão da Guilda).
 Nenhuma dessas precisou de migração: são tabelas novas (`CREATE TABLE IF
 NOT EXISTS` no `SCHEMA` direto), não coluna nova em tabela existente — só
 isso último passa pela dança de migração abaixo. Não há tabela de

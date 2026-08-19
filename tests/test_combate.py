@@ -164,3 +164,69 @@ def test_raide_continua_escalando_por_participante_nao_muda():
     c3 = _combatente(3)
     luta = combate.Luta([c1, c2, c3], game_data.RAIDE_CHEFE, game_data.ANDAR_REFERENCIA_RAIDE)
     assert luta.hp_chefe == game_data.RAIDE_CHEFE["hp"] * 3
+
+
+# ================================================================
+# Bug: embed de vitória não anunciava o tesouro (nem qualquer drop novo) --
+# a linha do dono tinha "🔷 Fragmento" fixo no texto, escrito quando só
+# existia um drop de chefe possível. A gravação em inventário sempre esteve
+# certa (recompensar() já rolava `chefe["drops"]" inteiro); só a MENSAGEM
+# ficou presa no que existia quando foi escrita -- mesmo formato de bug do
+# § Padrão — mapa de domínio nunca é subscript direto. Ver decisoes.md §
+# Embed de vitória anuncia todo drop do chefe, não só o fragmento fixo.
+# ================================================================
+
+def _luta_1v1(chefe, andar_num):
+    c = _combatente(1)
+    return c, combate.Luta([c], chefe, andar_num)
+
+
+def test_embed_de_vitoria_lista_fragmento_e_tesouro_no_andar_1():
+    chefe = dict(game_data.ANDARES[1]["boss"])
+    _, luta = _luta_1v1(chefe, andar_num=1)
+
+    e = asyncio.run(combate.finalizar_vitoria(luta))
+
+    campo = next(f for f in e.fields if f.name == "Recompensas")
+    assert "Fragmento do Selo" in campo.value
+    assert "Coroa Velha" in campo.value
+
+
+def test_embed_de_vitoria_lista_o_tesouro_certo_no_andar_10():
+    """Caminho idêntico ao andar 1 (mesmo `rolar_drops`, mesma lista de
+    drops 100%) -- cobre um segundo andar pra provar que não é coincidência
+    de posição na lista de drops."""
+    chefe = dict(game_data.ANDARES[10]["boss"])
+    _, luta = _luta_1v1(chefe, andar_num=10)
+
+    e = asyncio.run(combate.finalizar_vitoria(luta))
+
+    campo = next(f for f in e.fields if f.name == "Recompensas")
+    assert "Fragmento do Selo" in campo.value
+    assert "Martelo do Arquiteto" in campo.value
+
+
+def test_embed_de_vitoria_acima_do_selo_primeira_vez_mostra_o_material():
+    """Andar 11+ usa o caminho de chance (100% na primeira vitória da
+    conta) -- caminho DIFERENTE do rolar_drops de 1-10 (ver
+    recompensar()), então precisa de teste próprio."""
+    chefe = dict(game_data.ANDARES[11]["boss"])
+    _, luta = _luta_1v1(chefe, andar_num=11)
+
+    e = asyncio.run(combate.finalizar_vitoria(luta))
+
+    campo = next(f for f in e.fields if f.name == "Recompensas")
+    assert "Pluma Etérea" not in campo.value  # isso é drop de monstro comum, não de chefe
+    assert game_data.ITENS["sopro_contido"]["nome"] in campo.value
+
+
+def test_embed_de_vitoria_acima_do_selo_repeticao_com_sorte_mostra_item(monkeypatch):
+    chefe = dict(game_data.ANDARES[11]["boss"])
+    c, luta = _luta_1v1(chefe, andar_num=11)
+    db.registrar_vitoria_chefe(c.id, 11)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)  # sempre passa o 15%
+
+    e = asyncio.run(combate.finalizar_vitoria(luta))
+
+    campo = next(f for f in e.fields if f.name == "Recompensas")
+    assert game_data.ITENS["sopro_contido"]["nome"] in campo.value

@@ -4,6 +4,7 @@ import os
 import random
 import time
 import unicodedata
+from collections import Counter
 
 import discord
 from discord.ext import commands
@@ -1181,7 +1182,12 @@ async def comprar(ctx, *, argumento: str = ""):
 
     if not item:
         pista = encontrar_item(texto)
-        if pista and not ITENS[pista].get("loja", True):
+        if pista and ITENS[pista]["tipo"] == "tesouro":
+            await ctx.send(
+                f"**{ITENS[pista]['nome']}** não se compra nem se vende — só cai de chefe (andares 1-10) "
+                f"e vai pro Salão da guilda. `rpg guilda depositar {ITENS[pista]['nome']}`."
+            )
+        elif pista and not ITENS[pista].get("loja", True):
             await ctx.send(
                 f"**{ITENS[pista]['nome']}** não se compra: é item de fabricação. "
                 f"Confere `rpg receitas`."
@@ -1225,10 +1231,16 @@ async def vender(ctx, *, argumento: str = ""):
         return
     dado = ITENS[item]
     if not dado.get("vendavel", True):
-        await ctx.send(
-            f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é "
-            f"material de fabricação. Guarda."
-        )
+        if dado["tipo"] == "tesouro":
+            await ctx.send(
+                f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é pro Salão da guilda. "
+                f"`rpg guilda depositar {dado['nome']}`."
+            )
+        else:
+            await ctx.send(
+                f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é "
+                f"material de fabricação. Guarda."
+            )
         return
 
     unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
@@ -1535,7 +1547,47 @@ async def titulo(ctx, *, argumento: str = ""):
     )
 
 
-def embed_info_classe(chave, pronome=None):
+def _texto_distancia_nivel(nivel_alvo, nivel_jogador):
+    """Frase de distância até um nível-alvo, ou None se já foi alcançado.
+    Existe centralizada pra singular/plural não divergir entre as duas telas
+    de ascensão (`rpg classe` e `rpg ascencao`)."""
+    faltam = nivel_alvo - nivel_jogador
+    if faltam >= 2:
+        return f"faltam {faltam} níveis"
+    if faltam == 1:
+        return "falta 1 nível"
+    return None
+
+
+def campo_ascensao(chave_base, nivel_jogador=None):
+    """Título e valor do field "Ascensão" de uma base, pra `rpg classe` e
+    `rpg ascencao`. Sempre lido de ASCENSOES -- nenhum nível escrito à mão
+    aqui, pra não reintroduzir o problema que essa wiki existe pra resolver.
+    Se todo ramo da base abre no mesmo nível, o nível vai no título; se
+    divergirem (não acontece hoje, mas o desenho pode mudar), cada ramo
+    carrega o próprio nível no valor. Com nivel_jogador, anexa a distância
+    até o ramo mais próximo. Retorna None se a base não tiver ramo."""
+    ramos = [a for a in ASCENSOES.values() if a["base"] == chave_base]
+    if not ramos:
+        return None
+    niveis = {a["nivel"] for a in ramos}
+    menor_nivel = min(niveis)
+    if len(niveis) == 1:
+        titulo = f"Ascensão — nível {menor_nivel} (ainda não jogável)"
+        valor = ", ".join(a["nome"] for a in ramos)
+    else:
+        titulo = "Ascensão (ainda não jogável)"
+        valor = "\n".join(f"{a['nome']} — nível {a['nivel']}" for a in ramos)
+    if nivel_jogador is not None:
+        distancia = _texto_distancia_nivel(menor_nivel, nivel_jogador)
+        if distancia:
+            valor += f"\nVocê está no nível {nivel_jogador} — {distancia}."
+        else:
+            valor += "\nAbre quando a ascensão entrar no jogo."
+    return titulo, valor
+
+
+def embed_info_classe(chave, pronome=None, nivel_jogador=None):
     """Wiki de uma classe: o que ela faz, as habilidades base e os ramos de
     ascensão que ela abre mais pra frente. Tudo lido de game_data
     (CLASSES/HABILIDADES/ASCENSOES) -- texto solto aqui desatualizaria sozinho
@@ -1558,9 +1610,10 @@ def embed_info_classe(chave, pronome=None):
             value=skill["desc"],
             inline=False,
         )
-    ramos = [a["nome"] for a in ASCENSOES.values() if a["base"] == chave]
-    if ramos:
-        e.add_field(name="Ascensão (ainda não jogável)", value=", ".join(ramos), inline=False)
+    campo = campo_ascensao(chave, nivel_jogador)
+    if campo:
+        titulo, valor = campo
+        e.add_field(name=titulo, value=valor, inline=False)
     e.set_footer(text="Classe travada — escolhida uma vez, no despertar (`rpg comecar`), sem troca.")
     return e
 
@@ -1586,28 +1639,75 @@ async def classe_cmd(ctx, *, argumento: str = ""):
             await ctx.send("Você ainda não tem classe — o despertar (`rpg comecar`) escolhe por você.")
             return
 
-    await ctx.send(embed=embed_info_classe(alvo, j["pronome"]))
+    # nível sempre de quem pediu o comando, mesmo consultando classe alheia --
+    # a distância até a ascensão que importa aqui é a dele, não a do dono da classe.
+    await ctx.send(embed=embed_info_classe(alvo, j["pronome"], j["nivel"]))
 
 
 @bot.command(name="ascencao", aliases=["ascensao", "ascensão", "ascenção"])
 async def ascencao(ctx):
+    # jogador pode não existir (quem nunca deu `rpg comecar`) -- esse comando
+    # é justamente o mapa que essa pessoa vai consultar, então precisa
+    # sobreviver sem personagem, igual já faz pro pronome.
     j = db.get_jogador(ctx.author.id)
     pronome = j["pronome"] if j else None
+    nivel_jogador = j["nivel"] if j else None
+
+    niveis_todos = [a["nivel"] for a in ASCENSOES.values()]
+    nivel_geral = min(niveis_todos)
+    nivel_mais_comum = Counter(niveis_todos).most_common(1)[0][0]
+    promete_marca = len(set(niveis_todos)) > 1
+    if not promete_marca:
+        texto_nivel = f"A ascensão libera no nível {nivel_geral}, trocando a base por um dos 3 ramos."
+    else:
+        texto_nivel = (
+            f"A ascensão libera a partir do nível {nivel_geral}, trocando a base por um "
+            "dos 3 ramos — bases marcadas abaixo abrem em nível diferente das demais."
+        )
+
     e = discord.Embed(
         title="As 4 bases e as 12 ascensões",
         description=(
-            "Habilidades ainda não existem — isso é o mapa do que vem por aí. "
-            "A ascensão liberada por nível troca a base por um dos 3 ramos."
+            f"{texto_nivel} A ascensão ainda não é jogável — isso é o mapa do que vem por "
+            "aí; habilidades já existem e saem em `rpg classe`."
         ),
         color=0x6A4C93,
     )
     for chave, dados in CLASSES.items():
-        ramos = ", ".join(a["nome"] for a in ASCENSOES.values() if a["base"] == chave)
+        ramos = [a for a in ASCENSOES.values() if a["base"] == chave]
+        niveis_da_base = {a["nivel"] for a in ramos}
+        # Duas divergências diferentes, de propósito. A descrição acima
+        # promete marca com base na divergência GLOBAL (mais de um nível
+        # entre os 12 ramos). A marca aqui usa divergência LOCAL: os ramos
+        # desta base entre si, OU o nível desta base contra o nível mais
+        # comum das outras. Checar só a divergência interna deixava a
+        # descrição prometer marca que nenhuma base carregava sempre que uma
+        # base inteira mudasse de nível junto (ex.: os 3 ramos do mago iriam
+        # pro nível 12 e o resto ficaria no 15 -- a descrição promete marca,
+        # mas nenhuma base diverge *internamente*, e a marca nunca acendia).
+        marcada = len(niveis_da_base) > 1 or (promete_marca and niveis_da_base != {nivel_mais_comum})
+        nome_field = f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)}"
+        if marcada:
+            nome_field += " (níveis divergem)"
+            lista_ramos = ", ".join(f"{a['nome']} (nível {a['nivel']})" for a in ramos)
+        else:
+            lista_ramos = ", ".join(a["nome"] for a in ramos)
         e.add_field(
-            name=f"{dados['emoji']} {pronomes.concordar(dados['nome'], pronome)}",
-            value=f"{dados['desc']}\nAscensões: {ramos}",
+            name=nome_field,
+            value=f"{dados['desc']}\nAscensões: {lista_ramos}",
             inline=False,
         )
+
+    if nivel_jogador is not None:
+        distancia = _texto_distancia_nivel(nivel_geral, nivel_jogador)
+        if distancia:
+            rodape = f"Você está no nível {nivel_jogador} — {distancia} para a primeira ascensão abrir."
+        else:
+            rodape = "Você já passou do nível — abre quando a ascensão entrar no jogo."
+    else:
+        rodape = "Sem personagem ainda? `rpg comecar` bota você na torre."
+    e.set_footer(text=rodape)
+
     await ctx.send(embed=e)
 
 
@@ -1767,9 +1867,10 @@ def embed_ajuda():
             "`rpg guilda` — status · `rpg guilda criar <nome>` (5.000 🪙)\n"
             "`rpg guilda convidar/expulsar @alguém` · `rpg guilda sair`\n"
             "`rpg guilda aceitar/recusar <nome>` · `rpg guilda convites` — convite vale 24h\n"
-            "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro\n"
+            "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro; libera mais andar por tier do Salão\n"
             "`rpg guilda bau` · `depositar <item> <qtd>` · `sacar <item> <qtd>` · `log`\n"
-            "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, a cada 2h por guilda"
+            "`rpg guilda salao` — tier da guilda, vem de tesouro de chefe (`depositar <tesouro>`, irreversível)\n"
+            "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, cooldown de 2h a 1h conforme o tier"
         ),
         inline=False,
     )

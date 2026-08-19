@@ -507,6 +507,7 @@ async def recompensar(luta, combatente):
     fator = 1.0 if combatente.dono else fator_recompensa_ajuda(j["andar_max"], luta.andar_num)
     completou_torre = combatente.dono and luta.andar_num == ANDAR_MAXIMO
 
+    itens_dropados = []
     if combatente.dono:
         if luta.andar_num > ANDAR_ACIMA_DO_SELO:
             vezes = await db.a_vezes_derrotado_chefe(j["user_id"], luta.andar_num)
@@ -514,9 +515,11 @@ async def recompensar(luta, combatente):
             for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
                 if random.random() < chance_material:
                     await db.a_add_item(j["user_id"], item)
+                    itens_dropados.append(item)
             await db.a_registrar_vitoria_chefe(j["user_id"], luta.andar_num)
         else:
-            for item in H["rolar_drops"](chefe):
+            itens_dropados = H["rolar_drops"](chefe)
+            for item in itens_dropados:
                 await db.a_add_item(j["user_id"], item)
 
     xp_ganho = int(chefe["xp"] * fator)
@@ -540,7 +543,20 @@ async def recompensar(luta, combatente):
         pontos=H["pontos_por_subir"](j, subiu),
         moedas=j["moedas"] + moedas_ganho, andar=novo_andar, andar_max=novo_max,
     )
-    return nivel, subiu, xp_ganho, moedas_ganho
+    return nivel, subiu, xp_ganho, moedas_ganho, itens_dropados
+
+
+def _texto_item_dropado(item):
+    """Nome+emoji pro embed de vitória, puxado de ITENS (constante de
+    domínio) com `.get()` em vez de subscript direto -- a chave já foi
+    validada contra ITENS na autoria de `game_data.ANDARES`, mas um typo num
+    drop novo vira texto degradado aqui, não crash da embed de vitória
+    inteira (ver decisoes.md § Padrão — mapa de domínio nunca é subscript
+    direto)."""
+    dado = ITENS.get(item)
+    if not dado:
+        return item
+    return f"{dado.get('emoji', '')} {dado.get('nome', item)}".strip()
 
 
 async def finalizar_vitoria(luta):
@@ -549,12 +565,14 @@ async def finalizar_vitoria(luta):
     novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
     linhas = []
     for c in vencedores:
-        nivel, subiu, xp_ganho, moedas_ganho = await recompensar(luta, c)
+        nivel, subiu, xp_ganho, moedas_ganho, itens_dropados = await recompensar(luta, c)
         if c.dono:
-            linha = f"**{c.nome}** — +{xp_ganho} XP · +{moedas_ganho} 🪙 · 🔷 Fragmento"
+            linha = f"**{c.nome}** — +{xp_ganho} XP · +{moedas_ganho} 🪙"
+            if itens_dropados:
+                linha += " · " + " · ".join(_texto_item_dropado(item) for item in itens_dropados)
         else:
             linha = (f"**{c.nome}** (ajuda) — +{xp_ganho} XP · +{moedas_ganho} 🪙 "
-                      f"— sem fragmento, sem progresso de andar")
+                      f"— sem material, sem progresso de andar")
         if subiu:
             linha += f"\n· subiu para o **nível {nivel}** (+{at.PONTOS_POR_NIVEL * subiu} pontos)"
         linhas.append(linha)

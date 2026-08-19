@@ -60,13 +60,14 @@ class PaginacaoView(discord.ui.View):
     (não só desabilita) — é lista, não decisão, então um botão morto na
     tela não vale a pena manter."""
 
-    def __init__(self, autor_id, paginas, montar_embed, pagina_inicial=0):
+    def __init__(self, autor_id, paginas, montar_embed, pagina_inicial=0, allowed_mentions=None):
         super().__init__(timeout=TIMEOUT_PAGINACAO)
         self.autor_id = autor_id
         self.paginas = paginas
         self.montar_embed = montar_embed   # (indice, dados_da_pagina) -> discord.Embed
         self.pagina = max(0, min(pagina_inicial, len(paginas) - 1))
         self.mensagem = None
+        self.allowed_mentions = allowed_mentions
         self._atualizar_botoes()
 
     def _atualizar_botoes(self):
@@ -88,13 +89,17 @@ class PaginacaoView(discord.ui.View):
     async def anterior(self, interaction, button):
         self.pagina = max(0, self.pagina - 1)
         self._atualizar_botoes()
-        await interaction.response.edit_message(embed=self.embed_atual(), view=self)
+        await interaction.response.edit_message(
+            embed=self.embed_atual(), view=self, allowed_mentions=self.allowed_mentions
+        )
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
     async def proxima(self, interaction, button):
         self.pagina = min(len(self.paginas) - 1, self.pagina + 1)
         self._atualizar_botoes()
-        await interaction.response.edit_message(embed=self.embed_atual(), view=self)
+        await interaction.response.edit_message(
+            embed=self.embed_atual(), view=self, allowed_mentions=self.allowed_mentions
+        )
 
     async def on_timeout(self):
         if self.mensagem is None:
@@ -108,10 +113,15 @@ class PaginacaoView(discord.ui.View):
 async def enviar_paginado(
     ctx, entradas, titulo, cor, descricao=None, rodape_extra="",
     por_pagina=ITENS_POR_PAGINA, pagina_inicial=1, mensagem_vazia="Nada pra mostrar aqui.",
+    allowed_mentions=None,
 ):
     """Monta e envia a lista paginada. pagina_inicial é 1-indexado (o que o
     jogador digita: `rpg receitas 2`) — fora do intervalo é só recortado pro
-    mais perto, sem virar erro."""
+    mais perto, sem virar erro. `allowed_mentions` passa direto pro
+    envio/edição de cada página -- quem lista texto de jogador (assinatura do
+    Salão, por exemplo) manda `discord.AllowedMentions.none()` aqui pra
+    nenhuma menção pingar de verdade, mesmo que algo escape da validação de
+    entrada (ver decisoes.md § Salão da Guilda)."""
     if not entradas:
         await ctx.send(mensagem_vazia)
         return
@@ -131,8 +141,8 @@ async def enviar_paginado(
         return e
 
     if total == 1:
-        await ctx.send(embed=montar(0, paginas[0]))
+        await ctx.send(embed=montar(0, paginas[0]), allowed_mentions=allowed_mentions)
         return
 
-    view = PaginacaoView(ctx.author.id, paginas, montar, pagina_inicial=indice_inicial)
-    view.mensagem = await ctx.send(embed=view.embed_atual(), view=view)
+    view = PaginacaoView(ctx.author.id, paginas, montar, pagina_inicial=indice_inicial, allowed_mentions=allowed_mentions)
+    view.mensagem = await ctx.send(embed=view.embed_atual(), view=view, allowed_mentions=allowed_mentions)
