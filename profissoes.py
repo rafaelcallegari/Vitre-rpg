@@ -5,6 +5,7 @@
 import random
 
 import discord
+from discord import app_commands
 
 import atributos as at
 import database as db
@@ -425,14 +426,55 @@ def refund_desmanche(item_chave, nivel_upgrade):
 
 # ---------------------------------------------------------------- instalacao
 
+async def _executar_troca(ctx, j, resto):
+    """Corpo de `trocar` -- compartilhado entre o texto livre que o
+    fallback do grupo ainda aceita (`rpg profissao trocar <nova>`, mantido
+    por compatibilidade com quem chama o callback direto) e o subcomando
+    `trocar` de verdade que o slash usa. Ver decisoes.md § comandos híbridos
+    (leva 1)."""
+    nova = encontrar_profissao(resto)
+    if not nova:
+        await ctx.send("Trocar para qual? `rpg profissao trocar <forja|alquimia|encantador|joalheiro>`.")
+        return
+    if not j["profissao"]:
+        await ctx.send("Você ainda não tem ofício — o despertar (`rpg comecar`) escolhe por você.")
+        return
+    if nova == j["profissao"]:
+        await ctx.send(f"Você já é da **{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}**.")
+        return
+    if j["moedas"] < CUSTO_TROCA:
+        await ctx.send(
+            f"A troca custa **{CUSTO_TROCA}** 🪙 e você tem {j['moedas']}."
+        )
+        return
+    db.atualizar_jogador(
+        j["user_id"], profissao=nova, prof_nivel=1, prof_xp=0,
+        moedas=j["moedas"] - CUSTO_TROCA,
+    )
+    await ctx.send(
+        f"{PROFISSOES[nova]['emoji']} Agora você é da "
+        f"**{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}** "
+        f"— nível 1, do zero. Custou {CUSTO_TROCA} 🪙."
+    )
+
+
 def instalar(bot, contexto):
     H.update(contexto)
 
-    @bot.command(name="profissao", aliases=["profissão", "oficio", "ofício", "prof"])
+    @bot.hybrid_group(
+        name="profissao", aliases=["profissão", "oficio", "ofício", "prof"],
+        fallback="ver", description="Mostra sua ficha de ofício: nível, progresso e receitas.",
+    )
     async def profissao(ctx, *, argumento: str = ""):
         """Só wiki + troca -- a escolha inicial de ofício acontece dentro do
-        despertar (`rpg comecar`), não mais aqui. A troca continua aqui, é
-        onde sempre morou. Ver decisoes.md § despertar."""
+        despertar (`rpg comecar`), não mais aqui. `rpg profissao trocar <nova>`
+        digitado aqui como texto livre continua funcionando -- é o que os
+        testes de callback direto exercitam --, mas quem chama por slash usa
+        o subcomando `trocar` de verdade, logo abaixo: um grupo de slash não
+        roteia pra cá quando a primeira palavra bate com um subcomando
+        registrado (discord.py, `Group.invoke`), então na prática o prefixo
+        também passa a cair no subcomando. Ver decisoes.md § comandos
+        híbridos (leva 1)."""
         j = await H["pegar_jogador"](ctx)
         if not j:
             return
@@ -441,32 +483,9 @@ def instalar(bot, contexto):
         acao = H["normalizar"](partes[0]) if partes else ""
         resto = partes[1] if len(partes) > 1 else ""
 
-        # ---- trocar de profissao
+        # ---- trocar de profissao (texto livre -- ver docstring acima)
         if acao in ("trocar", "mudar"):
-            nova = encontrar_profissao(resto)
-            if not nova:
-                await ctx.send("Trocar para qual? `rpg profissao trocar <forja|alquimia|encantador|joalheiro>`.")
-                return
-            if not j["profissao"]:
-                await ctx.send("Você ainda não tem ofício — o despertar (`rpg comecar`) escolhe por você.")
-                return
-            if nova == j["profissao"]:
-                await ctx.send(f"Você já é da **{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}**.")
-                return
-            if j["moedas"] < CUSTO_TROCA:
-                await ctx.send(
-                    f"A troca custa **{CUSTO_TROCA}** 🪙 e você tem {j['moedas']}."
-                )
-                return
-            db.atualizar_jogador(
-                j["user_id"], profissao=nova, prof_nivel=1, prof_xp=0,
-                moedas=j["moedas"] - CUSTO_TROCA,
-            )
-            await ctx.send(
-                f"{PROFISSOES[nova]['emoji']} Agora você é da "
-                f"**{pronomes.concordar(PROFISSOES[nova]['nome'], j['pronome'])}** "
-                f"— nível 1, do zero. Custou {CUSTO_TROCA} 🪙."
-            )
+            await _executar_troca(ctx, j, resto)
             return
 
         if not j["profissao"]:
@@ -517,6 +536,17 @@ def instalar(bot, contexto):
             e.add_field(name="Receitas destravadas", value=str(len(destravadas)), inline=True)
             e.set_footer(text=f"rpg receitas · rpg craftar <item> · trocar custa {CUSTO_TROCA} 🪙")
         await ctx.send(embed=e)
+
+    @profissao.command(
+        name="trocar", aliases=["mudar"],
+        description="Troca de ofício por um custo em moedas -- zera o nível do ofício.",
+    )
+    @app_commands.describe(nova="Ofício novo: forja, alquimia, encantador ou joalheiro")
+    async def profissao_trocar(ctx, *, nova: str = ""):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        await _executar_troca(ctx, j, nova)
 
     @bot.command(name="receitas", aliases=["receita", "craftaveis"])
     async def receitas(ctx, *, argumento: str = ""):

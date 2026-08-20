@@ -4,6 +4,86 @@ Registro do que já foi decidido, com o motivo — o porquê por trás de cada
 escolha, não o status de implementação. Progresso, prioridade e o que ainda
 está em aberto vivem no Kanban Vitre, no Notion.
 
+## Comandos híbridos (leva 1) — `ajuda`, `perfil`, `classe`, `profissao`
+
+Motivo é externo ao jogo: pra aparecer no Descobrir (App Directory) do
+Discord, o app precisa usar slash command ou ter Message Content aprovado em
+review — e a segunda rota está fechada (Discord recusa pedido cuja
+justificativa é preferência por prefixo). Isso **substitui** o invariante
+antigo "Prefixo `rpg`, não slash commands" registrado mais abaixo neste
+arquivo (§ Invariantes de design do skill) — não foi revertido escondido, foi
+essa decisão que o derrubou.
+
+**`commands.hybrid_command`/`hybrid_group`, não slash em paralelo do
+prefixo**: duas implementações do mesmo comando divergem sozinhas cedo ou
+tarde (uma ganha um fix, a outra não) — hybrid usa o mesmo callback pra `rpg
+X` e `/X`, então não tem como divergir. `Context.send`/`Context.defer`
+decidem sozinhos entre resposta de interação e followup/typing conforme o
+modo (`ctx.interaction`); nenhum comando desta leva tem branch manual pra
+isso.
+
+**Fatiado, não a base inteira de uma vez**: são ~30 comandos de prefixo no
+bot. Converter tudo de uma vez e descobrir em produção que hybrid quebra algo
+específico (ordem de parsing de argumento, um converter que não tem
+Transformer equivalente, um Group cujo roteamento muda com subcomando de
+verdade) significa depurar às cegas em meio a trinta candidatos. Essa leva é
+só leitura pura (`ajuda`, `perfil`, `classe`, `profissao`) — sem escrita em
+banco fora da troca de ofício, que já existia. Levas seguintes (combate,
+economia, trade, guilda, admin) só entram depois desta validada em produção
+de verdade (usuário real batendo `/perfil` no Discord, não só teste).
+
+**`rpg perfil` ganhou `await ctx.defer()`**: é o único dos quatro que faz
+IO de rede fora do SQLite — `avatar.obter_avatar_atualizado` chama
+`canal.fetch_message()` quando o cache da URL do avatar já venceu, e isso
+pode passar dos 3s que uma interação dá pra primeira resposta. `defer()` é
+no-op fora de interação (código de verdade do discord.py,
+`ext/commands/context.py`), então chamar sem checar o modo é seguro — mesmo
+padrão de "não escrever branch manual" do `Context.send`. `ajuda`/`classe`/
+`profissao` só leem SQLite (rápido) e constantes em memória — não precisam.
+
+**`profissao` virou `hybrid_group` com `fallback="ver"`, `trocar` virou
+subcomando de verdade**: grupo de slash não é invocável direto (API do
+Discord não suporta), por isso o fallback. O corpo do callback do grupo
+continua aceitando `rpg profissao trocar <nova>` como texto livre — não
+porque é o caminho real de dispatch (não é mais: `HybridGroup` sempre liga
+`invoke_without_command`, então `Group.invoke` casa a primeira palavra contra
+`all_commands` **antes** de rodar o callback do grupo, e "trocar" agora bate
+com o subcomando de verdade tanto por prefixo quanto por slash) — e sim
+porque `tests/test_classe_profissao_wiki.py` chama
+`bot.get_command("profissao").callback(ctx, argumento="trocar ...")`
+direto, pulando o dispatch do discord.py inteiro. Pra não duplicar a lógica
+de troca em dois lugares (e não editar aquele teste, que a validação desta
+leva pede pra manter intocado), a troca em si virou `_executar_troca(ctx, j,
+resto)`, chamada tanto pelo ramo de texto livre do fallback quanto pelo
+subcomando `trocar` novo — texto do ramo velho fica tecnicamente inalcançável
+via uso real, mas não é lógica duplicada, é a mesma função.
+
+**Sync manual (`rpg sync [guild_id]` em `admin.py`, dono do bot), não
+`tree.sync()` no `on_ready`**: sync global demora até 1h pra propagar nos
+clientes — chamar isso toda vez que o bot reinicia (que acontece bastante
+num bot rodando no PC de casa) seria rate-limit e demora sem necessidade.
+Sync por guild com `copy_global_to` + `sync(guild=...)` (padrão do próprio
+discord.py pra isso) é instantâneo — é como cada leva vai ser testada no
+servidor de verdade antes de liberar globalmente.
+
+**`on_command_error` não precisou de espelho em `tree.on_error`**: conferido
+direto no código instalado (`discord/ext/commands/hybrid.py`,
+`_invoke_with_namespace`) — erro de comando híbrido invocado via slash cai
+em `command.dispatch_error(ctx, exc)`, a mesma `Command.dispatch_error` de
+`ext/commands/core.py` que todo comando de prefixo já usa, que sempre termina
+em `ctx.bot.dispatch('command_error', ctx, error)` num `finally`. Os dois
+caminhos de invocação convergem pro mesmo `on_command_error` de sempre — a
+guarda `has_error_handler()` que já existia continua valendo pros dois.
+Prova em `tests/test_hybrid_commands.py::test_erro_em_comando_hibrido_convergiu_pro_mesmo_handler_nos_dois_modos`.
+
+**`FakeCtx` de `tests/test_avatar.py` ganhou `self.defer = AsyncMock()`**:
+não é mudança de asserção nem de comportamento testado — `rpg perfil` agora
+chama `ctx.defer()` de verdade (ver acima), e uma `Context` de verdade sempre
+tem esse método (é no-op fora de interação). O fake só passou a imitar a
+interface real que já deveria ter; sem isso `test_fetch_message_falhando_
+nao_quebra_perfil` quebraria com `AttributeError`, não por regressão de
+comportamento.
+
 ## ATK dos chefes 11-15 reduzido em 60
 
 Pedido direto do Rafael, sem diagnóstico prévio dele — só a conta de

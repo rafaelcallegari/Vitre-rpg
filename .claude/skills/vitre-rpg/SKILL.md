@@ -120,7 +120,13 @@ pedido novo entrar em conflito com alguma.
 - **Combate por turnos com botões é só do chefe.** Caçada é instantânea.
 - **Conteúdo é original.** A torre é inspirada em SAO, mas nomes de monstro,
  chefe e NPC são inventados — nada de personagem ou chefe do anime.
-- **Prefixo `rpg`, não slash commands.** Exige Message Content Intent ligado.
+- **Prefixo `rpg` continua existindo e a maioria dos comandos ainda é só
+ prefixo (exige Message Content Intent ligado)** — mas isso está sendo
+ desfeito aos poucos: comando novo ou tocado numa leva de conversão vira
+ `commands.hybrid_command`/`hybrid_group` (responde a `rpg X` e `/X` com o
+ mesmo callback), motivo é o Discord exigir slash pra aparecer no Descobrir.
+ Ver decisoes.md § Comandos híbridos (leva 1) antes de assumir que um
+ comando é prefixo-only.
 
 ## Como falar com ele
 

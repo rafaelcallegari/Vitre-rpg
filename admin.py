@@ -385,6 +385,40 @@ def instalar(bot):
             return
         raise erro
 
+    @bot.command(name="sync")
+    @commands.is_owner()
+    async def sync_cmd(ctx, guild_id: int = None):
+        """Nunca roda sozinho no `on_ready` -- sync global demora até 1h pra
+        propagar nos clientes e a gente não quer isso disparando toda vez que
+        o bot reinicia. Com `guild_id`, `copy_global_to` + `sync(guild=...)`
+        é o padrão do próprio discord.py pra colocar os comandos globais
+        instantâneos numa guild só -- é como o Rafael testa cada leva antes
+        de esperar a propagação global. Ver decisoes.md § comandos híbridos
+        (leva 1)."""
+        if guild_id is not None:
+            guild = discord.Object(id=guild_id)
+            bot.tree.copy_global_to(guild=guild)
+            sincronizados = await bot.tree.sync(guild=guild)
+            await ctx.send(
+                f"✅ {len(sincronizados)} comando(s) sincronizado(s) na guild `{guild_id}` — já deve aparecer."
+            )
+            return
+
+        sincronizados = await bot.tree.sync()
+        await ctx.send(
+            f"✅ {len(sincronizados)} comando(s) sincronizado(s) globalmente — pode levar até 1h pra propagar."
+        )
+
+    @sync_cmd.error
+    async def sync_cmd_erro(ctx, erro):
+        if isinstance(erro, commands.NotOwner):
+            await ctx.send("Esse comando é só do dono do bot.")
+            return
+        if isinstance(erro, commands.BadArgument):
+            await ctx.send("Uso: `rpg sync` (global) ou `rpg sync <id da guild>` (instantâneo, pra teste).")
+            return
+        raise erro
+
     @bot.command(name="manutencao")
     @commands.is_owner()
     async def manutencao_cmd(ctx, arg: str = None):
@@ -431,4 +465,7 @@ def instalar(bot):
             return
         raise erro
 
-    print("admin.py carregado — rpg resetartemporada, rpg resetarjogador, rpg aviso e rpg manutencao (dono do bot).")
+    print(
+        "admin.py carregado — rpg resetartemporada, rpg resetarjogador, rpg aviso, "
+        "rpg manutencao e rpg sync (dono do bot)."
+    )

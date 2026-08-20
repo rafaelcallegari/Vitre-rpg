@@ -7,6 +7,7 @@ import unicodedata
 from collections import Counter
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -586,8 +587,18 @@ async def comecar(ctx):
     await despertar.iniciar_despertar(ctx, canal, dialogo_view_cls=DialogoView)
 
 
-@bot.command(name="perfil", aliases=["profile", "p", "eu"])
+@bot.hybrid_command(
+    name="perfil", aliases=["profile", "p", "eu"],
+    description="Mostra a ficha de um jogador: nível, atributos, equipamento e progresso na torre.",
+)
+@app_commands.describe(membro="De quem ver a ficha (deixe vazio pra ver a sua)")
 async def perfil(ctx, membro: discord.Member = None):
+    # HTTP pro Discord dentro de obter_avatar_atualizado (fetch_message quando
+    # o cache da URL venceu) pode passar os 3s que a interação dá pra
+    # primeira resposta -- defer() é no-op fora de interação (invocação por
+    # prefixo), então é seguro chamar sem checar o modo. Ver decisoes.md §
+    # comandos híbridos (leva 1).
+    await ctx.defer()
     alvo = membro or ctx.author
     j = db.get_jogador(alvo.id)
     if not j:
@@ -1618,7 +1629,11 @@ def embed_info_classe(chave, pronome=None, nivel_jogador=None):
     return e
 
 
-@bot.command(name="classe", aliases=["class", "vocacao", "vocação"])
+@bot.hybrid_command(
+    name="classe", aliases=["class", "vocacao", "vocação"],
+    description="Mostra habilidades e ascensão de uma classe. Sem argumento, mostra a sua.",
+)
+@app_commands.describe(argumento="Nome da classe a consultar (deixe vazio pra ver a sua)")
 async def classe_cmd(ctx, *, argumento: str = ""):
     """Só wiki -- a escolha de classe acontece dentro do despertar
     (`rpg comecar`), não aqui. Sem argumento, mostra a classe do próprio
@@ -1882,7 +1897,10 @@ def embed_ajuda():
     return e
 
 
-@bot.command(name="ajuda", aliases=["help", "comandos"])
+@bot.hybrid_command(
+    name="ajuda", aliases=["help", "comandos"],
+    description="Lista os comandos do jogo por categoria.",
+)
 async def ajuda(ctx):
     await ctx.send(embed=embed_ajuda())
 

@@ -128,6 +128,11 @@ class FakeCtx:
         self.message = MagicMock()
         self.message.attachments = anexos or []
         self.send = AsyncMock()
+        # `rpg perfil` virou híbrido e chama `ctx.defer()` antes do fetch de
+        # avatar (ver decisoes.md § comandos híbridos leva 1) -- Context de
+        # verdade sempre tem esse método (no-op fora de interação), então o
+        # fake precisa continuar imitando a interface real.
+        self.defer = AsyncMock()
 
 
 class FakeMembro:
