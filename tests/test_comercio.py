@@ -48,15 +48,120 @@ def _jogador(moedas=10000, andar=1, andar_max=1, pronome="elu", **campos):
 # ---------------- funções puras de montagem de select ----------------
 def test_opcoes_compra_mostra_nome_e_preco():
     disponiveis = {"pocao_p": game_data.ITENS["pocao_p"]}
-    opcoes = comercio._opcoes_compra(disponiveis)
+    j = _jogador()
+    opcoes = comercio._opcoes_compra(j, bot.stats(j), disponiveis)
     assert len(opcoes) == 1
     assert opcoes[0].value == "pocao_p"
     assert str(game_data.ITENS["pocao_p"]["preco"]) in opcoes[0].description
 
 
 def test_opcoes_compra_capa_em_25():
-    disponiveis = {f"item_{i}": {"nome": f"Item {i}", "preco": 10, "emoji": None} for i in range(40)}
-    assert len(comercio._opcoes_compra(disponiveis)) == 25
+    disponiveis = {
+        f"item_{i}": {"nome": f"Item {i}", "preco": 10, "emoji": None, "tipo": "material"}
+        for i in range(40)
+    }
+    j = _jogador()
+    assert len(comercio._opcoes_compra(j, bot.stats(j), disponiveis)) == 25
+
+
+# ---------------- status na compra: stat/delta, marcas, teto de 100 chars ----------------
+def test_descricao_compra_arma_mostra_atk_e_delta_contra_a_equipada():
+    j = _jogador(arma="espada_ferro")   # atk 8
+    disponiveis = {"espada_aco": game_data.ITENS["espada_aco"]}   # atk 20
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    assert "atk 20" in opcao.description
+    assert "+12" in opcao.description
+    assert "Espada de Ferro" in opcao.description
+
+
+def test_descricao_compra_armadura_mostra_def_e_delta_contra_a_equipada():
+    j = _jogador(armadura="couro")   # def 5
+    disponiveis = {"cota_malha": game_data.ITENS["cota_malha"]}   # def 12
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    assert "def 12" in opcao.description
+    assert "+7" in opcao.description
+
+
+def test_descricao_compra_pocao_mostra_cura_sem_delta():
+    j = _jogador()
+    disponiveis = {"pocao_p": game_data.ITENS["pocao_p"]}
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    assert "cura 60" in opcao.description
+    assert "vs" not in opcao.description
+
+
+def test_descricao_compra_material_so_mostra_preco():
+    j = _jogador()
+    disponiveis = {"presa_javali": game_data.ITENS["presa_javali"]}
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    preco = game_data.ITENS["presa_javali"]["preco"]
+    assert opcao.description == f"{preco} 🪙"
+
+
+def test_descricao_compra_acessorio_mostra_atributo_e_delta_do_mesmo_atributo():
+    j = _jogador(anel="anel_forca")   # FOR +4
+    outro_anel_forca = {**game_data.ITENS["anel_forca"], "bonus": 6, "preco": 5000}
+    disponiveis = {"anel_forca_maior": outro_anel_forca}
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    assert "FOR +6" in opcao.description
+    assert "+2" in opcao.description
+
+
+def test_descricao_compra_com_slot_vazio_mostra_absoluto_sem_vs_nada():
+    j = _jogador(arma=None)
+    disponiveis = {"espada_ferro": game_data.ITENS["espada_ferro"]}
+    opcao = comercio._opcoes_compra(j, bot.stats(j), disponiveis)[0]
+    assert "atk 8" in opcao.description
+    assert "vs" not in opcao.description
+    assert "nada" not in opcao.description.lower()
+
+
+def test_descricao_compra_sem_moeda_suficiente_marca_e_recusa_ensina_quanto_falta():
+    j = _jogador(moedas=1)
+    view = comercio.MercadorView(1, MERCADOR, 1, "elu")
+    it = _interacao(1)
+
+    async def cenario():
+        await _botao(view, "Comprar").callback(it)
+        sel_item = it.response.edit_message.call_args.kwargs["view"].children[0]
+        assert sel_item.options[0].description.startswith("💸 ")
+        chave = sel_item.options[0].value
+        it2 = _interacao(1, mensagem=it.message)
+        await sel_item._ao_escolher(it2, chave)
+        sel_qtd = it2.response.edit_message.call_args.kwargs["view"].children[0]
+        it3 = _interacao(1, mensagem=it2.message)
+        await sel_qtd._ao_escolher(it3, "1")
+        return it3
+
+    it3 = asyncio.run(cenario())
+    assert "faltam" in it3.response.send_message.call_args.kwargs["content"].lower()
+
+
+def test_marca_indisponivel_lock_quando_andar_min_acima_do_andar_max():
+    j = _jogador(andar_max=1)
+    item_travado = game_data.ITENS["espada_aco"]   # andar_min 3
+    assert comercio._marca_indisponivel(item_travado, j) == "🔒 "
+
+
+def test_teto_de_100_chars_com_o_nome_de_item_mais_longo_do_catalogo():
+    mais_longo = max(game_data.ITENS.values(), key=lambda v: len(v["nome"]))
+    j = _jogador(arma=None, armadura=None, anel=None, colar=None)
+    opcao = comercio._opcoes_compra(j, bot.stats(j), {"x": mais_longo})[0]
+    assert len(opcao.description) <= 100
+
+    # pior caso de verdade: item caro com nome longo comparado contra uma
+    # peça equipada de nome longo também -- é aqui que o delta estouraria
+    # os 100 chars se o nome não fosse truncado antes do número.
+    armas_por_nome = sorted(
+        (v for v in game_data.ITENS.values() if v.get("tipo") == "arma"),
+        key=lambda v: len(v["nome"]), reverse=True,
+    )
+    arma_longa, equipada_longa = armas_por_nome[0], armas_por_nome[1]
+    chave_equipada = next(k for k, v in game_data.ITENS.items() if v is equipada_longa)
+    j2 = _jogador(arma=chave_equipada)
+    chave_nova = next(k for k, v in game_data.ITENS.items() if v is arma_longa)
+    opcao2 = comercio._opcoes_compra(j2, bot.stats(j2), {chave_nova: arma_longa})[0]
+    assert len(opcao2.description) <= 100
 
 
 def test_opcoes_venda_so_lista_o_que_o_jogador_tem_do_tipo_certo():
@@ -72,6 +177,19 @@ def test_opcoes_venda_respeita_vendavel_false():
     db.add_item(1, "fragmento_selo", 1)   # não se vende (ver game_data)
     opcoes = comercio._opcoes_venda(1, ("material",))
     assert opcoes == []
+
+
+def test_opcoes_venda_mostra_stat_e_delta_igual_a_compra():
+    """2.3: mesmo helper de formatação de _opcoes_compra, aplicado no
+    sentido inverso -- vender uma espada melhor que a equipada mostra o
+    quanto ela perde ao ser vendida."""
+    _jogador(arma="espada_aco")   # atk 20 equipada
+    db.add_item(1, "espada_ferro", 1)   # atk 8 na mochila
+    opcoes = comercio._opcoes_venda(1, ("arma", "armadura"))
+    opcao = next(o for o in opcoes if o.value == "espada_ferro")
+    assert "atk 8" in opcao.description
+    assert "-12" in opcao.description
+    assert "Espada de Aço" in opcao.description
 
 
 def test_opcoes_equipamento_inventario_ignora_vendavel():

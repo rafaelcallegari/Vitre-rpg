@@ -105,6 +105,32 @@ def normalizar_assinatura(texto):
 
 
 # -------------------------------------------------------------------- vitrine
+def _fmt_cooldown(segundos):
+    horas = segundos // 3600
+    minutos = (segundos % 3600) // 60
+    return f"{horas}h{minutos:02d}" if minutos else f"{horas}h"
+
+
+_LINHA_CURTA = (
+    "Tesouro de chefe: segundo drop do chefe de cada andar 1–10, conta pro total da guilda "
+    "inteira, zera por temporada — sem bônus de combate."
+)
+
+
+def _texto_salao_vazio(progresso):
+    return (
+        f"{progresso}\n\n"
+        "Tesouro de chefe é o segundo drop garantido do chefe de cada andar 1–10 — não é "
+        "vendável, não equipa, não é material de craft. Só serve pro Salão.\n"
+        "O Salão conta o total depositado pela guilda inteira, não só o seu, e o progresso é "
+        "POR TEMPORADA — zera a cada reset (o que já caiu fica de pé no histórico, "
+        "`rpg guilda salao historico`).\n"
+        "O Salão **não dá bônus de combate**: o que o tier destrava é o andar máximo pra home "
+        "da guilda e um cooldown de raide menor.\n\n"
+        "`rpg guilda depositar <tesouro>` depois de vencer um chefe (1-10) preenche isso."
+    )
+
+
 def _entrada_tesouro(row):
     dado = ITENS.get(row["item"], {})
     nome_item = f"{dado.get('emoji', '')} {dado.get('nome', row['item'])}".strip()
@@ -122,25 +148,28 @@ def _descricao_progresso(total):
     prox = proximo_tier(total)
     descricao = f"**{tier['nome']}** — {total} tesouro(s) depositado(s) nesta temporada."
     if prox:
-        descricao += f" Faltam **{prox['min_tesouros'] - total}** pro próximo tier ({prox['nome']})."
+        descricao += (
+            f" Faltam **{prox['min_tesouros'] - total}** pro tier **{prox['nome']}** — libera home "
+            f"até o andar {prox['andar_home_max']} e cooldown de raide de {_fmt_cooldown(prox['cooldown_raide'])}."
+        )
     else:
-        descricao += " Tier máximo."
+        descricao += " Tier máximo — nada mais pra destravar aqui."
     return descricao
 
 
 async def acao_vitrine(ctx, guilda, pagina=1):
     temporada = db.temporada_atual()
     linhas = db.tesouros_do_salao(guilda["id"], temporada)
-    descricao = _descricao_progresso(len(linhas))
+    total = len(linhas)
+    progresso = _descricao_progresso(total)
+    descricao = f"{_LINHA_CURTA}\n{progresso}" if total else _texto_salao_vazio(progresso)
     entradas = [_entrada_tesouro(r) for r in linhas]
     await paginacao.enviar_paginado(
         ctx, entradas, f"🏛️ Salão de {guilda['nome']}", COR_SALAO,
         descricao=descricao,
         rodape_extra="rpg guilda depositar <tesouro> · rpg guilda salao historico",
         pagina_inicial=pagina,
-        mensagem_vazia=(
-            f"{descricao}\n`rpg guilda depositar <tesouro>` depois de vencer um chefe (1-10) preenche isso."
-        ),
+        mensagem_vazia=_texto_salao_vazio(progresso),
         allowed_mentions=discord.AllowedMentions.none(),
     )
 

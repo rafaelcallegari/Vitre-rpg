@@ -433,6 +433,55 @@ def test_vitrine_vazia_nao_estoura():
     ctx.send.assert_awaited()
 
 
+def test_vitrine_com_zero_tesouros_explica_o_que_e_o_salao():
+    """Estado vazio precisa ensinar: o que é o tesouro, que o Salão conta o
+    total da guilda, que o progresso é por temporada e que não há bônus de
+    combate -- ver decisoes.md § comunicação do Salão."""
+    guilda_id = _guilda(lider_id=1)
+    guilda = db.get_guilda(guilda_id)
+    ctx = FakeCtx(1)
+
+    asyncio.run(salao.acao_vitrine(ctx, guilda))
+
+    texto = ctx.send.call_args[0][0]
+    assert "não é vendável" in texto
+    assert "guilda inteira" in texto
+    assert "TEMPORADA" in texto
+    assert "não dá bônus de combate" in texto
+
+
+def test_vitrine_com_tesouros_mostra_tier_total_e_o_que_o_proximo_destrava():
+    guilda_id = _guilda(lider_id=1)
+    db.depositar_tesouro_salao(guilda_id, "elmo_de_ignar", 1, "")
+    guilda = db.get_guilda(guilda_id)
+    ctx = FakeCtx(1)
+
+    asyncio.run(salao.acao_vitrine(ctx, guilda))
+
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "Salão Vazio" in embed.description
+    assert "1 tesouro" in embed.description
+    assert "Faltam **5**" in embed.description
+    assert "andar 5" in embed.description   # tier 1 libera home até o andar 5
+    assert "2h" in embed.description        # tier 1 mantém cooldown de raide em 2h
+
+
+def test_vitrine_no_tier_maximo_nao_mostra_faltam():
+    guilda_id = _guilda(lider_id=1)
+    catalogo = salao.tesouros_do_catalogo()
+    for i in range(36):
+        db.depositar_tesouro_salao(guilda_id, catalogo[i % len(catalogo)], 100 + i, "")
+    guilda = db.get_guilda(guilda_id)
+    ctx = FakeCtx(1)
+
+    asyncio.run(salao.acao_vitrine(ctx, guilda))
+
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "Salão Coroado" in embed.description
+    assert "Faltam" not in embed.description
+    assert "máximo" in embed.description
+
+
 def test_assinatura_sobrevive_ao_reset_no_arquivo_da_temporada_anterior():
     guilda_id = _guilda(lider_id=1)
     temporada_1 = db.temporada_atual()

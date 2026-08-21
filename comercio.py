@@ -6,6 +6,7 @@
 # decisoes.md § Comércio dentro do diálogo e § Ações de diálogo de todos os NPCs.
 import discord
 
+import atributos as at
 import database as db
 import dialogos
 import npcs
@@ -41,11 +42,102 @@ class ShimCtx:
             await self._interaction.response.send_message(**kwargs)
 
 
-# ---------------- opções de select ----------------
-def _opcoes_compra(disponiveis):
+# ---------------- opções de select: preço + stat + status ----------------
+def _truncar(texto, limite):
+    return texto if len(texto) <= limite else texto[: limite - 1] + "…"
+
+
+def _texto_stat_absoluto(item_dado):
+    """Valor bruto do item, sem comparação nenhuma -- "" pra tipo sem stat
+    pra mostrar (material, joia crua ainda sem atributo lapidado)."""
+    tipo = item_dado.get("tipo")
+    if tipo == "arma":
+        return f"atk {item_dado.get('atk', 0)}"
+    if tipo == "armadura":
+        return f"def {item_dado.get('def', 0)}"
+    if tipo in ("anel", "colar") and "atributo" in item_dado:
+        sigla = at.ATRIBUTOS[item_dado["atributo"]]["sigla"]
+        return f"{sigla} +{item_dado.get('bonus', 0)}"
+    if tipo == "consumivel":
+        return H["descricao_cura"](item_dado)
+    return ""
+
+
+def _par_equipado(s, item_dado):
+    """(chave, dado) da peça equipada no MESMO slot do item_dado, lido de
+    `H["stats"](j)["equipamento"]` (já resolve bônus de melhoria/joia/
+    encantamento da instância -- ver decisoes.md § Instâncias de item).
+    None se o tipo não tem slot (poção, material) ou o slot está vazio."""
+    tipo = item_dado.get("tipo")
+    if tipo not in ("arma", "armadura", "anel", "colar"):
+        return None
+    return s["equipamento"].get(tipo)
+
+
+def _delta_comparavel(item_dado, dado_eq):
+    """Diferença numérica contra a peça equipada, ou None quando não há
+    base comparável (anel/colar de atributo diferente -- comparar +4 FOR
+    com +2 INT não informa nada)."""
+    tipo = item_dado.get("tipo")
+    if tipo == "arma":
+        return item_dado.get("atk", 0) - dado_eq.get("atk", 0)
+    if tipo == "armadura":
+        return item_dado.get("def", 0) - dado_eq.get("def", 0)
+    if tipo in ("anel", "colar") and item_dado.get("atributo") == dado_eq.get("atributo"):
+        return item_dado.get("bonus", 0) - dado_eq.get("bonus", 0)
+    return None
+
+
+def _marca_indisponivel(item_dado, j):
+    """💸 sem moeda pro preço, 🔒 sem requisito (andar_min) -- os dois
+    continuam clicáveis nos selects de Comprar; a recusa de verdade (e o
+    ensino da regra: quanto falta, onde fica o ferreiro certo) acontece no
+    comando de texto por trás (`comprar()`, bot.py), não aqui. 🔒 hoje não
+    dispara na prática -- os call sites de `_opcoes_compra` já filtram
+    `disponiveis` por andar_min/andar_max antes de chegar aqui (mercador por
+    `andar_max`, ferreiro só vende do próprio andar) -- mas a checagem fica
+    correta pra se essa pré-filtragem mudar (ver decisoes.md)."""
+    if item_dado.get("andar_min", 1) > j["andar_max"]:
+        return "🔒 "
+    if item_dado.get("preco", 0) > j["moedas"]:
+        return "💸 "
+    return ""
+
+
+def _texto_stat_e_delta(item_dado, s, limite):
+    """Stat absoluto + delta contra a peça equipada do mesmo slot, dentro de
+    `limite` caracteres. Estoura truncando o NOME da peça equipada -- nunca
+    o preço, o stat ou o número do delta (ver decisoes.md § status na
+    compra)."""
+    stat = _texto_stat_absoluto(item_dado)
+    if not stat:
+        return ""
+    par = _par_equipado(s, item_dado)
+    delta = _delta_comparavel(item_dado, par[1]) if par else None
+    if delta is None:
+        return _truncar(stat, limite)
+    sinal = "+" if delta >= 0 else ""
+    nome_eq = par[1].get("nome", par[0])
+    sufixo_fixo = f" ({sinal}{delta} vs "
+    espaco_nome = limite - len(stat) - len(sufixo_fixo) - 1   # 1 = ")"
+    if espaco_nome <= 0:
+        return _truncar(stat, limite)
+    nome_cortado = nome_eq if len(nome_eq) <= espaco_nome else nome_eq[: espaco_nome - 1] + "…"
+    return f"{stat}{sufixo_fixo}{nome_cortado})"
+
+
+def _descricao_compra(item_dado, j, s, limite=100):
+    marca = _marca_indisponivel(item_dado, j)
+    prefixo = f"{marca}{item_dado['preco']} 🪙"
+    espaco_stat = limite - len(prefixo) - len(" · ")
+    stat = _texto_stat_e_delta(item_dado, s, espaco_stat) if espaco_stat > 0 else ""
+    return _truncar(f"{prefixo} · {stat}" if stat else prefixo, limite)
+
+
+def _opcoes_compra(j, s, disponiveis):
     return [
         discord.SelectOption(
-            label=v["nome"][:100], description=f"{v['preco']} 🪙",
+            label=v["nome"][:100], description=_descricao_compra(v, j, s),
             value=chave, emoji=v.get("emoji"),
         )
         for chave, v in list(disponiveis.items())[:25]
@@ -53,14 +145,20 @@ def _opcoes_compra(disponiveis):
 
 
 def _opcoes_venda(user_id, tipos):
+    j = db.get_jogador(user_id)
+    s = H["stats"](j)
     opcoes = []
     for i in db.get_inventario(user_id):
         dado = ITENS.get(i["item"])
         if not dado or dado["tipo"] not in tipos or not dado.get("vendavel", True):
             continue
         unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
+        prefixo = f"{unitario} 🪙 cada"
+        espaco_stat = 100 - len(prefixo) - len(" · ")
+        stat = _texto_stat_e_delta(dado, s, espaco_stat) if espaco_stat > 0 else ""
+        descricao = _truncar(f"{prefixo} · {stat}" if stat else prefixo, 100)
         opcoes.append(discord.SelectOption(
-            label=f"{dado['nome']} x{i['qtd']}"[:100], description=f"{unitario} 🪙 cada",
+            label=f"{dado['nome']} x{i['qtd']}"[:100], description=descricao,
             value=i["item"], emoji=dado.get("emoji"),
         ))
     return opcoes[:25]
@@ -294,7 +392,7 @@ class MercadorView(PainelComercioBase):
         j = db.get_jogador(interaction.user.id)
         disponiveis = H["a_venda"](H["consumiveis_disponiveis"](j["andar_max"]))
         await self.abrir_selecao(
-            interaction, _opcoes_compra(disponiveis),
+            interaction, _opcoes_compra(j, H["stats"](j), disponiveis),
             "Nada à venda aqui agora.", self._pedir_quantidade_e_comprar,
         )
 
@@ -316,9 +414,10 @@ class FerreiroView(PainelComercioBase):
     # -------- fileira 1: transação (comprar/vender equipamento)
     @discord.ui.button(label="Comprar", style=discord.ButtonStyle.success, row=0)
     async def comprar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
         disponiveis = H["a_venda"](H["equipamentos_do_andar"](self.andar_num))
         await self.abrir_selecao(
-            interaction, _opcoes_compra(disponiveis),
+            interaction, _opcoes_compra(j, H["stats"](j), disponiveis),
             "Nada à venda aqui agora.", self._pedir_quantidade_e_comprar,
         )
 

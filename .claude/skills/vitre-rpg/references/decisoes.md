@@ -3865,3 +3865,126 @@ intacta.
   continua de pé" já não inclui mais home) e `GUILDA_RESET` ganhou linha
   própria explicando o motivo, separada da linha do Salão — são dois campos
   diferentes zerando pela mesma razão, não vale esconder um dentro do outro.
+
+## Comunicação do Salão e dos tesouros — polimento, sem mudar mecânica
+
+Salão e os 10 tesouros já estavam em produção (subiram 20/08); tier, cálculo
+e taxa de drop continuam intactos. O pedido era só texto: `rpg guilda salao`
+não explicava o que era a coisa pra quem via zerado, e o embed de vitória
+anunciava o tesouro sem contexto nenhum de guilda.
+
+### `rpg guilda salao` — três estados, não um texto fixo (`salao.py`)
+
+- **Zero tesouros depositados**: `_texto_salao_vazio()` — bloco explicativo
+  completo: o que é o tesouro (drop garantido do chefe 1-10, não vendável,
+  não serve pra nada além do Salão), que o total é da guilda inteira, que o
+  progresso é por temporada e zera no reset (mas o histórico sobrevive em
+  `rpg guilda salao historico`), e que o Salão **não dá bônus de combate** —
+  só home mais alta e cooldown de raide menor. Enviado como texto puro (via
+  `mensagem_vazia` de `paginacao.enviar_paginado`, que já manda por
+  `ctx.send` simples quando a lista de entradas está vazia — não precisou de
+  embed novo).
+- **1+ tesouros**: `_LINHA_CURTA` (uma linha, sem repetir o bloco todo) +
+  `_descricao_progresso()` — tier atual, total, quanto falta pro próximo
+  tier **e o que esse tier destrava de verdade** (andar máximo de home +
+  cooldown de raide), lido direto de `SALAO_TIERS` em vez de só citar o
+  nome do tier. `_fmt_cooldown()` novo (`salao.py`) formata segundos como
+  "2h"/"1h30"/"1h" — sem depender de `H["fmt_tempo"]` (`bot.py`), porque
+  `salao.py` não tem `H` (é módulo "sem instalar()", ver arquitetura.md).
+- **Tier máximo**: `proximo_tier()` já devolve `None` nesse caso — `" Tier
+  máximo — nada mais pra destravar aqui."` substitui o "Faltam X" em vez de
+  concatenar em cima. Não precisou de ramo novo, só do `else` que já existia
+  em `_descricao_progresso()`.
+- Testado em `tests/test_salao_guilda.py`: os três estados (vazio explica,
+  1+ mostra tier/total/faltam/o-que-destrava, máximo não mostra "Faltam") —
+  asserções positivas sobre o texto, não só "não quebra" (os dois testes de
+  vitrine que já existiam continuam, só ganharam vizinhos).
+
+### Embed de vitória do chefe — contexto do tesouro (`combate.py`)
+
+`finalizar_vitoria` já listava o nome do item dropado (bug antigo corrigido
+antes, ver seção acima); faltava dizer o que fazer com ele quando é tesouro.
+
+- **Com guilda**: `_texto_contexto_tesouro()` mostra uma PROJEÇÃO — "se você
+  depositar isso, a guilda fica em X/Y pro tier N" — sem depositar nada de
+  verdade (isso continua sendo `rpg guilda depositar`, ato manual). Lê
+  `db.guilda_do_membro`/`db.contar_tesouros_salao` direto (funções que
+  `combate.py` já tinha disponíveis via `db`, sem import novo) e computa o
+  tier alvo com `_progresso_salao_previsto()`, uma cópia pequena e local da
+  lógica de `salao.tier_por_total`/`proximo_tier` sobre `SALAO_TIERS` (dado
+  puro de `game_data.py`, já importado). **Não chama `salao.py`** — ver nota
+  de arquitetura abaixo. **Não menciona irreversibilidade** — esse aviso já
+  existe em `salao.depositar()`, na hora do depósito de verdade; repetir
+  aqui seria alarme falso pra um item que ainda nem saiu da mochila.
+- **Sem guilda**: versão convite — que é tesouro de guilda, que vale
+  guardar, como fundar (`rpg guilda criar`) ou entrar numa que já convidou
+  (`rpg guilda convites` / `rpg guilda aceitar`). Sem número de progresso —
+  não tem guilda pra progredir.
+- **Nota de arquitetura**: `combate.py` lê guilda/Salão via `database.py`
+  (que já importa) e via `SALAO_TIERS` de `game_data.py` (dado puro) — não
+  importa `guildas.py` nem `salao.py`. Mesma regra que já vale pra
+  `guildas.py` não depender de `bot.py`: combate/habilidades/profissões não
+  dependem de módulo de feature. Custo: `_progresso_salao_previsto()`
+  duplica ~5 linhas de `salao.tier_por_total`/`proximo_tier` — aceito de
+  propósito, é mais barato que acoplar o motor de combate a um módulo de
+  guilda pra uma projeção de 2 linhas.
+- Testado em `tests/test_combate.py`: com guilda mostra "N/M" e tier certo
+  e NÃO menciona "não pode ser desfeito"; sem guilda mostra convite
+  (`rpg guilda criar`) e não mostra fração nenhuma (`/6` ausente).
+
+## Status do item na compra (`comercio.py`)
+
+Antes disso o jogador comprava às cegas: `_opcoes_compra` só mostrava nome e
+preço, sem stat nenhum. Agora a `description` do `SelectOption` (linha única,
+teto de 100 chars do Discord) mostra preço + stat + delta contra o que já
+está equipado, por tipo de item — mesmo helper (`_texto_stat_e_delta`)
+reaproveitado em `_opcoes_venda` (2.3 do pedido original: "mesmo buraco no
+sentido inverso"), sem custar refatoração nenhuma.
+
+- **Delta lê `H["stats"](j)["equipamento"]`, não `ITENS[j["arma"]]` cru** —
+  esse dict já resolve o bônus da instância (melhoria +1/+2, joia do
+  Joalheiro, encantamento do Encantador — ver decisoes.md § Instâncias de
+  item), então o delta mostrado é contra o que a peça equipada RENDE de
+  verdade, não contra o item base do catálogo.
+- **Slot vazio → stat absoluto, nunca "+24 vs nada"**: `_par_equipado()`
+  devolve `None` quando `s["equipamento"][tipo]` é `None`, e
+  `_texto_stat_e_delta` trata "sem par" e "par sem delta comparável" (ver
+  próximo item) do mesmo jeito — só o valor absoluto.
+- **Acessório sem o mesmo atributo não gera delta**: comparar um anel de
+  +4 FOR com um de +2 INT não informa nada, então `_delta_comparavel`
+  devolve `None` nesse caso e cai no mesmo ramo do slot vazio (absoluto
+  só). Delta de acessório só existe quando o item novo e o equipado têm o
+  mesmo `atributo`.
+- **Estouro de 100 chars trunca o NOME da peça equipada, nunca o preço, o
+  stat ou o número do delta** — `_texto_stat_e_delta` calcula o espaço
+  sobrando pro nome DEPOIS de reservar os números inteiros, e só corta ali
+  (com `…`). Preço e stat nunca encolhem.
+- **🔒 (requisito não cumprido) existe na formatação mas não dispara na
+  prática hoje** — decisão consciente, perguntada direto ao Rafael: os dois
+  call sites de `_opcoes_compra` (mercador, ferreiro) já filtram
+  `disponiveis` por requisito ANTES de chegar na função (mercador por
+  `andar_max`, ferreiro só vende do próprio andar — item ali sempre tem
+  `andar_min == andar atual`, nunca trancado). Mudar esse pré-filtro pra
+  mostrar prévia de tier futuro foi cogitado e recusado — Rafael escolheu
+  manter o filtro como está e só deixar `_marca_indisponivel` correta pra
+  quando/se isso mudar. `💸` (sem moeda) já dispara normalmente hoje, porque
+  preço nunca foi filtrado.
+- **Marca clicável, recusa de verdade no comando de texto por trás**: nem
+  `💸` nem `🔒` bloqueiam o clique — quem clica cai no fluxo de sempre
+  (`_pedir_quantidade_e_comprar` → `comprar()` de `bot.py` via `ShimCtx`),
+  e a recusa de lá já ensinava a regra antes desse cartão (quanto falta de
+  moeda, ou "só é forjado no andar N, manda `rpg viajar N`" pra equipamento
+  fora de alcance) — não precisou de texto novo ali, só da marca visual no
+  select.
+- **`_opcoes_venda` ganhou o mesmo stat/delta**: vender uma peça mostra o
+  que ela vale e quanto ela perde pro que já está equipado (delta negativo
+  quando a peça na mochila é pior que a equipada) — mesma função,
+  `unitario` (0.5× preço, ou preço cheio pra material) no lugar do preço de
+  compra.
+- Testado em `tests/test_comercio.py`: description por tipo (arma, armadura,
+  poção, material, acessório com/sem mesmo atributo) com asserção positiva
+  na string; slot vazio sem "vs"; sem moeda mostra `💸` E a recusa real
+  ensina quanto falta; `🔒` disparando corretamente quando testado direto
+  (fora do fluxo pré-filtrado); teto de 100 chars com o item de nome mais
+  longo do catálogo, inclusive no pior caso (nome longo comparado contra
+  peça equipada de nome longo); `_opcoes_venda` com o mesmo delta.
