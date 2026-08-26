@@ -1506,26 +1506,58 @@ usando gente de nível alto.
  `andar_max` nem nível de quem entra.
 - **HP do chefe multiplica só pelos donos ativos** (`chefe["hp"] *
  max(1, nº de donos)`, não mais `len(combatentes)`) — veterano entra sem
- inflar o chefe, é ajuda pura. Recompensa do veterano (XP e moedas, não
- HP) cai com `fator_recompensa_ajuda`: `1.0` se `andar_max - andar_chefe
- <= 0`, senão `max(0.10, 1 - 0.25*diff)` — nunca some de vez, só fica
- pouco atrativo repetir muitas vezes num andar muito abaixo do próprio.
- Drop de item do chefe e progressão de `andar`/`andar_max` são só pra
- dono; pra quem ajudou, `recompensar()` grava de volta os mesmos valores
- que a pessoa já tinha — ela não se move na torre por ter ajudado.
-- **Se todos os donos caírem ou saírem e sobrar só ajuda, a luta encerra
- sem vitória** (`Luta.donos_ativos`, checado em `PainelLuta.fim_da_luta`
- *antes* de checar `hp_chefe <= 0` ou `not luta.ativos` — assim um
- veterano não pode fechar o chefe sozinho depois que o dono cai, mesmo que
- o hit que zera o HP seja dele). `encerrar_sem_donos()` ainda cobra a
- penalidade normal de morte de qualquer dono que tenha caído antes disso.
- Não precisou mexer em `raide.py`: lá `donos_ativos == ativos` sempre (todo
- mundo é dono por padrão), então essa checagem nunca dispara nela.
+ inflar o chefe, é ajuda pura. Isso continua valendo — é a ÚNICA coisa que
+ `Combatente.dono` ainda controla (ver revisão abaixo).
 - **Cooldown de chefe (15 min) já era consumido por todo `combatente` em
  `iniciar_luta`, sem distinção** — não precisou de mudança nenhuma pra
  valer também pra quem entra só de ajuda. Fugir continua sem queimar
  (`encerrar_por_abandono` só reseta cooldown de quem `fugiu`); sumir por
  timeout continua queimando — nenhum dos dois foi tocado.
+
+### Revisão — vitória de chefe: todo participante leva tudo igual
+
+Dois relatos de jogadores terminando luta em party sem subir de andar
+mostraram que a versão original desta decisão (recompensa reduzida pra
+ajuda, nada pra quem caiu, luta sem vencedor se os donos caíssem) tinha
+efeito rejeitado na prática. Decisão do Rafael: se a party venceu, todo
+mundo que estava lá — dono ou ajuda, caído ou de pé — leva tudo igual. Só
+quem fugiu (`c.fugiu`) ou saiu por timeout (`c.saiu`) fica de fora.
+
+- **`c.caiu` não filtra mais quem `recompensar()` paga.** `finalizar_vitoria`
+ monta `vencedores` como `[c for c in luta.participantes if not (c.fugiu or
+ c.saiu)]` — antes era só `c.ativo` (excluía quem caiu). Caído recebe XP,
+ moedas, drop e sobe de andar igual a quem ficou de pé; a cura de HP/mana
+ cheios em `recompensar()` sobrescreve o HP 0 que a queda gravou (a guarda
+ `_estado_final_salvo` de `Combatente.salvar_estado()` já impede qualquer
+ laço de regravar por cima depois — nenhum laço chama `salvar_estado()`
+ depois que o embed de vitória já foi montado).
+- **`fator_recompensa_ajuda()` saiu inteira**, com as constantes
+ `REDUCAO_RECOMPENSA_POR_ANDAR_AJUDA`/`FATOR_MINIMO_RECOMPENSA_AJUDA` e os
+ testes dela. XP e moedas não têm mais desconto de "ajuda" — `recompensar()`
+ paga o valor cheio do dict do chefe pra todo mundo.
+- **O `if combatente.dono` em volta de drop/tesouro (1-10) e do material por
+ `chefes_derrotados` (11+) saiu.** As duas rotas de `recompensar()` agora
+ rodam pra todo participante que chega até ali. Acima do Selo isso inclui
+ `a_registrar_vitoria_chefe` — sem chamar pra ajuda também, ela ficaria pra
+ sempre em 100% de chance (o dela nunca seria registrado), e como o andar
+ 11 é alcançável por `rpg viajar`, isso vira farm infinito.
+- **Progressão de andar (`novo_andar`/`novo_max`) roda pra todo mundo.**
+ `novo_max = max(j["andar_max"], novo_andar)` já cobre o caso de quem
+ ajudou com `andar_max` mais alto — ela só se desloca, não perde progresso.
+ O reset do andar 15 (roguelike, volta pro `ANDAR_ACIMA_DO_SELO`) também
+ deixou de ser só do dono.
+- **`encerrar_sem_donos()` saiu inteira**, junto com `Luta.donos_ativos` e o
+ branch em `PainelLuta.fim_da_luta` que checava `not luta.donos_ativos`
+ antes de `hp_chefe <= 0`. Sem dono gateando recompensa, "os donos caíram e
+ só a ajuda terminou a luta" é só uma vitória normal — não precisa mais de
+ caminho especial.
+- **O que fica:** `donos_ids`/`Combatente.dono` continuam existindo, só
+ pra escalar `hp_chefe` nos andares 1-10 (`chefe["hp"] * max(1, nº de
+ donos)`) — descrito acima, intocado por esta revisão. `raide.py` não
+ muda: lá todo participante já era dono por padrão.
+- **A penalidade de morte não mudou.** Cair numa luta VENCIDA nunca paga
+ `a_processar_morte` — só `finalizar_derrota` (derrota total) cobra, igual
+ a antes desta revisão.
 
 ## Pix e trade
 
@@ -1711,8 +1743,7 @@ em produção, ~10 jogadores.
  chamada síncrona só:
   1. `PainelLuta.encerrar()` — libera todo mundo que ainda estava na luta.
      Cobre vitória, derrota e abandono (todos os caminhos que passam por
-     `registrar_acao` → `fim_da_luta` → `encerrar`), incluindo o caso de
-     `encerrar_sem_donos` (raide/party sem quem convocou).
+     `registrar_acao` → `fim_da_luta` → `encerrar`).
   2. `PainelLuta.on_timeout()`, no branch que resolve a última rodada e a
      luta termina de vez — **não** passa por `encerrar()` (tem o próprio
      `travar()` + `mensagem.edit()`, refino já documentado em "Refino em

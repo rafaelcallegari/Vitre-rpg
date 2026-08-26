@@ -1,7 +1,8 @@
 # tests/test_combate.py
-# fator_recompensa_ajuda — regra que a máquina de sidequest vai reusar
-# (ver decisoes.md) — mais os dois cartões de combate: HP final congelado
-# ao sair da luta (bug de produção) e HP de chefe fixo acima do Selo.
+# Vitória de chefe em party: todo participante leva tudo igual (ver
+# decisoes.md § Ajuda de veterano na party) — mais os dois cartões de
+# combate: HP final congelado ao sair da luta (bug de produção) e HP de
+# chefe fixo acima do Selo.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,24 +10,6 @@ import bot  # noqa: F401 -- popula combate.H (combate.instalar), sem conectar em
 import combate
 import database as db
 import game_data
-
-
-def test_dono_do_andar_leva_fator_cheio():
-    assert combate.fator_recompensa_ajuda(5, 5) == 1.0
-    assert combate.fator_recompensa_ajuda(3, 5) == 1.0   # diff negativo também é "dono"
-
-
-def test_fator_cai_conforme_a_distancia_cresce():
-    perto = combate.fator_recompensa_ajuda(6, 5)   # diff = 1
-    medio = combate.fator_recompensa_ajuda(7, 5)   # diff = 2
-    longe = combate.fator_recompensa_ajuda(8, 5)   # diff = 3
-    assert perto > medio > longe
-
-
-def test_fator_nunca_chega_a_zero_por_maior_que_seja_a_diferenca():
-    fator = combate.fator_recompensa_ajuda(1000, 5)
-    assert fator == combate.FATOR_MINIMO_RECOMPENSA_AJUDA
-    assert fator > 0
 
 
 # ---------------- fakes/helpers compartilhados pelas seções abaixo ----------------
@@ -265,3 +248,134 @@ def test_embed_de_vitoria_sem_guilda_mostra_convite_sem_numero():
     assert "tesouro de guilda" in campo.value
     assert "rpg guilda criar" in campo.value
     assert "/6" not in campo.value  # sem guilda, sem projeção de tier
+
+
+# ================================================================
+# Vitória de chefe: todo participante leva tudo igual
+# ================================================================
+# `c.caiu` deixou de excluir alguém de `recompensar()` -- só fuga (`fugiu`)
+# e saída por timeout (`saiu`) ficam de fora. `combatente.dono` continua
+# existindo, mas só escala o HP do chefe nos andares 1-10 -- recompensa,
+# drop e progressão de andar não olham mais pra ele. Ver decisoes.md §
+# Ajuda de veterano na party.
+
+def test_recompensar_caido_leva_xp_moedas_drop_e_andar_iguais_a_quem_ficou_de_pe():
+    chefe = dict(game_data.ANDARES[1]["boss"])
+    caido, luta = _luta_1v1(chefe, andar_num=1)
+    caido.hp = 0
+    caido.caiu = True
+
+    nivel, subiu, xp_ganho, moedas_ganho, itens_dropados = asyncio.run(
+        combate.recompensar(luta, caido)
+    )
+
+    assert xp_ganho == chefe["xp"]
+    assert moedas_ganho == chefe["moedas"]
+    assert "coroa_velha" in itens_dropados
+    assert "fragmento_selo" in itens_dropados
+    j = db.get_jogador(caido.id)
+    s = bot.stats(j)
+    assert j["andar"] == 2
+    assert j["moedas"] == chefe["moedas"]
+    assert j["hp"] == s["hp_max"]
+    assert j["mana"] == s["mana_max"]
+
+
+def test_finalizar_vitoria_inclui_quem_caiu_e_exclui_fugiu_e_saiu():
+    chefe = dict(game_data.ANDARES[1]["boss"])
+    caido = _combatente(1)
+    fugiu = _combatente(2)
+    sumiu = _combatente(3)
+    de_pe = _combatente(4)
+    luta = combate.Luta([caido, fugiu, sumiu, de_pe], chefe, andar_num=1)
+    caido.hp = 0
+    caido.caiu = True
+    fugiu.fugiu = True
+    sumiu.saiu = True
+
+    e = asyncio.run(combate.finalizar_vitoria(luta))
+
+    campo = next(f for f in e.fields if f.name == "Recompensas")
+    assert "Jogador1" in campo.value
+    assert "Jogador4" in campo.value
+    assert "Jogador2" not in campo.value
+    assert "Jogador3" not in campo.value
+    assert "(ajuda)" not in campo.value
+    assert db.get_jogador(1)["andar"] == 2   # caiu, mas a party venceu
+    assert db.get_jogador(2)["andar"] == 1   # fugiu -- sem recompensa, sem andar
+    assert db.get_jogador(3)["andar"] == 1   # saiu por timeout -- idem
+
+
+def test_party_de_tres_no_andar_1_todos_levam_o_tesouro_do_chefe():
+    chefe = dict(game_data.ANDARES[1]["boss"])
+    c1, c2, c3 = _combatente(1), _combatente(2), _combatente(3)
+    luta = combate.Luta([c1, c2, c3], chefe, andar_num=1)
+
+    asyncio.run(combate.finalizar_vitoria(luta))
+
+    for uid in (1, 2, 3):
+        itens = [i["item"] for i in db.get_inventario(uid)]
+        assert "coroa_velha" in itens
+        assert "fragmento_selo" in itens
+
+
+def test_ajuda_anda_um_andar_mas_andar_max_fica_intacto():
+    """Quem entrou só de ajuda (andar_max acima do andar do chefe) se
+    desloca pro próximo andar, mas `andar_max` não muda -- ela já tinha
+    destrancado mais longe. `max(j["andar_max"], novo_andar)` cobre isso."""
+    chefe = dict(game_data.ANDARES[1]["boss"])
+    dono = _combatente(1, andar=1, andar_max=1)
+    ajuda = _combatente(2, andar=1, andar_max=5)
+    luta = combate.Luta([dono, ajuda], chefe, andar_num=1, donos_ids=[dono.id])
+
+    asyncio.run(combate.finalizar_vitoria(luta))
+
+    j_ajuda = db.get_jogador(ajuda.id)
+    assert j_ajuda["andar"] == 2
+    assert j_ajuda["andar_max"] == 5
+
+
+def test_hp_do_chefe_nao_escala_por_ajuda_so_por_dono():
+    dono = _combatente(1, andar=5, andar_max=5)
+    ajuda = _combatente(2, andar=5, andar_max=8)
+    luta = combate.Luta(
+        [dono, ajuda], {**CHEFE_TESTE, "hp": 1000}, andar_num=5, donos_ids=[dono.id]
+    )
+    assert luta.hp_chefe == 1000
+
+
+def test_ajuda_acima_do_selo_segunda_vitoria_no_mesmo_chefe_cai_pra_quinze_por_cento(monkeypatch):
+    """Sem isso, a ajuda ficaria pra sempre em 100% -- e andar 11 é
+    alcançável por `rpg viajar`, virando farm infinito (ver decisoes.md).
+    `a_registrar_vitoria_chefe` agora roda pra todo participante, não só
+    pro dono, então a segunda vitória DELA já deve ter sido contada."""
+    chefe = dict(game_data.ANDARES[11]["boss"])
+    ajuda = _combatente(1, andar=11, andar_max=12)
+    dono = _combatente(2, andar=11, andar_max=11)
+    luta = combate.Luta([ajuda, dono], chefe, andar_num=11, donos_ids=[dono.id])
+    db.registrar_vitoria_chefe(ajuda.id, 11)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.2)  # falha o 15%, passaria no 100%
+
+    asyncio.run(combate.finalizar_vitoria(luta))
+
+    itens = [i["item"] for i in db.get_inventario(ajuda.id)]
+    assert "sopro_contido" not in itens
+
+
+def test_derrota_total_ainda_cobra_a_processar_morte_de_todo_mundo():
+    """Não regride: a punição de morte continua sendo só da derrota total
+    (`finalizar_derrota`) -- quem cai numa luta VENCIDA não paga isso (ver
+    `test_recompensar_caido_leva_xp_moedas_drop_e_andar_iguais_a_quem_ficou_de_pe`)."""
+    c1 = _combatente(1, moedas=1000)
+    c2 = _combatente(2, moedas=2000)
+    luta = combate.Luta([c1, c2], CHEFE_TESTE, andar_num=1)
+    c1.caiu = True
+    c2.caiu = True
+
+    e = asyncio.run(combate.finalizar_derrota(luta))
+
+    assert db.get_jogador(1)["moedas"] == 800
+    assert db.get_jogador(2)["moedas"] == 1600
+    campo = next(f for f in e.fields if f.name == "Derrota")
+    assert "Jogador1" in campo.value
+    assert "Jogador2" in campo.value

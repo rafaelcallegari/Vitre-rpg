@@ -36,11 +36,10 @@ FUGA_POR_DESFALQUE = 0.15    # cada companheiro perdido facilita a fuga
 HP_MINIMO_PARA_ENTRAR = 0.40
 
 # ajuda de veterano na party: quem entra num andar abaixo do próprio andar_max
-# não é "dono" daquele andar (não infla o HP do chefe, não puxa drop nem
-# progressão) — só o dono (andar_max == andar do chefe na hora que a luta
-# começa) conta pra essas coisas. Ver decisoes.md § Ajuda de veterano na party.
-REDUCAO_RECOMPENSA_POR_ANDAR_AJUDA = 0.25
-FATOR_MINIMO_RECOMPENSA_AJUDA = 0.10
+# não é "dono" daquele andar. Isso só importa pro HP do chefe nos andares
+# 1-10 (escala por nº de donos, não por participante) — recompensa, drop e
+# progressão são iguais pra todo mundo que venceu. Ver decisoes.md § Ajuda
+# de veterano na party.
 
 # rodada 1 é só do jogador: chefe não ataca, não rola carregar, não rola
 # telegraph de condição, e não abre a luta com o golpe de iniciativa por DES.
@@ -244,12 +243,13 @@ class Combatente:
 
 class Luta:
     def __init__(self, combatentes, chefe, andar_num, donos_ids=None):
-        """donos_ids: quem conta como "dono do andar" pra HP do chefe, drop e
-        progressão. None = todo mundo é dono (luta solo, raide.py) — só a
-        party de `combate.py` passa um subconjunto de propósito, pra quem
-        entrou só de ajuda (andar_max diferente do andar do chefe) não
-        inflar o chefe nem levar recompensa cheia. Ver decisoes.md § Ajuda
-        de veterano na party."""
+        """donos_ids: quem conta como "dono do andar" pra escalar o HP do
+        chefe (andares 1-10). None = todo mundo é dono (luta solo,
+        raide.py) — só a party de `combate.py` passa um subconjunto de
+        propósito, pra quem entrou só de ajuda (andar_max diferente do
+        andar do chefe) não inflar o chefe. Recompensa, drop e progressão
+        não olham `dono` — vitória é igual pra todo mundo que estava na
+        luta. Ver decisoes.md § Ajuda de veterano na party."""
         self.participantes = combatentes
         self.chefe = chefe
         self.andar_num = andar_num
@@ -280,13 +280,6 @@ class Luta:
     @property
     def ativos(self):
         return [c for c in self.participantes if c.ativo]
-
-    @property
-    def donos_ativos(self):
-        """Donos do andar ainda de pé — se isso esvaziar com gente ainda
-        ativa (ajuda sobrevivendo sozinha), a luta não vale mais pra
-        ninguém. Ver PainelLuta.fim_da_luta / encerrar_sem_donos."""
-        return [c for c in self.ativos if c.dono]
 
     @property
     def desfalque(self):
@@ -479,64 +472,49 @@ class Luta:
 
 # ---------------------------------------------------------- fim de combate
 
-def fator_recompensa_ajuda(andar_max_jogador, andar_chefe):
-    """Quanto de XP/moedas um veterano leva ajudando um andar abaixo do
-    próprio andar_max — cai com a distância, nunca some de vez. Dono do
-    andar (diff <= 0) sempre leva o fator cheio."""
-    diff = andar_max_jogador - andar_chefe
-    if diff <= 0:
-        return 1.0
-    return max(FATOR_MINIMO_RECOMPENSA_AJUDA, 1 - REDUCAO_RECOMPENSA_POR_ANDAR_AJUDA * diff)
-
-
 async def recompensar(luta, combatente):
-    """Paga um sobrevivente. Dono do andar (andar_max == andar do chefe no
-    início da luta, `combatente.dono`) leva XP/moedas cheios, drop e sobe
-    andar/andar_max. Quem entrou só de ajuda leva XP/moedas reduzidos por
-    `fator_recompensa_ajuda`, nenhum drop de chefe, e a posição na torre
-    dele não muda nem um pouco — ele só estava de visita. Acima do andar 10
-    o material de chefe (só pra dono) usa chefes_derrotados em vez da
-    chance fixa do dict: 100% na primeira vez, 15% nas repetições — senão
-    morrer de propósito vira o jeito mais eficiente de farmar material (ver
-    decisoes.md). Derrotar o chefe do andar 15 é roguelike: reseta andar/
-    andar_max pro 10 pro dono, igual à morte lá em cima. `chefes_derrotados`
-    NÃO reseta em nenhum dos dois casos — os 100% de chance são únicos na
-    vida da conta, por chefe; sem isso os 15% de repetição nunca seriam
-    alcançados (ver decisoes.md § Roguelike acima do Selo)."""
+    """Paga um participante de uma luta vencida — caído ou não, tenha
+    aberto a party ou descido só de ajuda. Ninguém leva menos: XP, moedas,
+    drop e progressão de andar são cheios pra todo mundo que chega aqui
+    (só quem fugiu ou saiu de vez fica fora da lista de quem recebe — ver
+    `finalizar_vitoria`). Acima do andar 10 o material de chefe usa
+    `chefes_derrotados` por jogador em vez da chance fixa do dict: 100% na
+    primeira vitória da conta contra aquele chefe, 15% nas repetições —
+    senão entrar só de ajuda (ou morrer de propósito) virava o jeito mais
+    eficiente de farmar material (ver decisoes.md). Derrotar o chefe do
+    andar 15 é roguelike: reseta andar/andar_max pro 10 pra todo mundo que
+    recebe, igual à morte lá em cima. `chefes_derrotados` NÃO reseta em
+    nenhum dos dois casos — os 100% de chance são únicos na vida da conta,
+    por chefe; sem isso os 15% de repetição nunca seriam alcançados (ver
+    decisoes.md § Roguelike acima do Selo)."""
     j, s, chefe = combatente.jogador, combatente.s, luta.chefe
-    fator = 1.0 if combatente.dono else fator_recompensa_ajuda(j["andar_max"], luta.andar_num)
-    completou_torre = combatente.dono and luta.andar_num == ANDAR_MAXIMO
+    completou_torre = luta.andar_num == ANDAR_MAXIMO
 
     itens_dropados = []
-    if combatente.dono:
-        if luta.andar_num > ANDAR_ACIMA_DO_SELO:
-            vezes = await db.a_vezes_derrotado_chefe(j["user_id"], luta.andar_num)
-            chance_material = 1.0 if vezes == 0 else 0.15
-            for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
-                if random.random() < chance_material:
-                    await db.a_add_item(j["user_id"], item)
-                    itens_dropados.append(item)
-            await db.a_registrar_vitoria_chefe(j["user_id"], luta.andar_num)
-        else:
-            itens_dropados = H["rolar_drops"](chefe)
-            for item in itens_dropados:
+    if luta.andar_num > ANDAR_ACIMA_DO_SELO:
+        vezes = await db.a_vezes_derrotado_chefe(j["user_id"], luta.andar_num)
+        chance_material = 1.0 if vezes == 0 else 0.15
+        for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
+            if random.random() < chance_material:
                 await db.a_add_item(j["user_id"], item)
+                itens_dropados.append(item)
+        await db.a_registrar_vitoria_chefe(j["user_id"], luta.andar_num)
+    else:
+        itens_dropados = H["rolar_drops"](chefe)
+        for item in itens_dropados:
+            await db.a_add_item(j["user_id"], item)
 
-    xp_ganho = int(chefe["xp"] * fator)
-    moedas_ganho = int(chefe["moedas"] * fator)
+    xp_ganho = int(chefe["xp"])
+    moedas_ganho = int(chefe["moedas"])
     nivel, xp, subiu = H["aplicar_xp"](j, xp_ganho)
     hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
 
-    if combatente.dono:
-        if completou_torre:
-            novo_andar = ANDAR_ACIMA_DO_SELO
-            novo_max = ANDAR_ACIMA_DO_SELO
-        else:
-            novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
-            novo_max = max(j["andar_max"], novo_andar)
+    if completou_torre:
+        novo_andar = ANDAR_ACIMA_DO_SELO
+        novo_max = ANDAR_ACIMA_DO_SELO
     else:
-        novo_andar = j["andar"]
-        novo_max = j["andar_max"]
+        novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
+        novo_max = max(j["andar_max"], novo_andar)
 
     await db.a_atualizar_jogador(
         j["user_id"], hp=hp_cheio, mana=s["mana_max"], xp=xp, nivel=nivel,
@@ -598,28 +576,27 @@ def _texto_contexto_tesouro(user_id):
 
 
 async def finalizar_vitoria(luta):
+    """Vitória: todo mundo que estava na luta e não fugiu/saiu recebe igual,
+    tenha caído ou não (só fuga e saída por timeout ficam de fora — ver
+    decisoes.md § Ajuda de veterano na party)."""
     luta.encerrada = True
-    vencedores = [c for c in luta.participantes if c.ativo]
+    vencedores = [c for c in luta.participantes if not (c.fugiu or c.saiu)]
     novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
     linhas = []
     for c in vencedores:
         nivel, subiu, xp_ganho, moedas_ganho, itens_dropados = await recompensar(luta, c)
-        if c.dono:
-            linha = f"**{c.nome}** — +{xp_ganho} XP · +{moedas_ganho} 🪙"
-            if itens_dropados:
-                linha += " · " + " · ".join(_texto_item_dropado(item) for item in itens_dropados)
-            if any(ITENS.get(item, {}).get("tipo") == "tesouro" for item in itens_dropados):
-                linha += f"\n· {_texto_contexto_tesouro(c.jogador['user_id'])}"
-        else:
-            linha = (f"**{c.nome}** (ajuda) — +{xp_ganho} XP · +{moedas_ganho} 🪙 "
-                      f"— sem material, sem progresso de andar")
+        linha = f"**{c.nome}** — +{xp_ganho} XP · +{moedas_ganho} 🪙"
+        if itens_dropados:
+            linha += " · " + " · ".join(_texto_item_dropado(item) for item in itens_dropados)
+        if any(ITENS.get(item, {}).get("tipo") == "tesouro" for item in itens_dropados):
+            linha += f"\n· {_texto_contexto_tesouro(c.jogador['user_id'])}"
         if subiu:
             linha += f"\n· subiu para o **nível {nivel}** (+{at.PONTOS_POR_NIVEL * subiu} pontos)"
         linhas.append(linha)
 
     e = luta.embed(
         titulo=f"Chefe derrotado — {luta.chefe['nome']}",
-        rodape=f"Luta encerrada na rodada {luta.rodada}. Quem sobreviveu recuperou todo o HP.",
+        rodape=f"Luta encerrada na rodada {luta.rodada}. Quem estava na luta recuperou todo o HP.",
     )
     e.add_field(name="Recompensas", value="\n".join(linhas) or "Ninguém sobrou de pé.", inline=False)
     if luta.chefe.get("fala_derrota"):
@@ -631,7 +608,7 @@ async def finalizar_vitoria(luta):
                 f"Vocês bateram o último andar. A torre guarda cada chefe que já caiu — não é "
                 f"a primeira vez pra nenhum deles, então o material de todos agora cai na "
                 f"chance baixa, não garantido. O que ela não guarda é onde vocês pararam: quem "
-                f"é dono do andar volta pro andar {ANDAR_ACIMA_DO_SELO}. Pra tentar de novo, "
+                f"estava na luta volta pro andar {ANDAR_ACIMA_DO_SELO}. Pra tentar de novo, "
                 f"começa pelo `rpg viajar {ANDAR_ACIMA_DO_SELO + 1}`."
             ),
             inline=False,
@@ -648,32 +625,6 @@ async def finalizar_vitoria(luta):
                 value="O carroceiro passa por aqui três vezes por dia e não cobra. `rpg carroca`",
                 inline=False,
             )
-    return e
-
-
-async def encerrar_sem_donos(luta):
-    """Nenhum dono do andar (quem tinha andar == andar_max ao começar a
-    luta) segue de pé — só ajuda ficou. Sem dono na luta, ela não conta pra
-    ninguém: o chefe não morre pra valer (mesmo com hp_chefe <= 0) e quem
-    ainda estava de pé não ganha nada. Quem caiu antes disso ainda paga a
-    penalidade normal de morte. Ver decisoes.md § Ajuda de veterano na
-    party."""
-    luta.encerrada = True
-    perdas = []
-    for c in luta.participantes:
-        if c.dono and c.caiu:
-            perda = await H["a_processar_morte"](c.jogador, c.s)
-            perdas.append(f"**{c.nome}** perdeu {perda} 🪙")
-    e = luta.embed(
-        titulo=f"A luta acabou sem o dono do andar — {luta.chefe['nome']}",
-        cor=COR_FUGA,
-        rodape="Sem quem convocou a luta, ela não vale pra ninguém — nem pro chefe, nem pra ajuda.",
-    )
-    e.add_field(
-        name="Sem vencedor",
-        value="\n".join(perdas) or "O dono do andar já não estava mais na luta — quem ficou só ajudava.",
-        inline=False,
-    )
     return e
 
 
@@ -1063,8 +1014,6 @@ class PainelLuta(discord.ui.View):
     async def fim_da_luta(self, interaction=None):
         """Devolve o embed final se a luta acabou, ou None se continua."""
         luta = self.luta
-        if luta.ativos and not luta.donos_ativos:
-            return await encerrar_sem_donos(luta)
         if luta.hp_chefe <= 0:
             return await finalizar_vitoria(luta)
         if not luta.ativos:
@@ -1264,14 +1213,14 @@ class SalaDeEspera(discord.ui.View):
         nomes = []
         for uid in self.inscritos:
             j = db.get_jogador(uid)
-            tag = "" if j["andar_max"] == self.andar_num else " — ajuda, recompensa reduzida"
+            tag = "" if j["andar_max"] == self.andar_num else " — ajuda (não infla o chefe)"
             nomes.append(f"• **{j['nome']}** — nível {j['nivel']}{tag}")
         e = discord.Embed(
             title=f"Party para {chefe['nome']}",
             description=(
                 f"Andar {self.andar_num}. O chefe entra com "
                 f"{texto_regra_hp_chefe(self.andar_num, chefe)} — quem só está ajudando não infla "
-                f"o chefe e leva XP/moedas reduzidos, sem fragmento e sem progresso.\n\n"
+                f"o chefe.\n\n"
                 f"Precisa estar fisicamente no andar {self.andar_num} (`rpg viajar {self.andar_num}`) "
                 f"e com pelo menos {int(HP_MINIMO_PARA_ENTRAR * 100)}% de HP."
             ),
