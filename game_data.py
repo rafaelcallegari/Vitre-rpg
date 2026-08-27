@@ -208,6 +208,21 @@ ITENS = {
                         "descricao": "Mais quente por dentro do que qualquer coisa deveria ser, tão acima do Selo."},
     "fecho_do_manto": {"vendavel": False, "loja": False, "nome": "Fecho do Manto", "emoji": "🔗", "tipo": "material",
                         "descricao": "A última peça. Ela guardou essa por mais tempo que as outras antes de entregar."},
+
+    # ---------------- Mortalha de Luz / Mortalha de Sombra ----------------
+    # A peça final, montada pela Selen (andar 9) com as quatro peças acima --
+    # única por jogador, não craftável de novo depois (as peças somem na
+    # forja). `vendavel: False`/`loja: False` de novo -- não vira moeda, não
+    # desmancha (rpg desmanchar só aceita tipo arma/armadura, e "mortalha" não
+    # é nenhum dos dois) e não passa em trade. `andar_min: 14` é só pra
+    # EQUIPAR -- forjar não exige o andar destrancado, só as quatro peças.
+    # Ver decisoes.md § Mortalha de Luz/Sombra.
+    "mortalha_luz": {"vendavel": False, "loja": False, "nome": "Mortalha de Luz", "emoji": "✨", "tipo": "mortalha",
+                      "def": 20, "andar_min": 14, "elemento": "luz",
+                      "descricao": "Não esquenta. Não pesa. Ainda assim, é a coisa mais pesada que você já vestiu."},
+    "mortalha_sombra": {"vendavel": False, "loja": False, "nome": "Mortalha de Sombra", "emoji": "🌑", "tipo": "mortalha",
+                         "def": 20, "andar_min": 14, "elemento": "sombra",
+                         "descricao": "Escura mesmo à luz. Ela não esconde você — só o que você está prestes a fazer."},
 }
 
 

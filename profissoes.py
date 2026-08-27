@@ -40,6 +40,13 @@ XP_UPGRADE = {1: 25, 2: 50}
 PCT_REFUND_DESMANCHE = 0.50
 PCT_XP_DESMANCHE = 0.40
 
+# ---- Mortalha de Luz/Sombra: única receita do jogo que ignora ofício ----
+# Selen (andar 9) monta com as quatro peças que a Guia entrega — não passa
+# por RECEITAS/craftar (isso exigiria ser Forjador, cobrar moeda e dar XP de
+# ofício, nenhuma das três se aplica aqui). Ver decisoes.md.
+ANDAR_MORTALHA = 9   # Selen, a Última Forja -- única NPC que monta a peça
+PECAS_MORTALHA = ("molde_do_manto", "fio_do_manto", "forro_do_manto", "fecho_do_manto")
+
 
 PROFISSOES = {
     # "nome" e "titulo" carregam o marcador de concordância de
@@ -684,6 +691,55 @@ def instalar(bot, contexto):
         e.set_footer(text=f"Na mochila. Equipa com `rpg equipar {ITENS[chave]['nome']}`"
                      if ITENS[chave]["tipo"] in ("arma", "armadura")
                      else "Na mochila. Usa com `rpg usar`")
+        await ctx.send(embed=e)
+
+    @bot.command(name="forjarmortalha", aliases=["montarmortalha"])
+    @travas.fora_de_luta()
+    async def forjarmortalha(ctx, *, escolha: str = ""):
+        """Selen (andar 9) monta a Mortalha de Luz/Sombra com as quatro peças
+        da Guia -- não precisa ser Forjador, de propósito (ver decisoes.md).
+        A escolha de elemento é travada: as quatro peças são consumidas e a
+        corrente da Guia não é repetível, então não tem como forjar de novo."""
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        if j["andar"] != ANDAR_MORTALHA:
+            await ctx.send(f"Só a Selen monta a mortalha, e ela fica no andar {ANDAR_MORTALHA}.")
+            return
+
+        elemento = H["normalizar"](escolha)
+        if elemento not in ("luz", "sombra"):
+            await ctx.send(
+                "Escolhe: `rpg forjarmortalha luz` ou `rpg forjarmortalha sombra`. "
+                "A escolha é travada — não tem como refazer depois."
+            )
+            return
+
+        faltando = [p for p in PECAS_MORTALHA if not db.tem_item(j["user_id"], p, 1)]
+        if faltando:
+            await ctx.send(
+                "Ainda falta: " + " · ".join(f"{ITENS[p]['emoji']} {ITENS[p]['nome']}" for p in faltando)
+            )
+            return
+
+        for peca in PECAS_MORTALHA:
+            db.remove_item(j["user_id"], peca, 1)
+        chave = f"mortalha_{elemento}"
+        db.add_item(j["user_id"], chave, 1)
+
+        dados = ITENS[chave]
+        e = discord.Embed(
+            title=f"{dados['emoji']} {dados['nome']}",
+            description=(
+                "*Selen pega as quatro peças sem pressa, e trabalha em silêncio até o fim.*\n\n"
+                "A escolha é travada — não tem como refazer."
+            ),
+            color=ANDARES[j["andar"]]["cor"],
+        )
+        e.set_footer(
+            text=f"Na mochila. Equipa com `rpg equipar {dados['nome']}` "
+                 f"(exige o andar {dados['andar_min']} destrancado)."
+        )
         await ctx.send(embed=e)
 
     @bot.command(name="melhorar", aliases=["upgrade", "aprimorar"])

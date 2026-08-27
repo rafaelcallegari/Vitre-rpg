@@ -410,7 +410,50 @@ class MercadorView(PainelComercioBase):
         await self._executar(interaction, invocar)
 
 
+class BotaoForjarMortalha(discord.ui.Button):
+    """Só existe no painel da Selen (ver FerreiroView.__init__). Abre um
+    select de 2 opções (Luz/Sombra) em vez de forjar na hora -- a escolha é
+    travada, não dá pra ter uma confirmação a menos que essa."""
+
+    def __init__(self, row):
+        super().__init__(label="Forjar Mortalha", style=discord.ButtonStyle.primary, row=row)
+
+    async def callback(self, interaction):
+        faltando = [p for p in profissoes.PECAS_MORTALHA if not db.tem_item(interaction.user.id, p, 1)]
+        if faltando:
+            await interaction.response.send_message(
+                "Ainda falta: " + " · ".join(f"{ITENS[p]['emoji']} {ITENS[p]['nome']}" for p in faltando),
+                ephemeral=True,
+            )
+            return
+        opcoes = [
+            discord.SelectOption(
+                label=ITENS["mortalha_luz"]["nome"], value="luz", emoji=ITENS["mortalha_luz"]["emoji"],
+            ),
+            discord.SelectOption(
+                label=ITENS["mortalha_sombra"]["nome"], value="sombra", emoji=ITENS["mortalha_sombra"]["emoji"],
+            ),
+        ]
+        await self.view.abrir_selecao(
+            interaction, opcoes, "Nada pra escolher.", self.view._escolher_mortalha,
+        )
+
+
 class FerreiroView(PainelComercioBase):
+    def __init__(self, autor_id, npc, andar_num, pronome):
+        super().__init__(autor_id, npc, andar_num, pronome)
+        if npc.get("dialogo") == "selen":
+            # só a Selen monta a mortalha -- ver decisoes.md § Mortalha de
+            # Luz/Sombra. Sempre visível (mesmo padrão do "Forjar" comum:
+            # ensina que a mecânica existe), a recusa por peça faltando
+            # acontece dentro do próprio botão.
+            self.add_item(BotaoForjarMortalha(row=1))
+
+    async def _escolher_mortalha(self, interaction, elemento):
+        async def invocar(ctx):
+            await H["_bot"].get_command("forjarmortalha").callback(ctx, escolha=elemento)
+        await self._executar(interaction, invocar)
+
     # -------- fileira 1: transação (comprar/vender equipamento)
     @discord.ui.button(label="Comprar", style=discord.ButtonStyle.success, row=0)
     async def comprar_btn(self, interaction, button):

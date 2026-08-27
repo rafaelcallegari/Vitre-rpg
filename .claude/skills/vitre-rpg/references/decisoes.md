@@ -4289,3 +4289,128 @@ de slots diferentes.
   mudança (troca de item desequipado, `rpg inventario` genérico), mais os
   3 de `test_status_equipamento.py` e 2 de `test_database_migracao.py`
   que a mudança de contagem/coluna esperada exigiu.
+
+## Mortalha de Luz / Mortalha de Sombra — forja com a Selen e skill própria
+
+Peça final de endgame: monta as quatro peças que a Guia entrega (molde/fio/
+forro/fecho) numa das duas mortalhas, com uma skill de equipamento que
+dobra o que a luta de chefe já tinha (poção+habilidade sempre gastam o
+turno; esta não gasta nada).
+
+### Forja — comando novo, fora do sistema de RECEITAS
+
+- **`rpg forjarmortalha <luz|sombra>` é um comando dedicado
+  (`profissoes.py`), não uma receita de `RECEITAS`/`rpg craftar`.** O
+  `craftar()` existente recusa de cara quem não tem `j["profissao"]`
+  (`if not j["profissao"]: return`) — incompatível com "não precisa ser
+  Forjador, de propósito". Também não cobra moeda, não dá XP de ofício
+  (ambos porque ignora o ofício por completo) e tem uma bifurcação de
+  resultado (luz/sombra) que o formato de receita única não modela.
+  Encaixar essas exceções dentro de `craftar()` teria significado uma
+  receita inteira de casos especiais dentro de uma função pensada pra um
+  fluxo uniforme — mais simples isolar num comando próprio.
+- **`ANDAR_MORTALHA = 9` e `PECAS_MORTALHA` (as quatro chaves) são
+  constantes nomeadas em `profissoes.py`**, reaproveitadas por
+  `comercio.py` (`profissoes.PECAS_MORTALHA`) pro botão da Selen não
+  duplicar a lista de peças.
+- **A escolha errada (`escolha` vazia ou fora de `luz`/`sombra`) recusa
+  ANTES de checar as peças** — o jogador aprende a sintaxe certa sem
+  gastar a viagem até o andar 9 achando que já tentou e falhou por falta
+  de material.
+- **Nenhuma XP de ofício, nenhum custo em moeda** — literal do card ("o
+  custo foi a subida"). Também não usa `criar_instancia`: a peça nasce
+  comum (`db.add_item`), sem melhoria nem encantamento — não foi pedido,
+  e nada no craft dela pede identidade de instância própria.
+
+### A Selen (comercio.py) — botão condicional, não um NPC-comando à parte
+
+- **`FerreiroView` ganhou um `__init__` próprio** (as outras views usam só
+  os decorators de `PainelComercioBase`) que acrescenta `BotaoForjarMortalha`
+  **só quando `npc.get("dialogo") == "selen"`** — os outros 4 ferreiros
+  (Torv/Kesh/Hjalmar/Ignatia) nunca veem esse botão. Escolhido no NPC
+  (`dialogo`), não no andar (`andar_num == 9`), porque é mais explícito
+  sobre O QUÊ está sendo checado — ela é a exceção, não o número do andar.
+- **Sempre visível pra quem fala com a Selen, mesmo sem as quatro peças**
+  — mesmo padrão já estabelecido do "Forjar" comum (visível pra todo
+  mundo, a recusa por não ser Forjador acontece dentro do clique). Clicar
+  sem as peças mostra o que falta, ephemeral, sem abrir o select de
+  luz/sombra.
+- **O botão chama o comando de verdade via `ShimCtx`**
+  (`H["_bot"].get_command("forjarmortalha")`), mesmo padrão de
+  Comprar/Vender/Forjar/Melhorar/Desmanchar — o painel é só mais uma
+  porta, a lógica mora um lugar só.
+
+### A skill — não passa por `registrar_acao` de propósito
+
+- **`BotaoMortalha` é acrescentado condicionalmente em `PainelLuta.__init__`**
+  (`self.add_item`, não decorator de classe) porque só deve existir quando
+  ALGUÉM ativo na luta qualifica (`_mortalha_disponivel`: tem a peça
+  equipada E ainda não usou nesta luta) — um decorator de classe apareceria
+  pra toda luta, mesmo sem ninguém com a peça. Em party mista (só alguns
+  com mortalha), o botão é compartilhado — mesmo padrão de Atacar/Defender
+  — e quem clica sem qualificar leva recusa ephemeral, mesmo padrão do
+  botão Habilidade pra quem não tem classe.
+- **Não chama `painel.registrar_acao()` — é a diferença central da skill.**
+  Poção e Habilidade chamam `registrar_acao(interaction, c, "pocao"/
+  "habilidade")`, que marca `c.acao` e conta como a jogada da rodada.
+  `BotaoMortalha.callback` só aplica o efeito e re-renderiza o mesmo
+  painel (`responder(...)`) sem tocar em `c.acao` — o jogador continua
+  livre pra clicar Atacar/Defender/etc. na mesma interação, porque
+  `PainelLuta.interaction_check` só bloqueia quando `c.acao` JÁ está
+  setado, e a mortalha nunca seta. **Decidido duas vezes** (o card também
+  registra isso) — não veio de graça, foi pedido explicitamente de novo
+  depois de já ter sido decidido antes.
+- **`c.mortalha_usada` (permanente, a luta inteira) e `c.sombra_ativa`
+  (só a rodada corrente) são dois flags diferentes em `Combatente`** — o
+  primeiro nunca reseta dentro da luta (é o "uma vez por luta"); o segundo
+  é zerado incondicionalmente no fim de TODA rodada, dentro do mesmo laço
+  que já zerava `c.acao`/`c.defendendo` em `Luta.turno_do_chefe()` — usada
+  ou não, o buff não atravessa pra rodada seguinte (ativar e depois
+  Defender em vez de atacar desperdiça o buff, de propósito: "nessa
+  rodada" é literal).
+- **Sombra só dobra o ataque básico, não dano de habilidade** — o
+  multiplicador entra num helper (`_aplicar_sombra`) chamado nos dois
+  lugares que já calculavam dano de "atacar" (`registrar_acao` e o
+  `on_timeout`, que duplica esse cálculo desde antes — duplicação
+  preexistente, não introduzida por este cartão).
+- **Luz não passa por `condicoes.reducao_cura_recebida`** (a redução de
+  cura que Ferida Sombria aplica em poção/regeneração) — é uma cura cheia
+  sem condição, "deliberadamente forte" (nota do próprio card no Notion).
+- **Botão desabilita a si mesmo (`self.disabled = True`) após o uso**,
+  mas o painel (`PainelLuta`) reusa a MESMA instância de View rodada após
+  rodada dentro da mesma luta — só reconstrói via `_continuar()` quando
+  uma rodada estoura por timeout. Por isso `_mortalha_disponivel` também
+  precisa ser checado de novo em `__init__` (não só o `disabled` do botão
+  velho): um painel novo pós-timeout não pode reoferecer a skill já usada.
+- **Novos ITENS (`mortalha_luz`/`mortalha_sombra`)**: `def: 20`,
+  `andar_min: 14` (só pra EQUIPAR — forjar não olha andar nenhum, só as
+  quatro peças), `elemento: "luz"/"sombra"` (lido por `BotaoMortalha` pra
+  decidir qual efeito), `vendavel: False`/`loja: False` (não vende, e
+  como consequência também não entra em trade — `_checar_item_para_oferta`
+  já lê a mesma flag). "Não desmancha" não precisou de nada novo:
+  `rpg desmanchar`/`rpg melhorar` já só aceitam `tipo in ("arma",
+  "armadura")`, e o tipo daqui é `"mortalha"`.
+- **Pendência do cartão anterior (Slot de mortalha) permanece aberta,
+  agora com item de verdade pra testar**: Encantador (`comercio.py`,
+  `profissoes.py`) ainda não reconhece o tipo `"mortalha"` nas próprias
+  listas de seleção. Continua inofensivo (silenciosamente não aparece pra
+  encantar, sem erro) — fora do escopo deste cartão, que também não pediu
+  isso.
+- Testado em `tests/test_mortalha_luz_sombra.py`: forja consome as quatro
+  peças e entrega a escolhida; sem uma peça não consome nada; não-Forjador
+  forja igual; segunda tentativa sem repor peça falha e não duplica;
+  forjar fora do andar 9 ou com escolha inválida recusa sem consumir;
+  equipar recusa sem o andar 14, funciona com ele; não vende, não
+  desmancha, não entra em oferta de troca; botão só aparece com a peça
+  equipada; Luz cura o HP cheio sem gastar a rodada (e o jogador ainda
+  ataca na mesma chamada de `registrar_acao`), uma vez só, sem tocar nos
+  contadores de poção/elixir; Sombra dobra exatamente um golpe e não dobra
+  de novo na rodada seguinte; painel novo pós-timeout não reoferece a
+  skill já usada; em party a cura não vaza pro aliado, e quem não
+  qualifica leva recusa ao clicar no botão compartilhado. Validado
+  revertendo só os arquivos de implementação (`combate.py`, `comercio.py`,
+  `game_data.py`, `profissoes.py`) via `git stash`, mantendo os testes: 19
+  dos 22 quebram — os 3 que não quebram (equipar recusa andar travado,
+  não vende, não desmancha) continuam verdadeiros mesmo sem o item
+  existir em `ITENS`, porque um item desconhecido já é recusado por
+  motivo diferente (não reconhecido, não "tipo mortalha bloqueado").

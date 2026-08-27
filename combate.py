@@ -108,6 +108,18 @@ def dano_do_chefe(chefe, s, andar_num, defendendo=False, carregado=False):
     return valor
 
 
+def _aplicar_sombra(luta, c, dano):
+    """Mortalha de Sombra: dobra o dano do PRÓXIMO golpe normal do jogador,
+    só nessa rodada (ver BotaoMortalha). Só entra no ataque básico -- não
+    mexe em dano de habilidade nem no golpe do chefe. `c.sombra_ativa` já é
+    zerado incondicionalmente no fim da rodada (Luta.turno_do_chefe), então
+    não precisa desligar aqui."""
+    if not c.sombra_ativa:
+        return dano
+    luta.registrar(f"🌑 Mortalha de Sombra: o golpe de {c.nome} sai em dobro.")
+    return dano * 2
+
+
 def pocoes_na_mochila(user_id):
     itens = db.get_inventario(user_id)
     return [
@@ -182,6 +194,8 @@ class Combatente:
         self.defendendo = False
         self.pocoes_usadas = 0
         self.elixires_usados = 0
+        self.mortalha_usada = False   # uma vez por luta -- ver BotaoMortalha
+        self.sombra_ativa = False     # Mortalha de Sombra: dobra o próximo golpe NESTA rodada
         self.caiu = False
         self.fugiu = False
         self.saiu = False
@@ -414,6 +428,7 @@ class Luta:
         for c in self.participantes:
             c.defendendo = False
             c.acao = None
+            c.sombra_ativa = False   # "nessa rodada" -- some no fim dela, usada ou não
             c.salvar_estado()
         self.rodada += 1
 
@@ -964,9 +979,58 @@ class BotaoAlvoHabilidade(discord.ui.Button):
         await painel.registrar_acao(interaction, c, "habilidade")
 
 
+def _mortalha_disponivel(c):
+    """A skill da mortalha só existe pra quem tem a peça equipada e ainda
+    não usou nesta luta -- ver decisoes.md § Mortalha de Luz/Sombra."""
+    return bool(c.jogador.get("mortalha")) and not c.mortalha_usada
+
+
+class BotaoMortalha(discord.ui.Button):
+    """Botão compartilhado, igual Atacar/Defender/Fugir -- só existe no
+    painel se ALGUÉM ativo qualifica (ver PainelLuta.__init__), mas o efeito
+    é sempre do combatente que clicou; quem não tem mortalha ou já usou a
+    dele leva recusa ephemeral, mesmo padrão do botão Habilidade pra quem
+    não tem classe. NÃO chama registrar_acao — é a diferença central desta
+    skill: ativa e ainda ataca na mesma rodada, não gasta o turno (decidido
+    duas vezes, ver decisoes.md). `PainelLuta.interaction_check` já barra
+    quem não está na luta, já saiu dela, ou já tem `c.acao` definido nesta
+    rodada -- nenhuma checagem extra precisa disso aqui."""
+
+    def __init__(self):
+        super().__init__(label="Mortalha", emoji="🕯️", style=discord.ButtonStyle.success, row=1)
+
+    async def callback(self, interaction):
+        painel = self.view
+        luta = painel.luta
+        c = painel.combatente_de(interaction)
+        if not _mortalha_disponivel(c):
+            await interaction.response.send_message(
+                "Você não tem a mortalha disponível agora.", ephemeral=True
+            )
+            return
+        await interaction.response.defer()
+        dados = ITENS[c.jogador["mortalha"]]
+        c.mortalha_usada = True
+        if dados.get("elemento") == "luz":
+            ganho = c.s["hp_max"] - max(0, c.hp)
+            c.hp = c.s["hp_max"]
+            luta.registrar(
+                f"{dados['emoji']} {c.nome} ativa **{dados['nome']}** — cura completa (+{ganho} HP)."
+            )
+        else:
+            c.sombra_ativa = True
+            luta.registrar(
+                f"{dados['emoji']} {c.nome} ativa **{dados['nome']}** — o próximo golpe vem em dobro."
+            )
+        self.disabled = True
+        await responder(interaction, luta.embed(), painel)
+
+
 class PainelLuta(discord.ui.View):
     def __init__(self, luta):
         super().__init__(timeout=TIMEOUT_RODADA)
+        if any(_mortalha_disponivel(c) for c in luta.ativos):
+            self.add_item(BotaoMortalha())
         self.luta = luta
         self.mensagem = None
 
@@ -1056,6 +1120,7 @@ class PainelLuta(discord.ui.View):
                     c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
+                dano = _aplicar_sombra(luta, c, dano)
                 luta.hp_chefe -= dano
                 luta.verificar_fase2()
                 luta.registrar(f"{c.nome} acerta **{dano}**")
@@ -1165,6 +1230,7 @@ class PainelLuta(discord.ui.View):
                             c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                         )
                         dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
+                        dano = _aplicar_sombra(luta, c, dano)
                         luta.hp_chefe -= dano
                         luta.verificar_fase2()
                         luta.registrar(f"{c.nome} acerta **{dano}**")
