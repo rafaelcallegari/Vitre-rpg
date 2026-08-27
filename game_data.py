@@ -191,6 +191,23 @@ ITENS = {
                          "descricao": "Leve como papel, dura como aço. Ainda carrega um resto de estática."},
     "martelo_do_arquiteto": {"vendavel": False, "loja": False, "nome": "Martelo do Arquiteto", "emoji": "🔨", "tipo": "tesouro",
                               "descricao": "Pesado demais pra qualquer braço comum erguer duas vezes. A primeira já foi a última, pra ele."},
+
+    # ---------------- A Guia e o manto (andares 11-14) ----------------
+    # Material de entrega da corrente de pedidos da Guia + as peças que ela
+    # devolve em troca. `vendavel: False`/`loja: False` seguem o mesmo
+    # precedente do fragmento_selo/tesouros -- nada aqui vira moeda nem
+    # aparece em loja. As peças ainda não fazem nada (sem "def"/"atk"/bônus
+    # -- o manto em si é cartão separado). Ver decisoes.md § A Guia.
+    "flor_do_andar_1": {"vendavel": False, "loja": False, "nome": "Flor do Andar 1", "emoji": "🌸", "tipo": "material",
+                         "descricao": "Não devia crescer numa grama pisada por tanta gente. Cresce mesmo assim, só quando ninguém está prestando atenção."},
+    "molde_do_manto": {"vendavel": False, "loja": False, "nome": "Molde do Manto", "emoji": "📐", "tipo": "material",
+                        "descricao": "O desenho de uma peça que ainda não existe. Ela sabia o tamanho de cor."},
+    "fio_do_manto": {"vendavel": False, "loja": False, "nome": "Fio do Manto", "emoji": "🧵", "tipo": "material",
+                      "descricao": "Fino demais pra ver de longe, forte demais pra arrebentar de perto."},
+    "forro_do_manto": {"vendavel": False, "loja": False, "nome": "Forro do Manto", "emoji": "🩹", "tipo": "material",
+                        "descricao": "Mais quente por dentro do que qualquer coisa deveria ser, tão acima do Selo."},
+    "fecho_do_manto": {"vendavel": False, "loja": False, "nome": "Fecho do Manto", "emoji": "🔗", "tipo": "material",
+                        "descricao": "A última peça. Ela guardou essa por mais tempo que as outras antes de entregar."},
 }
 
 

@@ -4019,3 +4019,144 @@ sentido inverso"), sem custar refatoração nenhuma.
   (fora do fluxo pré-filtrado); teto de 100 chars com o item de nome mais
   longo do catálogo, inclusive no pior caso (nome longo comparado contra
   peça equipada de nome longo); `_opcoes_venda` com o mesmo delta.
+
+## A Guia vira menu + a corrente de pedidos do manto (andares 11-15)
+
+Card do Notion "A Guia — diálogo, teleporte e sidequest da flor" fechou em
+25/08 o texto das 8 falas (5 "O que me espera" + 3 "Sobre você") e a tabela
+de pedidos/entregas por andar. Esta carta implementa isso — ela deixa de
+teleportar sozinha ao abrir e vira um menu de 4 opções fixas (**Pedir para
+voltar · O que me espera · Sobre você · Sair**), com um 5º botão condicional
+quando há material suficiente pra entregar.
+
+- **A Guia continua carta própria, fora de `dialogos.DIALOGOS`.** Ela nunca
+  ganhou o campo `dialogo` (`npcs.py`) nem passou a usar
+  `opcoes_do_dialogo`/`opcoes_por_estado` — o menu dela é uma
+  `GuiaDialogoView` própria em `bot.py`, porque a lógica de pedido/entrega
+  não cabe no contrato genérico de "opções soltas + estado antes/durante/
+  depois" sem forçar os outros 27 NPCs a aprender sobre uma corrente de 4
+  estágios que só ela tem. `test_so_guia_fica_de_fora_do_campo_dialogo`
+  continua de pé sem mudança.
+- **Quest_id por andar (`guia_flor`/`guia_farpas`/`guia_estilhacos`/
+  `guia_cinzas`), não uma quest única com estado de etapa.** O card pedia
+  pra avaliar isso: a tabela `sidequests(user_id, quest_id, estado)` já
+  traduz `'ativa'/'concluida'` pra `'durante'/'depois'`
+  (`db.estado_sidequest`) com um dicionário fixo de 2 chaves — inventar um
+  terceiro vocabulário pra "qual estágio da corrente" quebraria esse
+  tradutor ou exigiria estendê-lo pra todo NPC que o usa. Uma linha por
+  andar deixa cada estágio caber exatamente no antes/ativa/concluída que já
+  existe, e zero mudança em `database.estado_sidequest`.
+- **"Ela cobra a anterior" = a corrente sempre processa o pedido mais
+  antigo ainda aberto, não o do andar onde o jogador está fisicamente.**
+  `andares_altos.pedido_pendente(user_id)` percorre `PEDIDOS` (11→12→13→14)
+  e devolve o primeiro que não está `'depois'`. Um jogador pode subir de
+  chefe em chefe sem nunca falar com ela num andar intermediário — ao
+  encontrá-la em qualquer andar 11-15, o pedido em jogo continua sendo o
+  mais antigo pendente, nunca o do andar atual. É isso que faz "chegar no
+  13 sem ter passado pelo 12 não pula etapa" funcionar sem checagem
+  especial nenhuma — é a mesma função pra todo andar.
+- **`andares_altos.entregar_pedido(user_id)` nunca recebe qual pedido
+  entregar por fora — ele recalcula a frente da fila sozinho.** Isso é o
+  que torna impossível entregar fora de ordem mesmo com o material errado
+  na mochila: `BotaoEntregarGuia` só chama a função com o `user_id`, ela
+  decide. `db.remove_item` já garante que nada é consumido se a
+  quantidade não bate, então "entregar sem ter o suficiente" não precisou
+  de checagem redundante em `entregar_pedido`.
+- **Entrega é um 5º botão condicional, não uma das 4 opções fixas.**
+  Perguntei ao Rafael como a entrega deveria disparar já que o menu
+  aprovado não tem opção "Entregar" — a resposta foi um botão extra que só
+  aparece quando o jogador já carrega a quantidade pedida (`bot.py`,
+  `GuiaDialogoView`/`BotaoEntregarGuia`). Os 4 fixos nunca mudam de
+  quantidade nem de posição.
+- **Conceder o pedido (`'antes' -> 'ativa'`) acontece sozinho, ao abrir
+  `rpg falar guia`, não atrás de outro clique.** Mesmo raciocínio: não há
+  botão "pedir" no menu aprovado, então o momento natural é a própria
+  abertura da conversa — `andares_altos.conceder_pedido_pendente` roda
+  antes de montar o embed, idempotente (só concede uma vez; visitas
+  seguintes com o pedido já `'ativa'` não fazem nada de novo).
+- **Texto de "novo pedido"/"entrega" é campo de embed (recibo), não fala
+  dela.** Só os 8 textos aprovados (`FALA_O_QUE_ESPERA`, `FALA_SOBRE_VOCE`
+  em `andares_altos.py`) são dela, palavra por palavra. O que acontece
+  mecanicamente (o que ela pediu, o que foi trocado) aparece como campo
+  factual do embed ("📜 Novo pedido"/"✅ Entregue"), no mesmo espírito de
+  outros recibos do jogo (loot, custo de melhoria) — evita inventar falas
+  novas pra ela fora do que foi aprovado.
+- **A abertura da conversa reaproveita `n["fala"]` de `npcs.py` sem
+  mudança** — são as 5 falas antigas (uma por andar), que já existiam como
+  o "Escutar" tier-0 da versão anterior do design. Não inventei abertura
+  nova: como o card só aprovou os 5+3 textos das respostas, e não um texto
+  de saudação, reaproveitar o que já estava lá evita escrever conteúdo dela
+  sem aprovação.
+- **`FALA_O_QUE_ESPERA`/`FALA_SOBRE_VOCE` substituem `FALAS_GUIA` por
+  inteiro** (a função antiga, `fala_da_guia(andar, mortes)`, misturava as
+  duas coisas — cada andar variava por mortes, que era o design anterior).
+  A fala periódica acima do Selo (`bot.py:falar_guia_acima_do_selo`, a cada
+  `GUIA_A_CADA_ACOES` comandos) passou a chamar `o_que_espera(andar)` no
+  lugar — mesmo papel de antes (comentário ambiente, não interativo), só
+  que com o texto novo, fixo por andar.
+
+### A flor do andar 1 — `rpg colher` + aviso na chegada
+
+Perguntei ao Rafael como o jogador "encontra" a flor, já que o card só
+falava em gatilho de horário sem especificar a interação. Resposta: um
+comando dedicado (`rpg colher`) e um aviso quando o jogador entra no andar
+1 durante a janela.
+
+- **`npcs.flor_ativa()` é só um `carroca_ativa()` reaproveitado** — mesmos
+  horários, mesma janela de 30 min, sem duplicar a lógica de agenda. Não
+  há aviso no #torre (`agenda.py` nunca é tocado por isso) — só quem roda
+  algum comando enquanto está no andar 1 na janela certa sabe.
+- **`rpg colher` funciona em qualquer momento dentro da janela**, contanto
+  que `andares_altos.pode_colher_flor(user_id)` seja verdade (pedido do
+  andar 11 já concedido, ainda não entregue) e o jogador ainda não tenha a
+  flor na mochila. Fora da janela, fora do andar 1, sem o pedido concedido,
+  ou já com a flor em mãos: recusa sem efeito colateral.
+- **`rpg viajar` pro andar 1 mostra um aviso** ("🌸 Na grama") quando chega
+  durante a janela e a flor está disponível pra colher — descoberto ao
+  entrar, não avisado de fora (mesmo espírito de "sem aviso no #torre": só
+  quem está ali sabe). É só conveniência — `rpg colher` funciona igual sem
+  o aviso ter aparecido, pra quem já estava parado no andar 1 quando a
+  janela abriu sozinha.
+- **A quest não é repetível**: `pode_colher_flor` fica falso pra sempre
+  depois que a quest do andar 11 é concluída (`estado_sidequest` vira
+  `'depois'`) — a flor nunca mais nasce pra aquele jogador, mesmo dentro de
+  uma janela futura.
+
+### Itens novos (`game_data.ITENS`)
+
+`flor_do_andar_1` (pedido do andar 11) + `molde_do_manto`/`fio_do_manto`/
+`forro_do_manto`/`fecho_do_manto` (entregues em 11/12/13/14). Todos
+`tipo: "material"`, `vendavel: False`, `loja: False` — mesmo precedente do
+`fragmento_selo`/tesouros de chefe: nada aqui vira moeda, craft ou loja.
+As peças do manto não têm `def`/`atk`/bônus nenhum ainda — só ficam na
+mochila até o cartão do manto em si (Manto de Luz/Sombra) dar uso a elas.
+Os materiais dos andares 12-14 (`farpa_eletrica`/`estilhaco_gelido`/
+`cinza_quente`) já existiam desde o Pacote 2 (drop comum de monstro) —
+reaproveitados como pedido, sem criar item novo pra isso.
+
+### Import circular evitado — `andares_altos.py` não importa `database` no topo
+
+`database.py` já importa `ANDAR_ACIMA_DO_SELO` de `andares_altos.py`
+(`from andares_altos import ANDAR_ACIMA_DO_SELO`, existia desde o Pacote 2).
+Como `bot.py` importa `andares_altos` antes de `database`, um
+`import database as db` no topo de `andares_altos.py` criaria um ciclo real
+— `database.py` ficaria pausado dentro do próprio import, tentando ler
+`ANDAR_ACIMA_DO_SELO` de um `andares_altos` que ainda não tinha executado
+até aquela linha. Corrigido com `import database as db` **dentro** de cada
+função de `andares_altos.py` que precisa dele (`pedido_pendente`,
+`conceder_pedido_pendente`, `entregar_pedido`) — import lazy, resolve sem
+reordenar nada em `bot.py` nem duplicar a constante. Confirmado com
+`python -c "import bot"` limpo antes de escrever qualquer teste.
+
+Testado em `tests/test_guia_manto.py`: as 5 falas fixas de "O que me
+espera" e a escala de "Sobre você" nas 3 faixas (revelação só em 7+); a
+corrente concede na ordem certa e nunca pula etapa (material do andar 13 na
+mochila não adianta nada se o pedido pendente ainda é o do 11); entrega sem
+quantidade completa não consome nada; entrega concede exatamente 1 peça e
+consome exatamente a quantidade pedida; a corrente completa (11→14) entrega
+as 4 peças na ordem; quest concluída nunca mais libera a flor; morte acima
+do Selo reseta andar/andar_max sem apagar peça nem progresso de quest; o
+menu de `rpg falar guia` mostra os 4 botões fixos e só ganha o 5º quando há
+material suficiente; `rpg colher` respeita janela/andar/elegibilidade.
+Validado revertendo a mudança (`git stash`) e confirmando que só os 21
+testes novos quebram, nada mais na suíte (311 → 332 depois).

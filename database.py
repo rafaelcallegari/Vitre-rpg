@@ -179,7 +179,7 @@ COLUNAS_ACESSORIOS = {
 
 COLUNAS_GUIA = {
     # conta ações fora de luta de chefe enquanto acima do Selo — a cada 3,
-    # a Guia comenta e o contador zera (ver andares_altos.fala_da_guia)
+    # a Guia comenta e o contador zera (ver andares_altos.o_que_espera)
     "acoes_andar_alto": "INTEGER DEFAULT 0",
 }
 
@@ -1149,6 +1149,28 @@ def estado_sidequest(user_id, quest_id):
     if not row:
         return "antes"
     return {"ativa": "durante", "concluida": "depois"}[row["estado"]]
+
+
+def iniciar_sidequest(user_id, quest_id):
+    """Dá o pedido -- 'antes' -> 'ativa'. No-op se a linha já existir (não
+    reabre uma quest concluída nem reinicia uma já ativa)."""
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO sidequests (user_id, quest_id, estado) VALUES (?, ?, 'ativa')
+               ON CONFLICT(user_id, quest_id) DO NOTHING""",
+            (user_id, quest_id),
+        )
+
+
+def concluir_sidequest(user_id, quest_id):
+    """'ativa' -> 'concluida'. Pressupõe que iniciar_sidequest já rodou —
+    quem chama decide a regra de quando isso é permitido (ver
+    andares_altos.entregar_pedido)."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE sidequests SET estado = 'concluida' WHERE user_id = ? AND quest_id = ?",
+            (user_id, quest_id),
+        )
 
 
 # ---------------- inventário ----------------

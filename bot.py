@@ -26,7 +26,7 @@ from game_data import (
 )
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
-    agora, carroca_ativa, proxima_carroca, custo_viagem,
+    agora, carroca_ativa, proxima_carroca, custo_viagem, flor_ativa,
     consumiveis_disponiveis, equipamentos_do_andar,
     npcs_do_andar, ferreiro_do_andar, taverneiro_do_andar, guia_do_andar, encontrar_npc,
     opcoes_do_dialogo,
@@ -557,7 +557,7 @@ async def falar_guia_acima_do_selo(ctx):
         db.atualizar_jogador(ctx.author.id, acoes_andar_alto=acoes)
         return
     db.atualizar_jogador(ctx.author.id, acoes_andar_alto=0)
-    fala = andares_altos.fala_da_guia(j["andar"], j["mortes"])
+    fala = andares_altos.o_que_espera(j["andar"])
     if fala:
         await ctx.send(f"🕯️ *A Guia:* \"{fala}\"")
 
@@ -909,6 +909,15 @@ async def viajar(ctx, destino: int = 0):
         e.set_footer(text="Não custou nada — o andar é a home da sua guilda.")
     else:
         e.set_footer(text=f"Viagem: -{custo} 🪙 · restam {j['moedas'] - custo}")
+
+    # a flor do andar 1 não tem aviso no #torre (ver decisoes.md § A Guia) —
+    # só quem chega aqui na janela certa, já com o pedido da Guia em mãos,
+    # repara nela. Chegar aqui é a única forma de disparar o aviso; `rpg
+    # colher` funciona igual mesmo sem ele, o aviso é só conveniência.
+    if destino == 1 and flor_ativa()[0] and andares_altos.pode_colher_flor(j["user_id"]) \
+            and not db.tem_item(j["user_id"], "flor_do_andar_1", 1):
+        e.add_field(name="🌸 Na grama", value="Tem uma flor diferente aqui. `rpg colher`.", inline=False)
+
     await ctx.send(embed=e)
 
 
@@ -946,6 +955,33 @@ async def carroca(ctx):
         )
     e.set_footer(text=f"Horários: {horarios} (horário de Brasília) · fica {JANELA_CARROCA_MIN} min parado")
     await ctx.send(embed=e)
+
+
+@bot.command(name="colher")
+@travas.fora_de_luta()
+async def colher(ctx):
+    """Colhe a flor do andar 1 — mesma janela de horário da carroça do
+    Bramm, sem aviso no #torre (ver npcs.flor_ativa). Só funciona pra quem
+    já recebeu o pedido da Guia no andar 11 e ainda não entregou a flor."""
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if j["andar"] != 1:
+        await ctx.send("Não tem flor nenhuma aqui — ela só nasce na grama do andar 1.")
+        return
+    if not flor_ativa()[0]:
+        await ctx.send("Não tem flor na grama agora. Confere de novo mais tarde.")
+        return
+    if not andares_altos.pode_colher_flor(j["user_id"]):
+        await ctx.send("Nada aqui parece esperar por você. `rpg colher` não faz nada agora.")
+        return
+    if db.tem_item(j["user_id"], "flor_do_andar_1", 1):
+        await ctx.send("Você já colheu a flor de que precisava.")
+        return
+
+    db.add_item(j["user_id"], "flor_do_andar_1", 1)
+    item = ITENS["flor_do_andar_1"]
+    await ctx.send(f"🌸 Você encontra {item['emoji']} **{item['nome']}** na grama e colhe.")
 
 
 @bot.command(name="npcs", aliases=["gente", "moradores"])
@@ -1038,6 +1074,119 @@ class DialogoView(discord.ui.View):
         await self.mensagem.edit(view=self)
 
 
+class BotaoPedirVoltarGuia(discord.ui.Button):
+    """Regra igual à de sempre: descer é sempre grátis, subir nunca. Só que
+    agora fica atrás do clique em vez de rodar sozinha ao abrir `rpg falar
+    guia`. Encerra a conversa — depois de descer não faz sentido continuar
+    clicando nos outros botões desse mesmo painel."""
+
+    def __init__(self):
+        super().__init__(label="Pedir para voltar", style=discord.ButtonStyle.secondary, row=0)
+
+    async def callback(self, interaction):
+        destino = andares_altos.ANDAR_ACIMA_DO_SELO
+        db.atualizar_jogador(self.view.autor_id, andar=destino)
+        e = interaction.message.embeds[0]
+        e.set_footer(text=f"Ela te leva de volta pro andar {destino}. De graça — subir é que nunca é.")
+        for item in self.view.children:
+            item.disabled = True
+        self.view.stop()
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class BotaoOQueEsperaGuia(discord.ui.Button):
+    def __init__(self, texto):
+        super().__init__(label="O que me espera", style=discord.ButtonStyle.secondary, row=0)
+        self.texto = texto
+
+    async def callback(self, interaction):
+        e = interaction.message.embeds[0]
+        e.description = f"*{pronomes.concordar(self.texto, self.view.pronome)}*"
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class BotaoSobreVoceGuia(discord.ui.Button):
+    def __init__(self, texto):
+        super().__init__(label="Sobre você", style=discord.ButtonStyle.secondary, row=0)
+        self.texto = texto
+
+    async def callback(self, interaction):
+        e = interaction.message.embeds[0]
+        e.description = f"*{pronomes.concordar(self.texto, self.view.pronome)}*"
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class BotaoEntregarGuia(discord.ui.Button):
+    """Só existe no menu quando o pedido da vez está 'durante' E o jogador
+    já carrega a quantidade pedida — não é um dos 4 fixos, é condicional
+    (ver decisoes.md § A Guia). `andares_altos.entregar_pedido` recalcula a
+    frente da fila sozinho, então mesmo que o material mude entre abrir o
+    menu e clicar, nunca entrega fora de ordem nem consome sem ter o
+    suficiente."""
+
+    def __init__(self, pedido):
+        item = ITENS[pedido["pede"]]
+        super().__init__(
+            label=f"Entregar {pedido['qtd']}x {item['nome']}",
+            style=discord.ButtonStyle.success, row=1,
+        )
+
+    async def callback(self, interaction):
+        pedido = andares_altos.entregar_pedido(self.view.autor_id)
+        if not pedido:
+            await interaction.response.send_message(
+                "Você não tem mais o suficiente pra entregar. Nada aconteceu.", ephemeral=True
+            )
+            return
+        item_pedido = ITENS[pedido["pede"]]
+        peca = ITENS[pedido["da"]]
+        e = interaction.message.embeds[0]
+        e.add_field(
+            name="✅ Entregue",
+            value=f"Você deu {pedido['qtd']}x {item_pedido['emoji']} {item_pedido['nome']} "
+                  f"e recebeu {peca['emoji']} {peca['nome']}.",
+            inline=False,
+        )
+        self.disabled = True
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class GuiaDialogoView(discord.ui.View):
+    """Menu da Guia — 4 opções fixas (Pedir para voltar / O que me espera /
+    Sobre você / Sair), iguais em todo andar 11-15, mais um 5º botão
+    condicional (Entregar) quando há pedido pendente entregável. Não usa
+    dialogos.DIALOGOS/opcoes_do_dialogo — ela continua carta própria (ver
+    npcs.py e decisoes.md), só que agora com menu em vez de teleporte
+    automático."""
+
+    def __init__(self, autor_id, pronome, espera_texto, sobre_texto, pedido_entregavel):
+        super().__init__(timeout=120)
+        self.autor_id = autor_id
+        self.pronome = pronome
+        self.mensagem = None
+        self.add_item(BotaoPedirVoltarGuia())
+        self.add_item(BotaoOQueEsperaGuia(espera_texto))
+        self.add_item(BotaoSobreVoceGuia(sobre_texto))
+        if pedido_entregavel:
+            self.add_item(BotaoEntregarGuia(pedido_entregavel))
+        self.add_item(BotaoSairDialogo(dialogos.SAIDA_PADRAO))
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message(
+                "Essa conversa não é sua. Manda `rpg falar` você mesmo.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        if self.mensagem is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        await self.mensagem.edit(view=self)
+
+
 @bot.command(name="falar", aliases=["conversar", "talk"])
 @travas.fora_de_luta()
 async def falar(ctx, *, quem: str = ""):
@@ -1051,14 +1200,30 @@ async def falar(ctx, *, quem: str = ""):
     nome = f"{n['nome']} {n['titulo']}".strip()
 
     if n["tipo"] == "guia":
-        # falar com ela já desce de graça — descer é sempre grátis, subir nunca
-        fala = andares_altos.fala_da_guia(j["andar"], j["mortes"]) or n["fala"]
-        destino = andares_altos.ANDAR_ACIMA_DO_SELO
-        db.atualizar_jogador(j["user_id"], andar=destino)
-        e = discord.Embed(description=f"*{fala}*", color=ANDARES[j["andar"]]["cor"])
+        # menu de 4 opções (Pedir para voltar / O que me espera / Sobre você
+        # / Sair) — ela não teleporta mais sozinha ao abrir, só quando o
+        # jogador clica em "Pedir para voltar". Ver decisoes.md § A Guia.
+        novo_pedido = andares_altos.conceder_pedido_pendente(j["user_id"])
+        pedido, estado = andares_altos.pedido_pendente(j["user_id"])
+        pedido_entregavel = None
+        if pedido and estado == "durante" and db.tem_item(j["user_id"], pedido["pede"], pedido["qtd"]):
+            pedido_entregavel = pedido
+
+        e = discord.Embed(description=f"*{n['fala']}*", color=ANDARES[j["andar"]]["cor"])
         e.set_author(name=f"{ICONES_NPC['guia']} {nome}")
-        e.set_footer(text=f"Ela te leva de volta pro andar {destino}. De graça — subir é que nunca é.")
-        await ctx.send(embed=e)
+        if novo_pedido:
+            item_pedido = ITENS[novo_pedido["pede"]]
+            e.add_field(
+                name="📜 Novo pedido",
+                value=f"Ela quer {novo_pedido['qtd']}x {item_pedido['emoji']} {item_pedido['nome']}.",
+                inline=False,
+            )
+        view = GuiaDialogoView(
+            ctx.author.id, j["pronome"],
+            andares_altos.o_que_espera(j["andar"]), andares_altos.sobre_voce(j["mortes"]),
+            pedido_entregavel,
+        )
+        view.mensagem = await ctx.send(embed=e, view=view)
         return
 
     if n["tipo"] == "conversa" and n.get("dialogo"):

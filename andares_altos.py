@@ -1,53 +1,171 @@
 # andares_altos.py
 # Conteúdo e regras específicas dos andares 11-15 (acima do Selo): a fronteira
-# entre a torre "antiga" e a nova, e a fala da Guia, que muda com a contagem
-# de mortes. O resto do pacote (telegraph de condição elemental, fase 2 do
-# andar 15, material de chefe via chefes_derrotados) vive em combate.py e
-# database.py — depende demais do estado interno da Luta pra valer a pena
-# isolar aqui. Sem instalar(bot, ...): não registra comando nenhum, bot.py
-# chama fala_da_guia() e ANDAR_ACIMA_DO_SELO direto, como faz com npcs.py.
+# entre a torre "antiga" e a nova, o menu da Guia (falas fixas por andar +
+# revelação por mortes) e a corrente de pedidos que entrega as peças do manto.
+# O resto do pacote (telegraph de condição elemental, fase 2 do andar 15,
+# material de chefe via chefes_derrotados) vive em combate.py e database.py —
+# depende demais do estado interno da Luta pra valer a pena isolar aqui. Sem
+# instalar(bot, ...): não registra comando nenhum, bot.py chama as funções
+# daqui direto, como faz com npcs.py.
+#
+# `database` é importado DENTRO de cada função que precisa dele (não no topo
+# do módulo) de propósito: database.py já importa ANDAR_ACIMA_DO_SELO daqui
+# (`from andares_altos import ANDAR_ACIMA_DO_SELO`), e bot.py importa
+# andares_altos antes de database — um `import database as db` no topo deste
+# arquivo criaria um ciclo real (database.py pausado no meio do próprio
+# import, tentando ler um nome que este módulo ainda não definiu). Import
+# lazy dentro da função resolve sem precisar reordenar nada em bot.py nem
+# duplicar a constante.
 
 ANDAR_ACIMA_DO_SELO = 10   # sem loja/ferreiro/carroça acima disso — ver decisoes.md
 
-# (andar: ((limiar_de_mortes, fala), ...)) em ordem crescente de limiar.
-# fala_da_guia() pega a última cujo limiar cabe na contagem atual.
-FALAS_GUIA = {
+# ---------------- "O que me espera" — fixa por andar, não varia com mortes ----------------
+# Texto aprovado pelo Rafael em 25/08, palavra por palavra — não reescrever.
+FALA_O_QUE_ESPERA = {
     11: (
-        (0, "Ainda dá pra descer. Ninguém vai lembrar que você chegou até aqui."),
-        (3, "Você já bateu aqui antes e voltou puxando a respiração. Da próxima o vento pode não devolver o fôlego."),
-        (7, "Eu não vou implorar. Só vou ficar aqui, com a mão estendida, até você entender que descer também é uma forma de vencer."),
+        "Vento, e mais vento. Aqui em cima a torre desiste de ter parede, e "
+        "você vai achar isso bonito por uns dez minutos. Depois vai reparar "
+        "que não tem chão nenhum embaixo do terraço, só mais céu. Todo mundo "
+        "acha bonito no começo."
     ),
     12: (
-        (0, "O trovão aqui não faz barulho. Você também vai parar de fazer, com o tempo."),
-        (3, "Contei suas quedas. Não em voz alta — o silêncio daqui não deixa. Mas contei."),
-        (7, "Desce comigo. Não custa nada além do orgulho, e o orgulho não cura o que esse andar quebra."),
+        "O trovão daqui não vem de nuvem nenhuma. Ele mora no pátio, e bate "
+        "quando quer. Conheci um homem que ria dele. Ele dizia que barulho é "
+        "só barulho, e que o que mata é o silêncio depois. Ele estava certo "
+        "nas duas coisas, e isso não o ajudou em nada."
     ),
     13: (
-        (0, "Branco é só a cor que sobra quando não tem mais nada pra ver. Volta antes de aprender isso."),
-        (3, "Da última vez você voltou mais devagar. Isso não é fraqueza — é o corpo sendo mais honesto que você."),
-        (7, "Eu seguro sua mão até a escada. Ninguém vai saber que precisou. Só eu, e eu não conto."),
+        "Branco em toda direção, inclusive para baixo. Você vai dar três "
+        "passos e os primeiros já não estarão mais lá. Foi aqui que ele "
+        "parou pela primeira vez. Ficou olhando os próprios passos "
+        "sumirem, e eu achei que ele fosse voltar. Não voltou. Só ficou "
+        "mais quieto daí em diante."
     ),
     14: (
-        (0, "Calor sem fogo é o corpo avisando. Eu só estou repetindo o aviso."),
-        (3, "Você já queimou aqui mais de uma vez sem ver a chama. Da próxima, talvez nem isso sobre."),
-        (7, "Desce. Não porque eu mandei — porque eu já vi esse andar vencer gente melhor do que você acha que é."),
+        "A luz aqui não aquece, ela cozinha. Você vai querer tirar a "
+        "armadura, e não pode. Este é o último andar em que eu o vi "
+        "inteiro. Ele subiu daqui com o passo firme e o rosto de quem já "
+        "tinha decidido uma coisa que não me contou."
     ),
     15: (
-        (0, "Essa cadeira não é sua. Não é de ninguém. Senta lá embaixo, onde as coisas ainda cabem."),
-        (3, "Você já ajoelhou aqui antes sem perceber. Isso é o andar decidindo por você."),
-        (7, "Eu não peço mais que você desista. Só peço que desça vivo o bastante pra decidir de novo amanhã."),
+        "Não vou te pedir de novo. Você chegou até aqui e eu já disse tudo "
+        "que tinha pra dizer, cinco vezes, de cinco jeitos. A porta está "
+        "ali. Só uma coisa: o trono está vazio, e ele já estava vazio "
+        "quando ele chegou. Seja lá o que você veio buscar, não está "
+        "sentado lá dentro."
     ),
 }
 
 
-def fala_da_guia(andar, mortes):
-    """A fala muda com a contagem de mortes — quanto mais o jogador morre,
-    mais gentil e mais convincente ela fica. None se não há Guia nesse andar."""
-    tiers = FALAS_GUIA.get(andar)
-    if not tiers:
-        return None
-    escolhida = tiers[0][1]
-    for limiar, fala in tiers:
+def o_que_espera(andar):
+    """None se não há Guia nesse andar."""
+    return FALA_O_QUE_ESPERA.get(andar)
+
+
+# ---------------- "Sobre você" — muda com jogadores.mortes, igual em todos os andares ----------------
+# (limiar_de_mortes, fala) em ordem crescente — mesmo aprovado em 25/08. A
+# revelação (escudeira do Herói) só sai na faixa 7+, de propósito: quem nunca
+# morreu nunca descobre. Não destravar por conclusão de quest nem atalho.
+FALA_SOBRE_VOCE = (
+    (0, (
+        "Não é da sua conta. Você subiu rápido, não perdeu nada ainda, e "
+        "gente que não perdeu nada faz pergunta como quem coleciona. Volta "
+        "quando a torre tiver cobrado alguma coisa de você."
+    )),
+    (3, (
+        "Já subi essa escada antes. Não sozinha — atrás de alguém, "
+        "carregando o que ele não queria carregar. Era o meu trabalho e eu "
+        "era boa nisso. Cheguei até o andar de baixo do último e ele me "
+        "mandou esperar. Esperei. É a única ordem dele que eu cumpri até o "
+        "fim."
+    )),
+    (7, (
+        "Eu era escudeira dele. Do Herói, se é assim que ainda chamam. Eu "
+        "afiava, eu remendava, eu andava meio passo atrás. E quando ele "
+        "passou por aquela porta eu fiquei do lado de fora, porque foi o "
+        "que ele pediu, e eu nunca soube se ele morreu lá dentro ou se "
+        "simplesmente não quis voltar.\n\n"
+        "Não fico aqui por causa dele. Fico porque vocês continuam subindo "
+        "com a mesma cara que ele fazia, e alguém tem que pelo menos "
+        "perguntar se vocês têm certeza."
+    )),
+)
+
+
+def sobre_voce(mortes):
+    """A fala escala com a contagem de mortes — quanto mais o jogador
+    morreu, mais ela abre sobre si mesma."""
+    escolhida = FALA_SOBRE_VOCE[0][1]
+    for limiar, fala in FALA_SOBRE_VOCE:
         if mortes >= limiar:
             escolhida = fala
     return escolhida
+
+
+# ---------------- a corrente de pedidos (manto) ----------------
+# Uma entrada por andar 11-14 (o 15 não pede nem entrega nada — só fala,
+# ver decisoes.md). `quest_id` é por ANDAR, não uma quest única com estado
+# de etapa: a tabela `sidequests` já traduz 'ativa'/'concluida' em
+# 'durante'/'depois', e cada estágio da corrente cabe exatamente nesse
+# vocabulário sem precisar inventar um terceiro campo pra "qual etapa".
+PEDIDOS = (
+    {"andar": 11, "quest_id": "guia_flor", "pede": "flor_do_andar_1", "qtd": 1, "da": "molde_do_manto"},
+    {"andar": 12, "quest_id": "guia_farpas", "pede": "farpa_eletrica", "qtd": 6, "da": "fio_do_manto"},
+    {"andar": 13, "quest_id": "guia_estilhacos", "pede": "estilhaco_gelido", "qtd": 8, "da": "forro_do_manto"},
+    {"andar": 14, "quest_id": "guia_cinzas", "pede": "cinza_quente", "qtd": 10, "da": "fecho_do_manto"},
+)
+
+
+def pedido_pendente(user_id):
+    """O primeiro pedido da corrente (11 -> 12 -> 13 -> 14) que o jogador
+    ainda não concluiu, e o estado dele ('antes'/'durante') -- (None, None)
+    se os 4 já foram entregues. É isto que faz "ela cobra a anterior"
+    funcionar: não importa em qual andar (11-15) o jogador fala com ela, o
+    pedido em jogo é sempre o mais antigo ainda aberto da corrente, nunca o
+    do andar em que ele está fisicamente parado."""
+    import database as db
+    for pedido in PEDIDOS:
+        estado = db.estado_sidequest(user_id, pedido["quest_id"])
+        if estado != "depois":
+            return pedido, estado
+    return None, None
+
+
+def conceder_pedido_pendente(user_id):
+    """Chamado toda vez que `rpg falar guia` abre, em qualquer andar 11-15.
+    Se o pedido da vez ainda não foi dado ('antes'), dá agora e devolve o
+    pedido recém-concedido -- None se não havia nada novo pra dar (pedido já
+    em andamento, ou corrente inteira concluída)."""
+    import database as db
+    pedido, estado = pedido_pendente(user_id)
+    if pedido and estado == "antes":
+        db.iniciar_sidequest(user_id, pedido["quest_id"])
+        return pedido
+    return None
+
+
+def entregar_pedido(user_id):
+    """Tenta entregar o pedido pendente da vez. Recalcula a frente da fila
+    sozinha (nunca recebe qual pedido entregar por fora) -- é isso que torna
+    impossível entregar fora de ordem: mesmo com o material do andar 13 na
+    mochila, se a corrente ainda está travada no 11, não há o que entregar.
+    Devolve o pedido em caso de sucesso, None se não havia pedido em aberto
+    ('antes' ou corrente concluída) ou se faltava material -- nesse último
+    caso nada é consumido (db.remove_item já garante isso)."""
+    import database as db
+    pedido, estado = pedido_pendente(user_id)
+    if not pedido or estado != "durante":
+        return None
+    if not db.remove_item(user_id, pedido["pede"], pedido["qtd"]):
+        return None
+    db.add_item(user_id, pedido["da"], 1)
+    db.concluir_sidequest(user_id, pedido["quest_id"])
+    return pedido
+
+
+def pode_colher_flor(user_id):
+    """A flor do andar 1 só nasce pra quem já recebeu o pedido dela no andar
+    11 (quest 'durante') e ainda não entregou. Concluída, nunca mais nasce
+    pra esse jogador -- e nunca nasceu pra quem ainda não falou com a Guia."""
+    pedido, estado = pedido_pendente(user_id)
+    return bool(pedido and pedido["andar"] == 11 and estado == "durante")

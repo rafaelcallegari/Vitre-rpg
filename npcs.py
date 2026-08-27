@@ -41,6 +41,16 @@ def carroca_ativa(momento=None):
     return False, None
 
 
+def flor_ativa(momento=None):
+    """A flor do andar 1 (pedido da Guia no andar 11, ver andares_altos.py)
+    nasce na mesma janela da carroça do Bramm -- mesmos horários, mesma
+    duração, sem aviso no #torre. Reaproveita carroca_ativa() em vez de
+    duplicar a lógica de janela; o "esta_ativa" que ela devolve é sobre o
+    RELÓGIO, não sobre quem pode colher -- isso é elegibilidade da quest
+    (andares_altos.pode_colher_flor), checada à parte."""
+    return carroca_ativa(momento)
+
+
 def proxima_carroca(momento=None):
     m = momento or agora()
     candidatos = []
@@ -169,8 +179,9 @@ NPCS = {
     ],
 
     # ---- acima do selo: só A Guia. Sem loja, ferreiro nem carroça de propósito
-    # (bot.py bloqueia comércio pra andar > 10). "fala" abaixo é só o fallback —
-    # a fala de verdade escala com mortes, ver andares_altos.fala_da_guia() ----
+    # (bot.py bloqueia comércio pra andar > 10). "fala" abaixo é a abertura
+    # mostrada sempre que se fala com ela — o menu (O que me espera/Sobre
+    # você) é quem varia por andar/mortes, ver andares_altos.py ----
     11: [
         {"nome": "A Guia", "titulo": "", "tipo": "guia",
          "fala": "Ainda dá pra descer. Ninguém vai lembrar que você chegou até aqui."},
