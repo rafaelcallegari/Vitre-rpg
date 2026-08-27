@@ -280,10 +280,11 @@ def stats(j):
     armadura = com_instancia(ITENS.get(j["armadura"], {}), j["armadura_instancia_id"], "def")
     anel = com_instancia(ITENS.get(j["anel"], {}), j["anel_instancia_id"])
     colar = com_instancia(ITENS.get(j["colar"], {}), j["colar_instancia_id"])
+    mortalha = com_instancia(ITENS.get(j["mortalha"], {}), j["mortalha_instancia_id"], "def")
     atribs_base = at.extrair(j)
-    bonus = bonus_atributo_equipamento(arma, armadura, anel, colar)
+    bonus = bonus_atributo_equipamento(arma, armadura, anel, colar, mortalha)
     atribs = {k: atribs_base[k] + bonus.get(k, 0) for k in atribs_base}
-    s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"])
+    s = at.ficha(j["nivel"], atribs, arma, armadura, j["classe"], mortalha)
     s["atribs"] = atribs
     # peças já resolvidas (bônus de melhoria incluso em arma/armadura) — pra
     # quem só quer MOSTRAR o equipamento (rpg status) sem recalcular nada.
@@ -293,15 +294,16 @@ def stats(j):
         "armadura": (j["armadura"], armadura) if j["armadura"] else None,
         "anel": (j["anel"], anel) if j["anel"] else None,
         "colar": (j["colar"], colar) if j["colar"] else None,
+        "mortalha": (j["mortalha"], mortalha) if j["mortalha"] else None,
     }
     return s
 
 
 def texto_equipamento(s):
-    """Uma linha por slot (arma/armadura/anel/colar) pro `rpg status` — lê o
-    que `stats()` já resolveu, não recalcula bônus nenhum. Slot vazio
-    aparece como vazio de propósito: é como quem nunca foi em raide
-    descobre que anel e colar existem."""
+    """Uma linha por slot (arma/armadura/anel/colar/mortalha) pro `rpg
+    status` — lê o que `stats()` já resolveu, não recalcula bônus nenhum.
+    Slot vazio aparece como vazio de propósito: é como quem nunca foi em
+    raide descobre que anel e colar existem."""
     eq = s["equipamento"]
 
     def peca(slot, rotulo_fn):
@@ -341,7 +343,8 @@ def texto_equipamento(s):
         f"🗡️ Arma: {peca('arma', rotulo_arma)}\n"
         f"🛡️ Armadura: {peca('armadura', rotulo_armadura)}\n"
         f"💍 Anel: {peca('anel', rotulo_acessorio)}\n"
-        f"📿 Colar: {peca('colar', rotulo_acessorio)}"
+        f"📿 Colar: {peca('colar', rotulo_acessorio)}\n"
+        f"🥻 Mortalha: {peca('mortalha', rotulo_armadura)}"
     )
 
 
@@ -664,9 +667,10 @@ async def perfil(ctx, membro: discord.Member = None):
     armadura = ITENS[j["armadura"]]["nome"] if j["armadura"] else "—"
     anel = ITENS[j["anel"]]["nome"] if j["anel"] else "—"
     colar = ITENS[j["colar"]]["nome"] if j["colar"] else "—"
+    mortalha = ITENS[j["mortalha"]]["nome"] if j["mortalha"] else "—"
     e.add_field(
         name="Equipado",
-        value=f"🗡️ {arma}\n🛡️ {armadura}\n💍 {anel}\n📿 {colar}",
+        value=f"🗡️ {arma}\n🛡️ {armadura}\n💍 {anel}\n📿 {colar}\n🥻 {mortalha}",
         inline=False,
     )
     rodape = f"Andar mais alto destrancado: {j['andar_max']}/{ANDAR_MAXIMO}"
@@ -1550,7 +1554,7 @@ async def equipar(ctx, *, texto: str = ""):
     inventario_qtd = {i["item"]: i["qtd"] for i in db.get_inventario(j["user_id"]) if i["item"] in ITENS}
     mochila_instancias = db.instancias_por_chave(j["user_id"])
     item = encontrar_item(texto, set(inventario_qtd) | set(mochila_instancias))
-    if not item or ITENS[item]["tipo"] not in ("arma", "armadura", "anel", "colar"):
+    if not item or ITENS[item]["tipo"] not in ("arma", "armadura", "anel", "colar", "mortalha"):
         await ctx.send("Você não tem esse equipamento na mochila.")
         return
     andar_min = ITENS[item]["andar_min"]

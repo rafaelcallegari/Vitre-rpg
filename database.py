@@ -227,6 +227,16 @@ COLUNAS_AVATAR = {
     "avatar_url": "TEXT",
 }
 
+COLUNAS_MORTALHA = {
+    # migração 16 -- quinto slot de equipamento. As duas colunas nascem
+    # juntas (diferente de anel/colar, que ganharam a instância só depois,
+    # migração 13) porque não há histórico pra migrar: nenhuma peça de
+    # mortalha existe ainda em ITENS, então ninguém pode ter uma equipada.
+    # Ver decisoes.md § Slot de mortalha.
+    "mortalha": "TEXT",
+    "mortalha_instancia_id": "INTEGER",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -512,6 +522,18 @@ def init_db():
                 )
             print("Banco migrado: avatar cosmético criado -- ninguém tem avatar ainda.")
 
+        # migração 16: quinto slot de equipamento -- mortalha (ver
+        # COLUNAS_MORTALHA acima). Só estrutura: nenhuma peça existe em
+        # ITENS ainda, então não há dado histórico pra migrar, e as duas
+        # colunas (item + instância) entram juntas.
+        novas_mortalha = [c for c in COLUNAS_MORTALHA if c not in colunas]
+        if novas_mortalha:
+            for coluna in novas_mortalha:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_MORTALHA[coluna]}"
+                )
+            print("Banco migrado: slot de mortalha criado -- ninguém equipado ainda (peça nenhuma existe).")
+
 
 def _migrar_upgrades_para_instancias(conn):
     """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída
@@ -723,9 +745,9 @@ def resetar_temporada():
                    nivel = 1, xp = 0, moedas = 0,
                    hp = ?, mana = ?,
                    forca = ?, destreza = ?, constituicao = ?, inteligencia = ?, pontos = 0,
-                   arma = NULL, armadura = NULL, anel = NULL, colar = NULL,
+                   arma = NULL, armadura = NULL, anel = NULL, colar = NULL, mortalha = NULL,
                    arma_instancia_id = NULL, armadura_instancia_id = NULL,
-                   anel_instancia_id = NULL, colar_instancia_id = NULL,
+                   anel_instancia_id = NULL, colar_instancia_id = NULL, mortalha_instancia_id = NULL,
                    classe = NULL,
                    profissao = NULL, prof_nivel = 1, prof_xp = 0,
                    andar = 1, andar_max = 1,
@@ -1291,7 +1313,7 @@ def instancias_na_mochila(user_id):
     with conectar() as conn:
         jog = conn.execute(
             """SELECT arma_instancia_id, armadura_instancia_id,
-                      anel_instancia_id, colar_instancia_id
+                      anel_instancia_id, colar_instancia_id, mortalha_instancia_id
                FROM jogadores WHERE user_id = ?""",
             (user_id,),
         ).fetchone()

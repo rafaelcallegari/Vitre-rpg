@@ -190,6 +190,7 @@ def _commitar_troca(troca):
                 equipadas_agora = (
                     jog["arma_instancia_id"], jog["armadura_instancia_id"],
                     jog["anel_instancia_id"], jog["colar_instancia_id"],
+                    jog["mortalha_instancia_id"],
                 )
                 if instancia_id in equipadas_agora:
                     return False, (
@@ -209,7 +210,7 @@ def _nota_andar_travado(oferta, destinatario):
     notas = []
     for chave in list(oferta["itens"]) + list(oferta.get("instancias", {})):
         item = ITENS[chave]
-        if item["tipo"] in ("arma", "armadura", "anel", "colar") and item["andar_min"] > destinatario["andar_max"]:
+        if item["tipo"] in ("arma", "armadura", "anel", "colar", "mortalha") and item["andar_min"] > destinatario["andar_max"]:
             notas.append(f"🔒 {item['nome']} só destrava lá no andar {item['andar_min']}.")
     return notas
 
@@ -239,7 +240,7 @@ class ModalItem(discord.ui.Modal, title="Oferecer item"):
         chave = H["encontrar_item"](self.nome.value, set(inventario) | set(mochila_instancias))
 
         if not chave:
-            equipados = {slot: j[slot] for slot in ("arma", "armadura", "anel", "colar") if j[slot]}
+            equipados = {slot: j[slot] for slot in ("arma", "armadura", "anel", "colar", "mortalha") if j[slot]}
             achado = H["encontrar_item"](self.nome.value, equipados.values())
             if achado:
                 await interaction.response.send_message(

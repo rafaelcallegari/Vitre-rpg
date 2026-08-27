@@ -14,6 +14,7 @@ COLUNAS_ESPERADAS = {
     "arma_instancia_id", "armadura_instancia_id",
     "anel_instancia_id", "colar_instancia_id",
     "avatar_msg_id", "avatar_url",
+    "mortalha", "mortalha_instancia_id",
 }
 
 

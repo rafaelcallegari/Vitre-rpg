@@ -4203,3 +4203,89 @@ abria não via nada. E o menu não tinha como reler o pedido em aberto.
   testes do arquivo quebram (os que afirmam o comportamento novo — os
   outros 22 continuam passando porque também seriam verdade sem a
   mudança, ex. "não avisa sem a janela aberta").
+
+## Slot de mortalha — quinto slot de equipamento (só infraestrutura)
+
+Card pediu só a estrutura: coluna nova, `rpg equipar` reconhecendo o tipo,
+perfil/status mostrando o slot, defesa somando no total, regra de andar e
+trade — nenhuma peça de mortalha entra em `game_data.ITENS` ainda (vem no
+cartão seguinte). Nome do slot é **mortalha**, não "manto" — «Manto do
+Selo» já é uma armadura, e `rpg equipar manto` ficaria ambíguo entre peças
+de slots diferentes.
+
+- **As duas colunas (`mortalha`, `mortalha_instancia_id`) nasceram juntas na
+  mesma migração (16)**, diferente de anel/colar (que ganharam a coluna de
+  instância só depois, migração 13, porque `upgrades` já tinha histórico
+  pra considerar). Aqui não há histórico nenhum — nenhuma peça de mortalha
+  jamais existiu, então não tem o que migrar, só `ALTER TABLE` das duas de
+  uma vez.
+- **`mortalha_instancia_id` entra mesmo sem `rpg melhorar`/encantamento
+  aceitarem esse slot ainda** — é infraestrutura obrigatória, não
+  antecipação de feature: `rpg equipar` é genérico
+  (`campos = {slot: item, f"{slot}_instancia_id": ...}`, `bot.py`) e grava
+  nessa coluna pra QUALQUER slot reconhecido, então sem ela `rpg equipar
+  <mortalha>` quebraria com erro de coluna inexistente. Mesmo raciocínio
+  levou a estender `instancias_na_mochila()` (`database.py`) pra também
+  excluir `mortalha_instancia_id` das instâncias soltas — sem isso, o dia
+  que uma mortalha melhorável existir, ela apareceria duplicada (equipada
+  E "na mochila" ao mesmo tempo).
+- **Defesa soma ANTES da curva percentual**: `atributos.ficha()` ganhou um
+  quinto parâmetro opcional `mortalha=None`, e `val_def = defesa(armadura
+  .get("def", 0) + mortalha.get("def", 0))` — mortalha empilha com
+  armadura no mesmo "def" bruto, depois os dois juntos passam pela mesma
+  `reducao_dano()`/teto de 60%. Não vira uma segunda fonte de redução
+  independente — mais simples e evita ter que decidir como duas reduções
+  percentuais se combinariam.
+- **`bonus_atributo_equipamento(*pecas)` já era variádica** — só precisou
+  receber `mortalha` como mais um argumento posicional em `stats()`. Se uma
+  peça de mortalha futura declarar `"atributo"+"bonus"` (como anel/colar),
+  já funciona sem tocar nessa função de novo.
+- **`rpg status` (`texto_equipamento`) reaproveita `rotulo_armadura`** pra
+  mortalha (mesmo formato "+N DEF", já resolve melhoria/encantamento via
+  `com_instancia` genérico) — não precisou de um `rotulo_mortalha` próprio
+  porque o formato é idêntico ao de armadura.
+- **Ícone do slot é 🥻** — não colide com nenhum outro ícone de slot
+  (🗡️ arma, 🛡️ armadura, 💍 anel, 📿 colar) nem com emoji de item já usado
+  em `game_data.ITENS`.
+- **Interpretação de "`rpg perfil` e `rpg inventario` mostram o slot"**:
+  hoje só `rpg perfil` e `rpg status` mostram um campo "Equipado" (nenhum
+  dos dois, nem pra arma/armadura/anel/colar) — `rpg inventario` sempre foi
+  só a lista de itens soltos na mochila, nunca mostrou equipamento nenhum.
+  Implementei nos dois lugares que JÁ mostravam equipamento (`rpg perfil` e
+  `rpg status`), não em `rpg inventario` — criar uma seção de equipamento
+  ali seria uma tela nova, fora do que este cartão pediu (só encaixar o
+  slot no que já existe). Uma mortalha desequipada aparece em `rpg
+  inventario` do mesmo jeito que qualquer arma/armadura solta na mochila
+  já aparece — isso não precisou de código novo, é o comportamento
+  genérico de sempre.
+- **Não toquei em `comercio.py` (Encantador: `("arma","armadura","anel",
+  "colar")`, duas listas de seleção de peça) nem em `profissoes.py`
+  (`rpg encantar`/`rpg desencantar`/`rpg melhorar`, parsing de slot por
+  texto livre).** Fora do escopo do card, e hoje inofensivo — não existe
+  peça de mortalha pra equipar, então nenhum desses caminhos é alcançável
+  com esse slot ainda. **Pendência registrada pro cartão da peça**: quando
+  a primeira mortalha entrar em `ITENS`, o Encantador não vai conseguir
+  encantá-la (as duas listas em `comercio.py`) e os textos de uso de
+  `rpg encantar`/`rpg desencantar` em `profissoes.py` não vão mencionar o
+  slot — extensão de 5 tuplas/strings, não redesenho.
+- **`resetar_temporada()` zera `mortalha`/`mortalha_instancia_id` junto com
+  os outros quatro slots** — mesmo tratamento, equipamento não sobrevive a
+  reset de temporada.
+- Testado em `tests/test_slot_mortalha.py` com um item sintético de tipo
+  `mortalha` (`monkeypatch.setitem` em `game_data.ITENS`, nunca em
+  `game_data.py`): equipar ocupa o slot e desequipa a peça anterior;
+  recusa por andar não destrancado sem mexer na mochila; defesa soma no
+  total e na curva percentual, sozinha e junto com armadura; peça
+  equipada não sai numa troca (`trocas._commitar_troca`) mas desequipada
+  sai normalmente; `rpg perfil`/`rpg status` mostram o slot vazio e cheio;
+  `rpg inventario` já mostra a peça desequipada sem código novo; os outros
+  quatro slots continuam de pé. `tests/test_status_equipamento.py` e
+  `tests/test_database_migracao.py` (testes já existentes, não deste
+  cartão) precisaram só de atualização mecânica pro quinto slot existir
+  (contagem de `"*vazio*"`, `COLUNAS_ESPERADAS`). Validado revertendo só
+  os arquivos de implementação (`atributos.py`, `bot.py`, `database.py`,
+  `trocas.py`) via `git stash`, mantendo os testes no lugar: 15 quebram —
+  os 12 de `test_slot_mortalha.py` menos 2 que já seriam verdade sem a
+  mudança (troca de item desequipado, `rpg inventario` genérico), mais os
+  3 de `test_status_equipamento.py` e 2 de `test_database_migracao.py`
+  que a mudança de contagem/coluna esperada exigiu.

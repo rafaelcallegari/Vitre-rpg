@@ -221,15 +221,20 @@ def segundos_para_regenerar_mana(mana_atual, mana_max, mana_em, combate_em, agor
 
 # ------------------------------------------------------------------- resumo
 
-def ficha(nivel, atribs, arma=None, armadura=None, classe=None):
-    """Todos os derivados de uma vez — usado nos embeds de perfil e status."""
+def ficha(nivel, atribs, arma=None, armadura=None, classe=None, mortalha=None):
+    """Todos os derivados de uma vez — usado nos embeds de perfil e status.
+
+    `mortalha` soma no mesmo "def" da armadura, antes da curva percentual —
+    é o quinto slot de equipamento (ver decisoes.md § Slot de mortalha),
+    ainda sem peça nenhuma no catálogo."""
     arma = arma or {}
     armadura = armadura or {}
+    mortalha = mortalha or {}
     con = atribs["constituicao"]
     des = atribs["destreza"]
     chave = atributo_da_arma(arma)
     escala = ESCALONAMENTO_DESARMADO_ORADOR if (not arma and classe == "orador") else 1.0
-    val_def = defesa(armadura.get("def", 0))
+    val_def = defesa(armadura.get("def", 0) + mortalha.get("def", 0))
     return {
         "hp_max": hp_maximo(nivel, con),
         "mana_max": mana_maxima(nivel, atribs["inteligencia"]),

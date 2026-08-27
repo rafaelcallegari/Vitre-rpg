@@ -5,6 +5,7 @@
 import atributos as at
 import bot
 import database as db
+import game_data
 
 
 def _jogador(**campos):
@@ -14,10 +15,12 @@ def _jogador(**campos):
     return db.get_jogador(1)
 
 
-def test_stats_expoe_none_pros_quatro_slots_vazios():
+def test_stats_expoe_none_pros_cinco_slots_vazios():
     j = _jogador()
     s = bot.stats(j)
-    assert s["equipamento"] == {"arma": None, "armadura": None, "anel": None, "colar": None}
+    assert s["equipamento"] == {
+        "arma": None, "armadura": None, "anel": None, "colar": None, "mortalha": None,
+    }
 
 
 def test_stats_expoe_a_peca_resolvida_quando_equipada():
@@ -50,18 +53,26 @@ def test_texto_equipamento_marca_slot_vazio():
     j = _jogador()
     s = bot.stats(j)
     texto = bot.texto_equipamento(s)
-    assert texto.count("*vazio*") == 4   # arma, armadura, anel e colar
+    assert texto.count("*vazio*") == 5   # arma, armadura, anel, colar e mortalha
 
 
-def test_texto_equipamento_mostra_nome_e_bonus_de_cada_peca():
+def test_texto_equipamento_mostra_nome_e_bonus_de_cada_peca(monkeypatch):
+    # mortalha ainda não tem peça nenhuma no catálogo (ver decisoes.md §
+    # Slot de mortalha) -- item sintético só pra este teste, igual ao card
+    # pediu pros testes de tests/test_slot_mortalha.py.
+    monkeypatch.setitem(
+        game_data.ITENS, "mortalha_sintetica",
+        {"nome": "Mortalha Sintética", "emoji": "🥻", "tipo": "mortalha", "def": 6, "andar_min": 1},
+    )
     j = _jogador(arma="espada_ferro", armadura="couro_batido",
-                  anel="anel_forca", colar="colar_inteligencia")
+                  anel="anel_forca", colar="colar_inteligencia", mortalha="mortalha_sintetica")
     s = bot.stats(j)
     texto = bot.texto_equipamento(s)
     assert "Espada de Ferro" in texto and "+8 ATK" in texto
     assert "Couro Batido" in texto and "+8 DEF" in texto
     assert "Anel do Punho Firme" in texto and "+4 FOR" in texto
     assert "Colar do Eco Arcano" in texto and "+2 INT" in texto
+    assert "Mortalha Sintética" in texto and "+6 DEF" in texto
     assert "*vazio*" not in texto
 
 
