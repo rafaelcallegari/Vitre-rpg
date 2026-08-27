@@ -4160,3 +4160,46 @@ menu de `rpg falar guia` mostra os 4 botões fixos e só ganha o 5º quando há
 material suficiente; `rpg colher` respeita janela/andar/elegibilidade.
 Validado revertendo a mudança (`git stash`) e confirmando que só os 21
 testes novos quebram, nada mais na suíte (311 → 332 depois).
+
+### Aviso da flor também em `rpg cacar`/`rpg explorar` + botão "Sobre o pedido"
+
+Carta pequena em cima da anterior: o aviso da flor só saía na chegada do
+`rpg viajar 1` — quem já estava parado no andar 1 farmando quando a janela
+abria não via nada. E o menu não tinha como reler o pedido em aberto.
+
+- **`aviso_flor_do_andar_1(user_id, andar_atual)` (`bot.py`) é a mesma
+  checagem extraída da chegada de `rpg viajar`**, agora chamada nos três
+  lugares onde o jogador pode estar parado no andar 1 quando a janela abre:
+  `rpg viajar` (chegada), `rpg cacar` e `rpg explorar` (ação parada ali).
+  Um helper só, não a mesma condição copiada três vezes — os três chamam
+  logo antes do `ctx.send(embed=e)` final, dentro do `if`/`else` de vitória/
+  derrota (o aviso não depende de ganhar ou perder a caçada).
+- **Continua sem gatilho por entrada de andar via `after_invoke`** — cada
+  comando checa sozinho no momento em que já ia mandar a mensagem, mesmo
+  padrão de antes. Quem não estiver no andar 1 na janela continua perdendo,
+  de propósito (igual já valia pra `rpg viajar`).
+- **"Sobre o pedido" é um botão condicional a mais no menu da Guia**
+  (`BotaoSobreOPedidoGuia`, `bot.py`) — aparece quando
+  `andares_altos.pedido_pendente()` devolve algum pedido (independente de
+  já dar pra entregar ou não) e some sozinho quando a corrente termina.
+  Mostra a fala aprovada do pedido (`andares_altos.FALA_PEDIDO`/
+  `fala_do_pedido`, um texto por `quest_id`, separado de
+  `FALA_O_QUE_ESPERA`/`FALA_SOBRE_VOCE` porque varia por PEDIDO, não por
+  andar nem por mortes) e o progresso `tem/precisa` no rodapé do embed.
+- **O progresso é lido no clique, não guardado no momento em que o menu foi
+  montado.** `db.qtd_item(user_id, item)` (nova, ao lado de `tem_item` —
+  esta devolve o número exato, não só o booleano de "tem o bastante")
+  é chamada dentro do `callback` do botão, então farmar mais material
+  enquanto a conversa está aberta na tela já reflete no clique seguinte.
+- Testado em `tests/test_guia_manto.py`: `rpg cacar`/`rpg explorar` avisam
+  no andar 1 com janela aberta e pedido da flor em aberto, e não avisam sem
+  janela, sem pedido, ou fora do andar 1; as 4 falas de pedido batem com o
+  texto aprovado; "Sobre o pedido" ausente sem pedido em aberto e depois da
+  corrente completa; o botão mostra fala + progresso certo, e o progresso
+  reflete item adicionado à mochila DEPOIS do menu já montado (prova que lê
+  na hora do clique, não no momento em que a view foi criada). Validado
+  revertendo só os arquivos de implementação (`andares_altos.py`, `bot.py`,
+  `database.py`) via `git stash` e mantendo os testes no lugar: 8 dos 30
+  testes do arquivo quebram (os que afirmam o comportamento novo — os
+  outros 22 continuam passando porque também seriam verdade sem a
+  mudança, ex. "não avisa sem a janela aberta").

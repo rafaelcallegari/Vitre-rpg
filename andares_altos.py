@@ -115,6 +115,35 @@ PEDIDOS = (
     {"andar": 14, "quest_id": "guia_cinzas", "pede": "cinza_quente", "qtd": 10, "da": "fecho_do_manto"},
 )
 
+# Fala do botão "Sobre o pedido" — uma por quest_id, aprovada palavra por
+# palavra, não reescrever. Separada de FALA_O_QUE_ESPERA/FALA_SOBRE_VOCE
+# porque varia por PEDIDO, não por andar nem por mortes.
+FALA_PEDIDO = {
+    "guia_flor": (
+        "No primeiro andar, no meio daquele mato todo, nasce uma flor "
+        "branca que só abre em certas horas. Ele colhia uma toda vez que "
+        "passávamos por lá e nunca me disse pra quê. Traz uma. É tudo que "
+        "eu peço."
+    ),
+    "guia_farpas": (
+        "Seis farpas, das que ficam presas na pedra depois que o trovão "
+        "passa. Não me pergunte pra quê ainda. Você vai entender quando eu "
+        "tiver as quatro coisas na mão."
+    ),
+    "guia_estilhacos": (
+        "Oito estilhaços. Sei que é muito. Este andar cobra caro por tudo, "
+        "inclusive por gelo, e eu não tenho como descer pra buscar sozinha."
+    ),
+    "guia_cinzas": (
+        "Dez punhados de cinza, ainda quentes. É o último. Depois disso eu "
+        "te devolvo uma coisa e a gente não se deve mais nada."
+    ),
+}
+
+
+def fala_do_pedido(quest_id):
+    return FALA_PEDIDO.get(quest_id)
+
 
 def pedido_pendente(user_id):
     """O primeiro pedido da corrente (11 -> 12 -> 13 -> 14) que o jogador

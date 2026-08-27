@@ -1191,6 +1191,17 @@ def tem_item(user_id, item, qtd=1):
     return bool(row) and row["qtd"] >= qtd
 
 
+def qtd_item(user_id, item):
+    """Quantidade exata na mochila -- 0 sem linha na tabela. Usado onde o
+    número em si importa (progresso de pedido), não só o booleano de
+    tem_item."""
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT qtd FROM inventario WHERE user_id = ? AND item = ?", (user_id, item)
+        ).fetchone()
+    return row["qtd"] if row else 0
+
+
 def remove_item(user_id, item, qtd=1):
     if not tem_item(user_id, item, qtd):
         return False

@@ -217,7 +217,7 @@ def test_morte_acima_do_selo_preserva_pecas_e_progresso_da_quest():
 
 
 # ---------------------------------------------------------------- fiação em bot.py (falar/colher)
-def test_falar_guia_abre_menu_com_quatro_botoes_sem_entregar():
+def test_falar_guia_abre_menu_com_quatro_botoes_fixos_mais_sobre_o_pedido():
     j = _jogador(andar=11, andar_max=11)
     ctx = MagicMock()
     ctx.author.id = j["user_id"]
@@ -227,7 +227,9 @@ def test_falar_guia_abre_menu_com_quatro_botoes_sem_entregar():
 
     view = ctx.send.call_args.kwargs["view"]
     labels = sorted(c.label for c in view.children)
-    assert labels == ["O que me espera", "Pedir para voltar", "Sair", "Sobre você"]
+    # 4 fixos + "Sobre o pedido" (há pedido em aberto assim que ela concede
+    # a flor) -- sem "Entregar", que exige ter o material na mochila.
+    assert labels == ["O que me espera", "Pedir para voltar", "Sair", "Sobre o pedido", "Sobre você"]
     assert db.estado_sidequest(j["user_id"], "guia_flor") == "durante"   # pedido concedido ao abrir
 
 
@@ -248,7 +250,7 @@ def test_falar_guia_mostra_botao_entregar_quando_tem_o_material():
 
 def test_botao_pedir_para_voltar_teleporta_pro_10_e_trava_o_painel():
     j = _jogador(andar=13, andar_max=13)
-    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", None)
+    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", None, None)
     it = _interacao(j["user_id"])
 
     asyncio.run(_botao(view, "Pedir para voltar").callback(it))
@@ -260,7 +262,7 @@ def test_botao_pedir_para_voltar_teleporta_pro_10_e_trava_o_painel():
 def test_botao_entregar_falha_sem_quebrar_se_material_sumiu_entre_abrir_e_clicar():
     j = _jogador(andar=11, andar_max=11)
     pedido = andares_altos.conceder_pedido_pendente(j["user_id"])
-    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", pedido)
+    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", pedido, pedido)
     it = _interacao(j["user_id"])
 
     asyncio.run(_botao(view, f"Entregar {pedido['qtd']}x {ITENS[pedido['pede']]['nome']}").callback(it))
@@ -302,3 +304,143 @@ def test_colher_nao_faz_nada_fora_do_andar_1():
 
     assert not db.tem_item(j["user_id"], "flor_do_andar_1", 1)
     assert "andar 1" in ctx.send.call_args.args[0]
+
+
+# ---------------------------------------------------------------- aviso da flor em cacar/explorar
+def _embed_enviado(ctx):
+    return ctx.send.call_args.kwargs.get("embed") or ctx.send.call_args.args[0]
+
+
+def _tem_aviso_flor(embed):
+    return any(f.name == "🌸 Na grama" for f in embed.fields)
+
+
+def _ctx_jogador(user_id):
+    ctx = MagicMock()
+    ctx.author.id = user_id
+    ctx.send = AsyncMock()
+    return ctx
+
+
+def test_cacar_avisa_a_flor_parado_no_andar_1_com_a_janela_aberta(monkeypatch):
+    j = _jogador(andar=1, andar_max=13)
+    andares_altos.conceder_pedido_pendente(j["user_id"])   # pedido do 11 concedido, jogador desceu
+    monkeypatch.setattr(bot, "flor_ativa", lambda: (True, None))
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.cacar.callback(ctx))
+
+    assert _tem_aviso_flor(_embed_enviado(ctx))
+
+
+def test_explorar_avisa_a_flor_parado_no_andar_1_com_a_janela_aberta(monkeypatch):
+    j = _jogador(andar=1, andar_max=13)
+    andares_altos.conceder_pedido_pendente(j["user_id"])
+    monkeypatch.setattr(bot, "flor_ativa", lambda: (True, None))
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.explorar.callback(ctx))
+
+    assert _tem_aviso_flor(_embed_enviado(ctx))
+
+
+def test_cacar_nao_avisa_sem_a_janela_aberta(monkeypatch):
+    j = _jogador(andar=1, andar_max=13)
+    andares_altos.conceder_pedido_pendente(j["user_id"])
+    monkeypatch.setattr(bot, "flor_ativa", lambda: (False, None))
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.cacar.callback(ctx))
+
+    assert not _tem_aviso_flor(_embed_enviado(ctx))
+
+
+def test_cacar_nao_avisa_sem_o_pedido_da_flor_em_aberto(monkeypatch):
+    j = _jogador(andar=1, andar_max=13)   # nunca falou com a Guia -- pedido ainda 'antes'
+    monkeypatch.setattr(bot, "flor_ativa", lambda: (True, None))
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.cacar.callback(ctx))
+
+    assert not _tem_aviso_flor(_embed_enviado(ctx))
+
+
+def test_explorar_nao_avisa_fora_do_andar_1_mesmo_com_a_janela_aberta(monkeypatch):
+    j = _jogador(andar=12, andar_max=13)
+    andares_altos.conceder_pedido_pendente(j["user_id"])
+    monkeypatch.setattr(bot, "flor_ativa", lambda: (True, None))
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.explorar.callback(ctx))
+
+    assert not _tem_aviso_flor(_embed_enviado(ctx))
+
+
+# ---------------------------------------------------------------- botão "Sobre o pedido"
+def test_fala_do_pedido_bate_com_os_quatro_textos_aprovados():
+    trechos = {
+        "guia_flor": "nasce uma flor",
+        "guia_farpas": "Seis farpas",
+        "guia_estilhacos": "Oito estilhaços",
+        "guia_cinzas": "Dez punhados de cinza",
+    }
+    for quest_id, trecho in trechos.items():
+        assert trecho in andares_altos.fala_do_pedido(quest_id)
+
+
+def test_sobre_o_pedido_nao_aparece_sem_pedido_em_aberto():
+    j = _jogador(andar=15, andar_max=15)
+    # esgota a corrente inteira sem nunca deixar nada pendente
+    for material, qtd in (
+        ("flor_do_andar_1", 1), ("farpa_eletrica", 6),
+        ("estilhaco_gelido", 8), ("cinza_quente", 10),
+    ):
+        andares_altos.conceder_pedido_pendente(j["user_id"])
+        db.add_item(j["user_id"], material, qtd)
+        andares_altos.entregar_pedido(j["user_id"])
+    ctx = _ctx_jogador(j["user_id"])
+
+    asyncio.run(bot.falar.callback(ctx, quem="guia"))
+
+    view = ctx.send.call_args.kwargs["view"]
+    labels = {c.label for c in view.children}
+    assert "Sobre o pedido" not in labels
+    assert not any(label.startswith("Entregar") for label in labels)
+
+
+def test_botao_sobre_o_pedido_mostra_fala_e_progresso_tem_precisa():
+    j = _jogador(andar=12, andar_max=12)
+    pedido = andares_altos.conceder_pedido_pendente(j["user_id"])   # guia_flor
+    db.add_item(j["user_id"], "flor_do_andar_1", 1)
+    andares_altos.entregar_pedido(j["user_id"])
+    pedido = andares_altos.conceder_pedido_pendente(j["user_id"])   # guia_farpas, pede 6
+    db.add_item(j["user_id"], "farpa_eletrica", 4)                  # só juntou 4 até agora
+
+    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", pedido, None)
+    it = _interacao(j["user_id"])
+
+    asyncio.run(_botao(view, "Sobre o pedido").callback(it))
+
+    e = it.message.embeds[0]
+    assert "Seis farpas" in e.description
+    e.set_footer.assert_called_once()
+    assert e.set_footer.call_args.kwargs["text"] == "Farpa Elétrica: 4/6"
+
+
+def test_botao_sobre_o_pedido_le_a_mochila_na_hora_do_clique_nao_na_abertura():
+    """O progresso não pode ficar congelado no que a mochila tinha quando o
+    menu foi montado -- o jogador pode ter farmado mais material enquanto a
+    conversa estava aberta na tela."""
+    j = _jogador(andar=12, andar_max=12)
+    andares_altos.conceder_pedido_pendente(j["user_id"])
+    db.add_item(j["user_id"], "flor_do_andar_1", 1)
+    andares_altos.entregar_pedido(j["user_id"])
+    pedido = andares_altos.conceder_pedido_pendente(j["user_id"])   # guia_farpas
+
+    view = bot.GuiaDialogoView(j["user_id"], "elu", "espera", "sobre", pedido, None)
+    db.add_item(j["user_id"], "farpa_eletrica", 3)   # chega DEPOIS do menu já montado
+    it = _interacao(j["user_id"])
+
+    asyncio.run(_botao(view, "Sobre o pedido").callback(it))
+
+    assert it.message.embeds[0].set_footer.call_args.kwargs["text"] == "Farpa Elétrica: 3/6"

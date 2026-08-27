@@ -731,6 +731,10 @@ async def cacar(ctx):
             value=f"Perdeu **{perda}** 🪙 e acordou no ponto de retorno com 30% de HP.",
             inline=False,
         )
+
+    aviso_flor = aviso_flor_do_andar_1(j["user_id"], j["andar"])
+    if aviso_flor:
+        e.add_field(name="🌸 Na grama", value=aviso_flor, inline=False)
     await ctx.send(embed=e)
 
 
@@ -793,6 +797,10 @@ async def explorar(ctx):
                 value=f"**Nível {nivel}** · +{at.PONTOS_POR_NIVEL * subiu} ponto(s) — `rpg upar`",
                 inline=False,
             )
+
+    aviso_flor = aviso_flor_do_andar_1(j["user_id"], j["andar"])
+    if aviso_flor:
+        e.add_field(name="🌸 Na grama", value=aviso_flor, inline=False)
     await ctx.send(embed=e)
 
 
@@ -837,6 +845,22 @@ def custo_e_motivo_viagem(j, destino, gratis_carroca):
     if db.viagem_gratis_guilda(j["user_id"], j["andar_max"], destino):
         return 0, "guilda"
     return custo_viagem(j["andar"], destino), None
+
+
+def aviso_flor_do_andar_1(user_id, andar_atual):
+    """Texto do campo de embed se a flor estiver disponível pra colher AGORA
+    — andar 1, janela da mesma hora do Bramm aberta, pedido do andar 11 em
+    aberto e ainda sem a flor na mochila. None caso contrário. Chamado nos
+    três lugares onde o jogador pode estar parado no andar 1 quando a janela
+    abre: chegada (`rpg viajar`) e as duas ações que rodam ali sem sair do
+    lugar (`rpg cacar`/`rpg explorar`) — sem isso, quem já estava farmando
+    quando a janela abriu nunca saberia que a flor apareceu. Ver
+    decisoes.md § A Guia."""
+    if andar_atual != 1 or not flor_ativa()[0] or not andares_altos.pode_colher_flor(user_id):
+        return None
+    if db.tem_item(user_id, "flor_do_andar_1", 1):
+        return None
+    return "Tem uma flor diferente aqui. `rpg colher`."
 
 
 @bot.command(name="viajar", aliases=["ir", "travel"])
@@ -910,13 +934,9 @@ async def viajar(ctx, destino: int = 0):
     else:
         e.set_footer(text=f"Viagem: -{custo} 🪙 · restam {j['moedas'] - custo}")
 
-    # a flor do andar 1 não tem aviso no #torre (ver decisoes.md § A Guia) —
-    # só quem chega aqui na janela certa, já com o pedido da Guia em mãos,
-    # repara nela. Chegar aqui é a única forma de disparar o aviso; `rpg
-    # colher` funciona igual mesmo sem ele, o aviso é só conveniência.
-    if destino == 1 and flor_ativa()[0] and andares_altos.pode_colher_flor(j["user_id"]) \
-            and not db.tem_item(j["user_id"], "flor_do_andar_1", 1):
-        e.add_field(name="🌸 Na grama", value="Tem uma flor diferente aqui. `rpg colher`.", inline=False)
+    aviso_flor = aviso_flor_do_andar_1(j["user_id"], destino)
+    if aviso_flor:
+        e.add_field(name="🌸 Na grama", value=aviso_flor, inline=False)
 
     await ctx.send(embed=e)
 
@@ -1116,6 +1136,27 @@ class BotaoSobreVoceGuia(discord.ui.Button):
         await interaction.response.edit_message(embed=e, view=self.view)
 
 
+class BotaoSobreOPedidoGuia(discord.ui.Button):
+    """Só existe quando há um pedido em aberto na corrente — some quando não
+    há nenhum, e some de vez quando a corrente termina (ver decisoes.md § A
+    Guia). Lê o progresso (tem/precisa) da mochila no CLIQUE, não no momento
+    em que o menu foi montado — o jogador pode ter farmado mais material
+    entre abrir a conversa e clicar aqui."""
+
+    def __init__(self, pedido):
+        super().__init__(label="Sobre o pedido", style=discord.ButtonStyle.secondary, row=0)
+        self.pedido = pedido
+
+    async def callback(self, interaction):
+        pedido = self.pedido
+        item = ITENS[pedido["pede"]]
+        tem = db.qtd_item(self.view.autor_id, pedido["pede"])
+        e = interaction.message.embeds[0]
+        e.description = f"*{andares_altos.fala_do_pedido(pedido['quest_id'])}*"
+        e.set_footer(text=f"{item['nome']}: {tem}/{pedido['qtd']}")
+        await interaction.response.edit_message(embed=e, view=self.view)
+
+
 class BotaoEntregarGuia(discord.ui.Button):
     """Só existe no menu quando o pedido da vez está 'durante' E o jogador
     já carrega a quantidade pedida — não é um dos 4 fixos, é condicional
@@ -1153,13 +1194,13 @@ class BotaoEntregarGuia(discord.ui.Button):
 
 class GuiaDialogoView(discord.ui.View):
     """Menu da Guia — 4 opções fixas (Pedir para voltar / O que me espera /
-    Sobre você / Sair), iguais em todo andar 11-15, mais um 5º botão
-    condicional (Entregar) quando há pedido pendente entregável. Não usa
-    dialogos.DIALOGOS/opcoes_do_dialogo — ela continua carta própria (ver
-    npcs.py e decisoes.md), só que agora com menu em vez de teleporte
-    automático."""
+    Sobre você / Sair), iguais em todo andar 11-15, mais dois botões
+    condicionais: "Sobre o pedido" (quando há pedido em aberto) e "Entregar"
+    (quando esse pedido já pode ser entregue). Não usa dialogos.DIALOGOS/
+    opcoes_do_dialogo — ela continua carta própria (ver npcs.py e
+    decisoes.md), só que agora com menu em vez de teleporte automático."""
 
-    def __init__(self, autor_id, pronome, espera_texto, sobre_texto, pedido_entregavel):
+    def __init__(self, autor_id, pronome, espera_texto, sobre_texto, pedido_atual, pedido_entregavel):
         super().__init__(timeout=120)
         self.autor_id = autor_id
         self.pronome = pronome
@@ -1167,6 +1208,8 @@ class GuiaDialogoView(discord.ui.View):
         self.add_item(BotaoPedirVoltarGuia())
         self.add_item(BotaoOQueEsperaGuia(espera_texto))
         self.add_item(BotaoSobreVoceGuia(sobre_texto))
+        if pedido_atual:
+            self.add_item(BotaoSobreOPedidoGuia(pedido_atual))
         if pedido_entregavel:
             self.add_item(BotaoEntregarGuia(pedido_entregavel))
         self.add_item(BotaoSairDialogo(dialogos.SAIDA_PADRAO))
@@ -1221,7 +1264,7 @@ async def falar(ctx, *, quem: str = ""):
         view = GuiaDialogoView(
             ctx.author.id, j["pronome"],
             andares_altos.o_que_espera(j["andar"]), andares_altos.sobre_voce(j["mortes"]),
-            pedido_entregavel,
+            pedido, pedido_entregavel,
         )
         view.mensagem = await ctx.send(embed=e, view=view)
         return
