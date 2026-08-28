@@ -171,7 +171,12 @@ def _tick_dano(luta, cond):
     if cond.get("origem") and cond.get("drena"):
         curador = luta.por_id(cond["origem"])
         if curador and curador.ativo:
-            cura = int(dano * cond["drena"])
+            # piso de 1, por consistência com o dano acima (_valor_absoluto já
+            # garante isso pro `dano`) -- na escala de HP de chefe que a
+            # Sanguessuga usa hoje isso nunca morde, é só a mesma regra dos
+            # dois lados da mesma condição. Ver decisoes.md § Buffar o
+            # sombrio «Sanguessuga».
+            cura = max(1, int(dano * cond["drena"]))
             curador.hp = min(curador.s["hp_max"], curador.hp + cura)
 
 

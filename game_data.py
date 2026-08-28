@@ -477,13 +477,28 @@ def multiplicador_elemento(elemento_arma, elemento_alvo):
 # chefe não se cura). Os seis tipos já existem em condicoes.py — nenhum tipo
 # novo, só pontos de consulta novos em combate.py pro chefe como alvo. Ver
 # decisoes.md § Dano elemental.
+#
+# Sanguessuga (buffada em 28/08, ver decisoes.md § Buffar o sombrio
+# «Sanguessuga»): a cura é fração do HP do CHEFE mas cai no HP do JOGADOR, e
+# os dois pools têm ordens de grandeza bem diferentes -- chefe do andar 15
+# tem 5.580 de HP, jogador de endgame tem 400-600. A 3% com drena 1.0 são
+# ~167 de cura por rodada, ~42% da vida de um jogador de 400 -- contra um
+# chefe (andar 15) de atk 275. Com 25% de chance por golpe refrescando a
+# duração, o uptime é quase contínuo. Número grande de propósito, escolhido
+# com essa conta na mão -- não é descuido de escala.
+SANGUESSUGA_DANO_POR_RODADA = 0.03   # fração do HP máx do ALVO, por rodada
+SANGUESSUGA_DRENA = 1.0              # fração do dano acima devolvida em cura pro portador da arma
+
 CONDICOES_ARMA_ELEMENTAL = {
     "fogo": {"tipo": "dano_por_rodada", "nome": "Brasa", "emoji": "🔥", "duracao": 3, "valor": 0.03},
     "gelo": {"tipo": "pula_turno", "nome": "Travamento", "emoji": "🔒", "duracao": 1, "valor": 0},
     "raio": {"tipo": "bloqueia_skill", "nome": "Curto", "emoji": "⚡", "duracao": 2, "valor": 0},
     "ar": {"tipo": "chance_erro", "nome": "Corrente", "emoji": "🌬️", "duracao": 3, "valor": 0.25},
     "divino": {"tipo": "vulneravel", "nome": "Marca", "emoji": "✨", "duracao": 3, "valor": 0.20},
-    "sombrio": {"tipo": "dano_por_rodada", "nome": "Sanguessuga", "emoji": "🩸", "duracao": 3, "valor": 0.02, "drena": 0.5},
+    "sombrio": {
+        "tipo": "dano_por_rodada", "nome": "Sanguessuga", "emoji": "🩸", "duracao": 3,
+        "valor": SANGUESSUGA_DANO_POR_RODADA, "drena": SANGUESSUGA_DRENA,
+    },
 }
 
 # Fase 2: as 4 bases. Os 12 ramos (ascensões) entram depois.

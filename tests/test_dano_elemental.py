@@ -125,13 +125,32 @@ def test_condicao_ja_ativa_refresca_duracao_em_vez_de_empilhar(monkeypatch):
 
 
 # ================================================================
-# Sanguessuga (sombrio): drena devolve cura ao portador, respeitando hp_max
+# Sanguessuga (sombrio): buffada em 28/08 -- 3% de dano, drena 1.0 (era 2%/0.5)
+# ver decisoes.md § Buffar o sombrio «Sanguessuga»
 # ================================================================
 
-def test_sanguessuga_devolve_cura_ao_portador_da_arma(monkeypatch):
-    monkeypatch.setattr(combate.random, "random", lambda: 0.0)  # sempre passa a chance de aplicar
+def test_sanguessuga_usa_as_constantes_nomeadas_com_os_valores_novos():
+    """Os números não podem ficar soltos no dict -- valor e drena vêm de
+    SANGUESSUGA_DANO_POR_RODADA/SANGUESSUGA_DRENA, e os valores em si são os
+    do buff (3% / drena 1.0, não mais 2% / 0.5)."""
+    assert game_data.SANGUESSUGA_DANO_POR_RODADA == 0.03
+    assert game_data.SANGUESSUGA_DRENA == 1.0
     dados = game_data.CONDICOES_ARMA_ELEMENTAL["sombrio"]
-    assert dados.get("drena")   # é a Sanguessuga -- se não tiver drena, o teste abaixo não prova nada
+    assert dados["valor"] == game_data.SANGUESSUGA_DANO_POR_RODADA
+    assert dados["drena"] == game_data.SANGUESSUGA_DRENA
+
+
+def test_brasa_fogo_nao_mudou_com_o_buff_do_sombrio():
+    """O cartão foi explícito: nada muda no fogo -- 3% de dano, sem drena
+    nenhuma. A Brasa fica dominada pela Sanguessuga (mesmo dano, sem cura) de
+    propósito."""
+    dados = game_data.CONDICOES_ARMA_ELEMENTAL["fogo"]
+    assert dados["valor"] == 0.03
+    assert "drena" not in dados
+
+
+def test_sanguessuga_devolve_cura_igual_ao_dano_com_drena_1(monkeypatch):
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)  # sempre passa a chance de aplicar
     chefe_pequeno = {**CHEFE_TESTE, "hp": 500}   # chefe pequeno o bastante pra cura não bater no teto de HP do jogador
     c = _combatente_com_arma(1, "machado_sombrio")   # sombrio
     luta = combate.Luta([c], chefe_pequeno, andar_num=1)
@@ -140,10 +159,24 @@ def test_sanguessuga_devolve_cura_ao_portador_da_arma(monkeypatch):
     combate._talvez_condicionar_chefe(luta, c)   # amarra a Sanguessuga de verdade, pela arma
     condicoes.tick(luta)
 
-    dano = max(1, int(luta.hp_chefe_max * dados["valor"]))
-    cura_esperada = int(dano * dados["drena"])
-    assert cura_esperada < c.s["hp_max"]   # a conta abaixo só vale se não bater no teto
-    assert c.hp == 1 + cura_esperada
+    dano = max(1, int(luta.hp_chefe_max * game_data.SANGUESSUGA_DANO_POR_RODADA))
+    assert dano < c.s["hp_max"]   # a conta abaixo só vale se não bater no teto
+    assert c.hp == 1 + dano   # drena 1.0 -- cura é EXATAMENTE o dano causado, não metade dele
+
+
+def test_sanguessuga_com_drena_1_estoura_o_teto_de_hp_max_com_mais_frequencia(monkeypatch):
+    """Com drena 1.0 contra o HP de chefe de endgame, a cura sozinha passa
+    fácil do hp_max do jogador -- esse é o caso comum agora, não a exceção
+    (ver a conta no comentário de game_data.py)."""
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)
+    c = _combatente_com_arma(1, "machado_sombrio")
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)   # CHEFE_TESTE tem HP altíssimo de propósito
+    c.hp = c.s["hp_max"] - 1   # falta só 1 -- qualquer cura > 1 já bateria no teto
+
+    combate._talvez_condicionar_chefe(luta, c)
+    condicoes.tick(luta)
+
+    assert c.hp == c.s["hp_max"]
 
 
 def test_sanguessuga_nao_ultrapassa_o_hp_max_do_portador(monkeypatch):
@@ -156,6 +189,24 @@ def test_sanguessuga_nao_ultrapassa_o_hp_max_do_portador(monkeypatch):
     condicoes.tick(luta)
 
     assert c.hp == c.s["hp_max"]
+
+
+def test_sanguessuga_nao_cura_curador_caido_mas_continua_tickando_dano_no_chefe(monkeypatch):
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)
+    chefe_pequeno = {**CHEFE_TESTE, "hp": 500}
+    c = _combatente_com_arma(1, "machado_sombrio")
+    outro = _combatente_com_arma(2, "espada_ferro")   # só pra luta não ficar sem ninguém ativo
+    luta = combate.Luta([c, outro], chefe_pequeno, andar_num=1)
+
+    combate._talvez_condicionar_chefe(luta, c)   # Sanguessuga amarrada com origem=c.id
+    c.hp = 0
+    c.caiu = True   # portador da arma caiu ANTES do tick -- não deveria receber cura
+    hp_chefe_antes = luta.hp_chefe
+
+    condicoes.tick(luta)
+
+    assert c.hp == 0   # continua caído, sem cura nenhuma
+    assert luta.hp_chefe < hp_chefe_antes   # a condição continua tickando dano no chefe normalmente
 
 
 # ================================================================

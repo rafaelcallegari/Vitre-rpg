@@ -4686,3 +4686,67 @@ stash`: 9 dos 10 testes quebram — o único que sobrevive
 (`test_cacada_nao_aplica_condicao_nenhuma_no_monstro`) é uma checagem de
 fronteira que deveria ser verdade com ou sem a mudança, não uma prova de
 comportamento novo.
+
+## Buffar o sombrio «Sanguessuga»
+
+Ajuste de balanceamento sobre `game_data.CONDICOES_ARMA_ELEMENTAL["sombrio"]`
+(ver § Dano elemental acima): `valor` 0.02 → **0.03**, `drena` 0.5 → **1.0**,
+`duracao` continua 3. Fogo (Brasa) não mudou — decisão explícita de deixar o
+fogo como "a opção simples" e o sombrio como a escolha de quem quer cura.
+
+Números extraídos como constantes nomeadas, `SANGUESSUGA_DANO_POR_RODADA` e
+`SANGUESSUGA_DRENA`, logo acima da tabela — são valores de balanceamento que
+vão ser mexidos de novo depois de mais gente jogar, então não ficam soltos
+dentro do dict. A entrada `"sombrio"` referencia as duas em vez de repetir o
+literal.
+
+### A conta que motivou o número (registrada no comentário do código também)
+
+A cura do `drena` é fração do HP do **chefe** (`_valor_absoluto(valor,
+luta.hp_chefe_max)` em `condicoes._tick_dano`), mas cai no HP do **jogador**
+— os dois pools têm ordens de grandeza bem diferentes. Chefe do andar 15 tem
+5.580 de HP; jogador de endgame tem 400-600. Com 3% de `valor` e `drena`
+1.0: `0.03 * 5580 ≈ 167` de cura por rodada — **~42% da vida de um jogador de
+400**, de um monstro cujo próprio ataque (275) já é grande. Com 25% de
+chance por golpe e a condição refrescando a cada acerto novo, o uptime é
+quase contínuo numa luta longa. O Rafael tomou a decisão com essa conta na
+mão — é sustentação de vida forte de propósito, não descuido de escala.
+
+**Problema estrutural conhecido, não resolvido nesta passada**: `drena`
+escalar com o HP do ALVO (que pode ser um chefe de late game, com HP em
+milhares) em vez de escalar com o HP de quem recebe a cura (o jogador, com
+HP na casa das centenas) é uma característica de design que só piora contra
+chefes maiores — quanto mais forte o chefe, mais forte a Sanguessuga cura,
+sem relação nenhuma com o quanto o jogador precisa daquela cura. Funciona
+hoje porque o valor foi calibrado a dedo pro chefe do andar 15 (a única
+referência usada na conta). Se a torre ganhar chefes ainda maiores, ou se a
+Sanguessuga passar a valer também na caçada/exploração (não vale — ver §
+Dano elemental, item "Onde vale"), essa mesma conta precisa ser refeita. Não
+é bug: é a mesma arquitetura desde que `drena` foi criado, só ficou visível
+porque agora o valor é grande o bastante pra realmente estourar o teto de
+HP do jogador com frequência.
+
+### Micro-consistência: piso de 1 na cura do `drena`
+
+`condicoes._tick_dano` já garante `dano >= 1` via `_valor_absoluto`, mas a
+cura (`int(dano * cond["drena"])`) não tinha piso — era zero se o dano fosse
+0 e `drena < 1`. Corrigido pra `max(1, int(dano * cond["drena"]))`, pela
+mesma regra dos dois lados da condição, não porque algum bug real tenha
+aparecido: com `drena` 1.0 e `dano` já `>= 1`, a cura nunca cairia abaixo de
+1 de qualquer jeito. Declarado como consistência, não como correção.
+
+### Testes
+
+`tests/test_dano_elemental.py`: as duas constantes com os valores novos e a
+entrada de `"sombrio"` referenciando-as (não duplicando o literal); a Brasa
+(fogo) confirmada intocada (3%, sem `drena`); cura devolvida é **igual** ao
+dano (não mais metade); o teto de `hp_max` do portador continua valendo — e
+agora é o caso comum, testado partindo de HP quase cheio pra provar que
+estoura fácil; curador caído não recebe cura, mas a condição continua
+tickando dano no chefe normalmente. Validado revertendo só as duas
+constantes: 2 dos 4 testes novos quebram (os dois que checam os NÚMEROS
+específicos do buff); os outros dois (teto de HP, curador caído) testam um
+mecanismo que já era verdade com os valores antigos — não é regressão,
+é o mesmo motivo do `test_cacada_nao_aplica_condicao_nenhuma_no_monstro` do
+cartão anterior. Suíte completa (414 testes, 410 de antes + 4 novos)
+passando.
