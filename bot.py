@@ -45,10 +45,8 @@ CUSTO_DESCANSAR = 150
 
 GUIA_A_CADA_ACOES = 3   # acima do Selo, a Guia comenta a cada N comandos fora de luta
 
-# `rpg viajar` nunca alcança acima disso, mesmo com andar_max maior — andar
-# 12+ só se chega lutando pra cima a partir do 11, nunca de teleporte. Ver
-# decisoes.md § Teto de viajar acima do Selo.
-LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1
+# ver andares_altos.py — mora lá porque combate.py também precisa dela.
+LIMITE_VIAJAR = andares_altos.LIMITE_VIAJAR
 
 ICONES_NPC = {
     "mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬",
@@ -890,7 +888,8 @@ async def viajar(ctx, destino: int = 0):
         if j["andar"] > teto_viagem:
             linhas.append(
                 f"**{j['andar']}. {ANDARES[j['andar']]['nome']}** — você está aqui, "
-                f"mas `rpg viajar` não alcança daqui pra lá de novo depois que sair."
+                f"mas `rpg viajar` não teleporta daqui pra lá de novo depois que sair: "
+                f"a volta é lutando, `rpg boss` a partir do {LIMITE_VIAJAR}."
             )
         e = discord.Embed(title="Para onde?", description="\n".join(linhas), color=0xA8DADC)
         e.set_footer(text="rpg viajar <número> · você tem "

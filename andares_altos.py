@@ -19,6 +19,13 @@
 
 ANDAR_ACIMA_DO_SELO = 10   # sem loja/ferreiro/carroça acima disso — ver decisoes.md
 
+# `rpg viajar` nunca alcança acima disso, mesmo com andar_max maior — andar
+# 12+ só se chega lutando pra cima a partir do 11, nunca de teleporte. Mora
+# aqui (não em bot.py) porque combate.py também precisa dela pra montar a
+# mensagem de recusa da sala de chefe, e combate.py não pode importar bot.py
+# (ciclo) — ver decisoes.md § Teto de viajar acima do Selo.
+LIMITE_VIAJAR = ANDAR_ACIMA_DO_SELO + 1
+
 # ---------------- "O que me espera" — fixa por andar, não varia com mortes ----------------
 # Texto aprovado pelo Rafael em 25/08, palavra por palavra — não reescrever.
 FALA_O_QUE_ESPERA = {

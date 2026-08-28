@@ -12,7 +12,7 @@ import database as db
 import habilidades as hab
 import pronomes
 import travas
-from andares_altos import ANDAR_ACIMA_DO_SELO
+from andares_altos import ANDAR_ACIMA_DO_SELO, LIMITE_VIAJAR
 from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO, SALAO_TIERS
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
 
@@ -1443,11 +1443,24 @@ def instalar(bot, contexto):
     bot.remove_command("boss")
 
     async def checar_sala_do_chefe(ctx, j, party=False):
-        """Regras comuns ao boss solo e a' party — abrir a sala (ou lutar
-        sozinho) sempre exige andar == andar_max. Em `rpg party`, quem não
-        bate esse requisito ainda pode ajudar a luta de outro andar, então a
-        mensagem ensina isso em vez de só mandar voltar pro topo."""
-        if j["andar"] < j["andar_max"]:
+        """Regras comuns ao boss solo e a' party. Do andar 1 ao 10 (Selo)
+        exige andar == andar_max — sem isso dava pra farmar chefe fácil sem
+        risco. Acima do Selo isso travava sem saída: `rpg viajar` nunca passa
+        do andar 11 (LIMITE_VIAJAR), então quem descia de volta pro 11+ com
+        andar_max mais alto (viagem pra baixo, teleporte da Guia, ajuda de
+        party em andar menor) ficava sem hospedar em andar nenhum. Acima do
+        Selo relaxa pra andar <= andar_max: quem está abaixo do próprio
+        andar_max ainda hospeda e refaz a subida lutando, andar por andar.
+        Em `rpg party`, quem não bate o requisito ainda pode ajudar a luta de
+        outro andar, então a mensagem ensina isso em vez de só mandar voltar
+        pro topo."""
+        if j["andar"] <= ANDAR_ACIMA_DO_SELO and j["andar"] < j["andar_max"]:
+            destino_sugerido = min(j["andar_max"], LIMITE_VIAJAR)
+            acima = (
+                f" A partir do {LIMITE_VIAJAR} não tem mais teleporte — sobe lutando, andar "
+                f"por andar, até o {j['andar_max']}."
+                if j["andar_max"] > LIMITE_VIAJAR else ""
+            )
             extra = (
                 f" Se é pra ajudar em vez de hospedar, não precisa fazer nada — você já está "
                 f"no andar {j['andar']}: espera alguém de lá abrir a sala e entra com **Entrar**."
@@ -1455,8 +1468,8 @@ def instalar(bot, contexto):
             )
             await ctx.send(
                 f"A sala do chefe do andar {j['andar']} não é sua pra abrir — só quem tem "
-                f"andar_max {j['andar']} hospeda aqui. Manda `rpg viajar {j['andar_max']}` "
-                f"pra abrir a sua lá em cima.{extra}"
+                f"andar_max {j['andar']} hospeda aqui. Manda `rpg viajar {destino_sugerido}` "
+                f"pra abrir a sua lá em cima.{acima}{extra}"
             )
             return False
         s = H["stats"](j)

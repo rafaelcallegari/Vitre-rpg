@@ -1849,26 +1849,51 @@ acima do andar 11, mesmo que `andar_max` já esteja em 12, 13, 14 ou 15.**
 Andar 12+ só se chega **lutando pra cima a partir do 11**, nunca de
 teleporte — nem tendo derrotado aquele chefe antes.
 
-- **`LIMITE_VIAJAR = andares_altos.ANDAR_ACIMA_DO_SELO + 1` (11)** em
- `bot.py`, checado em `viajar()` depois do check de `andar_max` (que
- continua existindo — quem não destrancou nem o 11 ainda vê a mensagem de
- "não destrancou", não a de teto).
+- **`LIMITE_VIAJAR = ANDAR_ACIMA_DO_SELO + 1` (11)** mora em
+ `andares_altos.py`, não em `bot.py` — `combate.py` também precisa dela pra
+ montar a mensagem de `checar_sala_do_chefe` (abaixo) e não pode importar
+ `bot.py` (ciclo). `bot.py` importa a constante em vez de definir.
+ Checada em `viajar()` depois do check de `andar_max` (que continua
+ existindo — quem não destrancou nem o 11 ainda vê a mensagem de "não
+ destrancou", não a de teto).
 - **Consequência que o pedido implica e vale registrar**: se o jogador sai
  do andar 12+ (viaja pra baixo, ou fala com a Guia, que já teleporta pra 10)
  sem morrer, ele **não recupera** o andar onde parou via `viajar` — só
  chegando lá de novo lutando, andar por andar, a partir do 11. `andar_max`
  continua marcando até onde ele já chegou (não é penalidade de progresso,
  só de acesso rápido) — diferente de morrer acima do andar 10, que já reseta
- `andar_max` pra 10 (ver "Morte e reconquista acima do andar 10"). Isso
- também tranca `rpg boss`/`rpg party` de reabrir no andar de origem: exige
- `andar == andar_max` pra hospedar (`checar_sala_do_chefe`), e sem `viajar`
- chegando lá, essa igualdade só volta subindo de novo a pé.
+ `andar_max` pra 10 (ver "Morte e reconquista acima do andar 10").
 - **A listagem de `rpg viajar` sem argumento também respeita o teto** — só
  lista até `min(andar_max, 11)`. Se o jogador estiver fisicamente acima
  disso (chegou lá lutando, ainda não desceu), o andar atual aparece no fim
  da lista com uma nota, não como destino comprável — evita listar como
  "grátis (guilda)"/"X moedas" um andar que na real não dá pra comprar de
  volta.
+
+### Bug — deadlock permanente pra quem descia do 12+ (corrigido em 2026-08-28)
+
+A subida lutando descrita acima **nunca foi alcançável**. `checar_sala_do_chefe`
+(`combate.py`) exigia `andar == andar_max` pra hospedar, sem exceção — e
+qualquer jogador que saísse do 12+ sem morrer (viagem pra baixo, teleporte
+grátis da Guia pro 10, viagem grátis pra home da guilda, ajudar em party de
+andar menor) ficava com `andar <= 11` e `andar_max >= 12`. Nesse estado,
+`rpg viajar {andar_max}` sempre recusava (acima do teto de 11) e `rpg boss`
+também recusava (andar ≠ andar_max) — sem saída nenhuma, permanente, porque
+nada no jogo aumenta `andar` sem passar por um desses dois caminhos.
+Morte não causa isso: `processar_morte` zera `andar` e `andar_max` juntos.
+
+**Correção**: acima do Selo, hospedar passa a exigir `andar <= andar_max` em
+vez de `andar == andar_max` — condição exata em `checar_sala_do_chefe`:
+recusa só quando `andar <= ANDAR_ACIMA_DO_SELO and andar < andar_max`. Do
+andar 1 ao 10 a regra antiga (`==`) continua intocada — é o que impede farmar
+chefe fácil sem risco lá embaixo; acima do Selo isso não é exploit porque o
+drop de material acima do Selo já cai pra 15% na repetição e o cooldown de
+`rpg boss` é o mesmo pra qualquer andar (descer pra bater um chefe mais fácil
+troca XP por segurança, não é ganho líquido). A mensagem de recusa sugere
+`rpg viajar {min(andar_max, LIMITE_VIAJAR)}` em vez de `rpg viajar {andar_max}`
+(que sempre recusava acima do 11), e quando `andar_max > LIMITE_VIAJAR`
+explica que dali pra cima se sobe lutando, andar por andar. Sem reparo de
+banco: a correção destrava sozinha quem já estava preso.
 
 ## Roguelike acima do Selo — morte e vitória no 15 resetam a posição, não o histórico
 

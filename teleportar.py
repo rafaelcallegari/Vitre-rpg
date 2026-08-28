@@ -4,8 +4,8 @@
 #
 # Se o destino for maior que o andar_max atual, andar_max sobe junto —
 # senao o jogador chega num andar que o jogo ainda trata como trancado
-# (loja/ferreiro nao liberam o andar, e "dono do andar" no chefe exige
-# andar == andar_max).
+# (loja/ferreiro nao liberam o andar, e ate o Selo (andar 10) "dono do
+# andar" no chefe exige andar == andar_max).
 
 import sqlite3
 
