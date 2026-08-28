@@ -272,6 +272,43 @@ def test_botao_entregar_falha_sem_quebrar_se_material_sumiu_entre_abrir_e_clicar
     assert db.estado_sidequest(j["user_id"], "guia_flor") == "durante"   # continua pendente
 
 
+def test_entrega_do_fecho_no_andar_14_devolve_a_fala_nova():
+    """Só a última entrega (guia_cinzas) ganha fala própria -- é o gancho
+    que manda o jogador pra Selen. Ver decisoes.md § Mortalha de Luz/Sombra
+    (ajustes)."""
+    j = _jogador(andar=14, andar_max=14)
+    uid = j["user_id"]
+    for material, qtd in (
+        ("flor_do_andar_1", 1), ("farpa_eletrica", 6), ("estilhaco_gelido", 8),
+    ):
+        andares_altos.conceder_pedido_pendente(uid)
+        db.add_item(uid, material, qtd)
+        andares_altos.entregar_pedido(uid)
+    pedido = andares_altos.conceder_pedido_pendente(uid)   # guia_cinzas
+    assert pedido["quest_id"] == "guia_cinzas"
+    db.add_item(uid, "cinza_quente", 10)
+
+    view = bot.GuiaDialogoView(uid, "elu", "espera", "sobre", pedido, pedido)
+    it = _interacao(uid)
+
+    asyncio.run(_botao(view, f"Entregar {pedido['qtd']}x {ITENS[pedido['pede']]['nome']}").callback(it))
+
+    descricao = it.message.embeds[0].description
+    assert "Leva as quatro pro andar nove" in descricao
+    assert "Selen" in descricao
+    assert "Luz ou sombra" in descricao
+
+
+def test_entregas_anteriores_a_do_fecho_nao_tem_fala_propria():
+    """`andares_altos.fala_entrega` é a fonte que `BotaoEntregarGuia` consulta
+    -- None nas três primeiras faz o botão nunca tocar em `e.description`,
+    deixando a entrega delas só com o recibo mecânico de sempre."""
+    assert andares_altos.fala_entrega("guia_flor") is None
+    assert andares_altos.fala_entrega("guia_farpas") is None
+    assert andares_altos.fala_entrega("guia_estilhacos") is None
+    assert andares_altos.fala_entrega("guia_cinzas") is not None
+
+
 def test_colher_funciona_na_janela_com_pedido_e_falha_fora_dela(monkeypatch):
     j = _jogador(andar=1, andar_max=13)
     andares_altos.conceder_pedido_pendente(db.get_jogador(j["user_id"])["user_id"])

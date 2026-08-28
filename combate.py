@@ -109,11 +109,18 @@ def dano_do_chefe(chefe, s, andar_num, defendendo=False, carregado=False):
 
 
 def _aplicar_sombra(luta, c, dano):
-    """Mortalha de Sombra: dobra o dano do PRÓXIMO golpe normal do jogador,
-    só nessa rodada (ver BotaoMortalha). Só entra no ataque básico -- não
-    mexe em dano de habilidade nem no golpe do chefe. `c.sombra_ativa` já é
-    zerado incondicionalmente no fim da rodada (Luta.turno_do_chefe), então
-    não precisa desligar aqui."""
+    """Mortalha de Sombra: dobra todo dano que o jogador causar ao chefe
+    nessa rodada -- golpe normal (chamado do loop de ataque) e as três
+    habilidades que causam dano direto (Dardo Arcano, Golpe Aberto, Corte
+    Rápido — chamado de dentro de cada `_efeito_*`). NUNCA entra em efeito
+    que não é dano em si: condição (Ruptura/Voto de Ferro), cura (Palavra
+    de Alento) ou o DoT que Golpe Aberto deixa (Sangramento tica no valor
+    fixo de sempre, só o golpe que o aplica dobra) -- cada um desses só
+    chamaria isto se alguém adicionasse a chamada, o que não é o caso.
+    Também não mexe no golpe do chefe. `c.sombra_ativa` já é zerado
+    incondicionalmente no fim da rodada (Luta.turno_do_chefe), então não
+    precisa desligar aqui -- inclusive quando chamado duas vezes na mesma
+    ativação (Corte Rápido atinge duas vezes, as duas dobram)."""
     if not c.sombra_ativa:
         return dano
     luta.registrar(f"🌑 Mortalha de Sombra: o golpe de {c.nome} sai em dobro.")
@@ -790,6 +797,7 @@ def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
 
 def _efeito_dardo_arcano(luta, c, dados):
     dano = max(1, int(_rolar_dano_habilidade(c, MULTIPLICADOR_DARDO_ARCANO)))
+    dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
     luta.registrar(
@@ -806,9 +814,13 @@ def _efeito_ruptura(luta, c, dados):
 
 def _efeito_golpe_aberto(luta, c, dados):
     dano = at.aplicar_defesa(_rolar_dano_habilidade(c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
+    dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
     luta.registrar(f"{dados['emoji']} {c.nome} abre **{dados['nome']}** — {dano} de dano.")
+    # o sangramento aplicado abaixo usa VALOR_SANGRAMENTO fixo, nunca o
+    # `dano` do golpe que abriu -- Sombra dobra o golpe, não o DoT que ele
+    # deixa, e as rodadas seguintes tickam no valor normal (ver decisoes.md).
     stacks = [
         cond for cond in luta.condicoes
         if cond["tipo"] == "dano_por_rodada" and cond["nome"] == "Sangramento" and cond["alvo"] == "chefe"
@@ -847,6 +859,7 @@ def _efeito_corte_rapido(luta, c, dados):
             _rolar_dano_habilidade(c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
             luta.chefe["def"],
         )
+        dano = _aplicar_sombra(luta, c, dano)
         luta.hp_chefe -= dano
         luta.verificar_fase2()
         total += dano

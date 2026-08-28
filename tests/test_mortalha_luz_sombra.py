@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import bot  # noqa: F401 -- popula combate.H/profissoes.H/comercio.H via instalar()
 import combate
 import database as db
+import game_data
 import trocas
 
 PECAS_MORTALHA = ("molde_do_manto", "fio_do_manto", "forro_do_manto", "fecho_do_manto")
@@ -170,6 +171,65 @@ def test_mortalha_nao_pode_ser_ofertada_em_troca():
     assert motivo is not None
 
 
+# ---------------------------------------------------------------- não encanta, não melhora
+def test_encantar_mortalha_recusa_com_mensagem_propria():
+    _jogador(mortalha="mortalha_luz", profissao="encantador", andar=1)
+    ctx = _ctx()
+
+    asyncio.run(bot.bot.get_command("encantar").callback(ctx, argumento="mortalha for"))
+
+    texto = ctx.send.call_args.args[0]
+    assert "não aceita encantamento" in texto
+    assert "Uso:" not in texto   # não é o erro genérico de tipo desconhecido
+
+
+def test_melhorar_mortalha_recusa_com_mensagem_propria():
+    _jogador(mortalha="mortalha_sombra", andar=1)
+    ctx = _ctx()
+
+    asyncio.run(bot.bot.get_command("melhorar").callback(ctx, argumento="mortalha"))
+
+    texto = ctx.send.call_args.args[0]
+    assert "não sobe de nível" in texto
+    assert "Uso:" not in texto
+
+
+def test_recusas_da_mortalha_nao_consomem_material_nem_moeda():
+    j = _jogador(mortalha="mortalha_luz", profissao="encantador", andar=1, moedas=1000)
+    db.add_item(1, "essencia_do_vento", 99)   # material de Encantador do andar 1
+
+    asyncio.run(bot.bot.get_command("encantar").callback(_ctx(), argumento="mortalha for"))
+    asyncio.run(bot.bot.get_command("melhorar").callback(_ctx(), argumento="mortalha"))
+
+    depois = db.get_jogador(1)
+    assert depois["moedas"] == 1000
+    assert db.tem_item(1, "essencia_do_vento", 99)
+
+
+def test_encantar_continua_funcionando_normalmente_nos_outros_slots():
+    _jogador(arma="espada_ferro", profissao="encantador", andar=1, moedas=100000)
+    for material in ("essencia_do_vento", "pena_do_trovao", "eco_cristalizado"):
+        db.add_item(1, material, 20)
+    ctx = _ctx()
+
+    asyncio.run(bot.bot.get_command("encantar").callback(ctx, argumento="arma for"))
+
+    instancia_id = db.get_jogador(1)["arma_instancia_id"]
+    assert instancia_id is not None
+    assert db.get_instancia(instancia_id)["encantamento_atributo"] == "forca"
+
+
+def test_melhorar_continua_funcionando_normalmente_na_arma():
+    _jogador(arma="espada_ferro", andar=1, moedas=100000)
+    db.add_item(1, "presa_javali", 10)
+
+    asyncio.run(bot.bot.get_command("melhorar").callback(_ctx(), argumento="arma"))
+
+    # sucesso ou falha, o comando processou de verdade (gastou material) --
+    # não caiu numa recusa antecipada como a da mortalha.
+    assert not db.tem_item(1, "presa_javali", 10)
+
+
 # ---------------------------------------------------------------- botão na luta
 def test_botao_mortalha_nao_aparece_sem_a_peca_equipada():
     c = _combatente(1)
@@ -268,6 +328,122 @@ def test_mortalha_de_sombra_nao_dobra_de_novo_na_rodada_seguinte(monkeypatch):
 
     assert hp_antes - luta.hp_chefe == 100
     assert botao.disabled is True   # e não dá pra ativar de novo
+
+
+# ---------------------------------------------------------------- Sombra x habilidade
+def _sem_variancia(monkeypatch):
+    """Trava ±15%/crítico de `_rolar_dano_habilidade` num valor fixo, pra
+    comparar dano com e sem Sombra sem depender de RNG."""
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 1.0)   # nunca crita, nunca atordoa
+
+
+def test_sombra_dobra_dano_de_dardo_arcano(monkeypatch):
+    _sem_variancia(monkeypatch)
+    c = _combatente(1, classe="mago", inteligencia=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["dardo_arcano"]
+
+    combate._efeito_dardo_arcano(luta, c, dados)
+    dano_normal = luta.hp_chefe_max - luta.hp_chefe
+
+    luta.hp_chefe = luta.hp_chefe_max
+    c.sombra_ativa = True
+    combate._efeito_dardo_arcano(luta, c, dados)
+    dano_dobrado = luta.hp_chefe_max - luta.hp_chefe
+
+    assert dano_dobrado == dano_normal * 2
+
+
+def test_sombra_dobra_golpe_aberto_mas_nao_o_sangramento_que_ele_aplica(monkeypatch):
+    _sem_variancia(monkeypatch)
+    c = _combatente(1, classe="guerreiro", forca=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["golpe_aberto"]
+
+    combate._efeito_golpe_aberto(luta, c, dados)
+    dano_normal = luta.hp_chefe_max - luta.hp_chefe
+    sangramento_normal = luta.condicoes[-1]["valor"]
+
+    luta.hp_chefe = luta.hp_chefe_max
+    luta.condicoes.clear()
+    c.sombra_ativa = True
+    combate._efeito_golpe_aberto(luta, c, dados)
+    dano_dobrado = luta.hp_chefe_max - luta.hp_chefe
+    sangramento_com_sombra = luta.condicoes[-1]["valor"]
+
+    assert dano_dobrado == dano_normal * 2
+    assert sangramento_com_sombra == sangramento_normal == combate.VALOR_SANGRAMENTO
+
+
+def test_sombra_dobra_os_dois_golpes_de_corte_rapido(monkeypatch):
+    _sem_variancia(monkeypatch)
+    c = _combatente(1, classe="ladino", destreza=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["corte_rapido"]
+
+    combate._efeito_corte_rapido(luta, c, dados)
+    dano_normal = luta.hp_chefe_max - luta.hp_chefe
+
+    luta.hp_chefe = luta.hp_chefe_max
+    c.sombra_ativa = True
+    combate._efeito_corte_rapido(luta, c, dados)
+    dano_dobrado = luta.hp_chefe_max - luta.hp_chefe
+
+    assert dano_dobrado == dano_normal * 2   # os dois golpes do laço dobraram
+
+
+def test_sombra_nao_dobra_a_cura_de_palavra_de_alento():
+    c = _combatente(1, classe="orador", inteligencia=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["palavra_de_alento"]
+
+    combate._efeito_palavra_de_alento(luta, c, dados, alvo_id=c.id)
+    valor_sem_sombra = luta.condicoes[-1]["valor"]
+
+    luta.condicoes.clear()
+    c.sombra_ativa = True
+    combate._efeito_palavra_de_alento(luta, c, dados, alvo_id=c.id)
+    valor_com_sombra = luta.condicoes[-1]["valor"]
+
+    assert valor_com_sombra == valor_sem_sombra == combate.CURA_POR_RODADA_ALENTO
+
+
+def test_sombra_nao_dobra_o_buff_de_voto_de_ferro():
+    c = _combatente(1, classe="orador", inteligencia=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["voto_de_ferro"]
+
+    c.sombra_ativa = True
+    combate._efeito_voto_de_ferro(luta, c, dados)
+
+    assert luta.condicoes[-1]["valor"] == combate.REDUCAO_VOTO_DE_FERRO
+
+
+def test_sombra_nao_dobra_a_condicao_de_ruptura():
+    c = _combatente(1, classe="mago", inteligencia=20)
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    dados = game_data.HABILIDADES["ruptura"]
+
+    c.sombra_ativa = True
+    combate._efeito_ruptura(luta, c, dados)
+
+    assert luta.condicoes[-1]["valor"] == combate.VULNERAVEL_RUPTURA
+
+
+def test_ativar_sombra_e_depois_defender_consome_o_uso_da_luta():
+    c = _combatente(1, mortalha="mortalha_sombra")
+    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+    painel = combate.PainelLuta(luta)
+    botao = _botao_mortalha(painel)
+
+    asyncio.run(botao.callback(_interacao(1)))
+    assert c.sombra_ativa is True
+
+    asyncio.run(painel.registrar_acao(_interacao(1), c, "defender"))
+
+    assert c.mortalha_usada is True    # a peça já foi usada nesta luta, sem volta
+    assert c.sombra_ativa is False     # e o buff da rodada foi embora sem servir pra nada
 
 
 def test_botao_mortalha_desabilita_apos_uso():

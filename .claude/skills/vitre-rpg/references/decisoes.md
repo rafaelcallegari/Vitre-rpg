@@ -4415,12 +4415,10 @@ turno; esta não gasta nada).
   já lê a mesma flag). "Não desmancha" não precisou de nada novo:
   `rpg desmanchar`/`rpg melhorar` já só aceitam `tipo in ("arma",
   "armadura")`, e o tipo daqui é `"mortalha"`.
-- **Pendência do cartão anterior (Slot de mortalha) permanece aberta,
-  agora com item de verdade pra testar**: Encantador (`comercio.py`,
-  `profissoes.py`) ainda não reconhece o tipo `"mortalha"` nas próprias
-  listas de seleção. Continua inofensivo (silenciosamente não aparece pra
-  encantar, sem erro) — fora do escopo deste cartão, que também não pediu
-  isso.
+- **Pendência do cartão anterior (Slot de mortalha) resolvida — ver
+  § Mortalha não encanta, não melhora, mais abaixo.** Virou regra
+  decidida (recusa de propósito, não extensão de lista), não ficou mais
+  em aberto.
 - Testado em `tests/test_mortalha_luz_sombra.py`: forja consome as quatro
   peças e entrega a escolhida; sem uma peça não consome nada; não-Forjador
   forja igual; segunda tentativa sem repor peça falha e não duplica;
@@ -4439,3 +4437,116 @@ turno; esta não gasta nada).
   não vende, não desmancha) continuam verdadeiros mesmo sem o item
   existir em `ITENS`, porque um item desconhecido já é recusado por
   motivo diferente (não reconhecido, não "tipo mortalha bloqueado").
+
+## Mortalha — recusas explicadas, dica da Selen e Sombra dobrando habilidade
+
+Três ajustes pequenos em cima do cartão anterior, nenhum muda a forja nem o
+slot em si.
+
+### Mortalha não encanta, não melhora
+
+Fecha a pendência registrada no cartão anterior — decisão explícita:
+**recusar com mensagem própria, não estender as listas de seleção.**
+
+- **`_slot_equipamento` (`profissoes.py`) passou a reconhecer o texto
+  "mortalha"** (devolve a string `"mortalha"`), mas ela nunca é um slot
+  ACEITO de verdade por `encantar()`/`melhorar()` — cada um checa
+  `slot == "mortalha"` logo depois de parsear o argumento e recusa com a
+  mensagem própria, antes de checar profissão, bancada ou material.
+  Reconhecer o texto (em vez de só devolver `None` e cair no "Uso: ...")
+  é o que torna a recusa ESPECÍFICA em vez de genérica.
+- **`melhorar()` tem parsing próprio** (não usa `_slot_equipamento` —
+  só reconhecia "arma"/"armadura" por prefixo), então ganhou a mesma
+  checagem de prefixo `"mort"` inline, antes do resto.
+- **`comercio.py` (painel da Selen/Encantador) não foi tocado** — as
+  listas de seleção (`EncantadorView`, `FerreiroView.melhorar_btn`)
+  continuam sem "mortalha", de propósito: a peça nunca aparece nesses
+  selects pra escolher, então quem só usa o painel nem chega a ver a
+  recusa — só quem digita `rpg encantar mortalha ...`/`rpg melhorar
+  mortalha` direto. Consistente com "recusar, não estender".
+- **`desencantar()` não ganhou checagem própria** — não foi pedido, e
+  como `encantar()` já impede a mortalha de ser encantada, o estado
+  "mortalha encantada" nunca existe pra `desencantar` precisar tratar. Se
+  alguém digitar `rpg desencantar mortalha` mesmo assim, cai em "não está
+  encantada" (verdade, resposta correta, só que pelo caminho genérico) —
+  comportamento aceitável, não testado explicitamente porque não foi
+  pedido.
+- Testado em `tests/test_mortalha_luz_sombra.py`: as duas recusas usam
+  mensagem própria (não o "Uso: ..." genérico); nenhuma consome material
+  nem moeda; `rpg encantar`/`rpg melhorar` continuam funcionando
+  normalmente nos outros slots (arma testada em ambos).
+
+### A entrega do fecho manda o jogador pra Selen
+
+A corrente terminava em silêncio: o jogador recebia o fecho no andar 14
+sem nenhuma pista de que existe uma forja no andar 9 esperando — o comando
+é novo, fora de `rpg receitas`, e o botão da Selen só aparece pra quem já
+foi até lá.
+
+- **`andares_altos.FALA_ENTREGA` é um dict por `quest_id`, só com
+  `"guia_cinzas"` preenchido** — mesmo padrão de `FALA_PEDIDO`
+  (`fala_do_pedido`), função gêmea `fala_entrega(quest_id)` devolvendo
+  `None` pras três primeiras entregas. Nenhuma fala nova pra elas, não foi
+  pedido.
+- **`BotaoEntregarGuia.callback` (`bot.py`) troca `e.description` pela
+  fala nova SÓ quando `fala_entrega(pedido["quest_id"])` não é `None`** —
+  nas outras três entregas, `e.description` nunca é tocado, sobra o que já
+  estava lá (a fala de "O que me espera"/"Sobre você" que o jogador tinha
+  clicado antes, ou a abertura padrão). O campo mecânico "✅ Entregue"
+  continua aparecendo nas quatro, sem mudança — a fala nova é ADICIONAL,
+  não substitui o recibo.
+- Testado em `tests/test_guia_manto.py`: entregar o fecho (guia_cinzas)
+  devolve a fala nova completa na descrição; `fala_entrega` confirma
+  `None` pras três primeiras e não-`None` só pra guia_cinzas.
+
+### Sombra dobra habilidade também
+
+Só dobrava o golpe normal — decidia o elemento pelo jogador, porque Mago e
+Orador vivem de habilidade e todo caster acabaria escolhendo Luz. Passa a
+dobrar **todo dano que o jogador causar ao chefe naquela rodada**, golpe
+normal ou habilidade.
+
+- **`_aplicar_sombra(luta, c, dano)` (já existia pro golpe normal) passou
+  a ser chamado também dentro das três habilidades que causam dano
+  direto** — `_efeito_dardo_arcano`, `_efeito_golpe_aberto` e
+  `_efeito_corte_rapido` (as únicas com uma linha `luta.hp_chefe -= dano`
+  de verdade). Um helper só, chamado em 4 pontos agora (1 ataque normal +
+  3 skills) em vez de 4 implementações separadas da mesma dobra.
+  `_efeito_corte_rapido` chama duas vezes (uma por golpe do laço) —
+  Sombra dobra os DOIS golpes da skill, não só o primeiro, porque os dois
+  são "dano causado ao chefe nessa rodada".
+- **Ruptura, Pancada Atordoante, Ponto Cego, Palavra de Alento e Voto de
+  Ferro nunca chamam `_aplicar_sombra`** — nenhum deles tem uma linha de
+  dano direto pra dobrar (são condição, chance de stun, buff ou cura). Não
+  precisou de exclusão explícita: eles simplesmente não estavam no
+  caminho que ganhou a chamada nova.
+- **O Sangramento que Golpe Aberto aplica continua no `VALOR_SANGRAMENTO`
+  fixo, nunca no `dano` (já dobrado) do golpe que o aplicou** — são duas
+  linhas de código diferentes dentro do mesmo `_efeito_golpe_aberto`: o
+  `dano` que sofre `_aplicar_sombra` vai só pro `luta.hp_chefe -= dano`
+  imediato; a chamada de `condicoes.aplicar(..., valor=VALOR_SANGRAMENTO,
+  ...)` de baixo nunca leu `dano` pra começo, então dobrar um não muda o
+  outro. Comentário deixado no código pra próxima skill de dano-mais-DoT
+  não reabrir a dúvida.
+- **`c.sombra_ativa` continua sendo consultado (nunca zerado) dentro de
+  `_aplicar_sombra`** — quem zera é `Luta.turno_do_chefe()`, uma vez, no
+  fim da rodada (decisão do cartão anterior, sem mudança aqui). É por isso
+  que os dois golpes de Corte Rápido dobram sem precisar de nenhum
+  controle extra de "já usei essa ativação uma vez": o flag só cai no fim
+  da rodada, não no primeiro consumo.
+- Testado em `tests/test_mortalha_luz_sombra.py`: Dardo Arcano, Golpe
+  Aberto e os dois golpes de Corte Rápido saem exatamente em dobro (RNG
+  travado com `monkeypatch` em `random.uniform`/`random.random` pra
+  comparar com/sem Sombra determinísticamente); o Sangramento aplicado
+  junto com o Golpe Aberto dobrado continua no valor fixo; Ruptura, Voto
+  de Ferro e a cura de Palavra de Alento saem no valor normal com Sombra
+  ativa; ativar e depois Defender consome `mortalha_usada` e zera
+  `sombra_ativa` sem ter dobrado dano nenhum.
+
+Validado revertendo só os quatro arquivos de implementação
+(`andares_altos.py`, `bot.py`, `combate.py`, `profissoes.py`) via
+`git stash`, mantendo os testes no lugar: 7 quebram (as duas recusas
+próprias, as três combinações de dobra de habilidade, e as duas falas da
+entrega do fecho) — o resto das novas asserções (regressão dos outros
+slots, "Sombra não dobra buff/cura", "defender consome o uso") já eram
+verdade antes da mudança e continuam passando, sem indicar problema.

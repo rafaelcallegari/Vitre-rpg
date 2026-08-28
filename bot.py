@@ -1185,6 +1185,9 @@ class BotaoEntregarGuia(discord.ui.Button):
         item_pedido = ITENS[pedido["pede"]]
         peca = ITENS[pedido["da"]]
         e = interaction.message.embeds[0]
+        fala_entrega = andares_altos.fala_entrega(pedido["quest_id"])
+        if fala_entrega:
+            e.description = f"*{pronomes.concordar(fala_entrega, self.view.pronome)}*"
         e.add_field(
             name="✅ Entregue",
             value=f"Você deu {pedido['qtd']}x {item_pedido['emoji']} {item_pedido['nome']} "

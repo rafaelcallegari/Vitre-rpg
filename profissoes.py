@@ -257,8 +257,11 @@ def custo_magico(nivel_oficio, profissao):
 
 
 def _slot_equipamento(texto):
-    """arma/armadura/anel/colar a partir de texto livre -- mesmo parsing que
-    `melhorar()` já fazia pra arma/armadura, estendido pros 4 slots."""
+    """arma/armadura/anel/colar/mortalha a partir de texto livre -- mesmo
+    parsing que `melhorar()` já fazia pra arma/armadura, estendido pros
+    slots. "mortalha" reconhece o texto (pra dar a recusa própria em vez do
+    "Uso: ..." genérico), mas nunca é um slot ACEITO por encantar/melhorar
+    de verdade -- ver decisoes.md § Mortalha não encanta, não melhora."""
     alvo = H["normalizar"](texto)
     if alvo.startswith("armad"):
         return "armadura"
@@ -268,6 +271,8 @@ def _slot_equipamento(texto):
         return "anel"
     if alvo.startswith("col"):
         return "colar"
+    if alvo.startswith("mort"):
+        return "mortalha"
     return None
 
 
@@ -750,6 +755,12 @@ def instalar(bot, contexto):
             return
 
         alvo = H["normalizar"](argumento)
+        if alvo.startswith("mort"):
+            await ctx.send(
+                "A Mortalha não sobe de nível. Não existe material do andar dela: "
+                "ela não veio de andar nenhum."
+            )
+            return
         if alvo.startswith("armad"):
             slot = "armadura"
         elif alvo.startswith("arm"):
@@ -921,6 +932,11 @@ def instalar(bot, contexto):
         atributo = at.encontrar_atributo(partes[1])
         if not slot or not atributo:
             await ctx.send("Uso: `rpg encantar <arma|armadura|anel|colar> <for|des|con|int>`.")
+            return
+        if slot == "mortalha":
+            await ctx.send(
+                "A Mortalha não aceita encantamento. Ela já foi costurada com tudo o que tinha pra ter."
+            )
             return
         if j["profissao"] != "encantador":
             atual = pronomes.concordar(PROFISSOES[j["profissao"]]["nome"], j["pronome"]) if j["profissao"] else "nenhum"

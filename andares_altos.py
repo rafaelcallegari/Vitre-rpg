@@ -152,6 +152,31 @@ def fala_do_pedido(quest_id):
     return FALA_PEDIDO.get(quest_id)
 
 
+# Fala do MOMENTO da entrega — só a última (guia_cinzas, o fecho) tem uma.
+# Aprovada 27/08, palavra por palavra. Sem ela a corrente terminava em
+# silêncio: o jogador recebia o fecho e não tinha nenhuma pista de que
+# existe uma forja no andar 9 esperando. As três entregas anteriores
+# continuam só com o recibo mecânico ("✅ Entregue") — nenhuma fala nova
+# pra elas, não foi pedido.
+FALA_ENTREGA = {
+    "guia_cinzas": (
+        "Pronto. É a última.\n\n"
+        "Leva as quatro pro andar nove. Tem uma ferreira lá, a Selen, a "
+        "única que ainda acende a forja do Selo. Ela vai saber o que "
+        "fazer com isso — eu já subi aquela escada uma vez com as mesmas "
+        "quatro coisas na mão, e ela não me perguntou pra quem era.\n\n"
+        "Escolhe bem o que você vai pedir pra ela. Luz ou sombra. Ele não "
+        "teve escolha, e eu nunca soube se isso o ajudou ou o matou."
+    ),
+}
+
+
+def fala_entrega(quest_id):
+    """None pras três primeiras entregas — só o fecho (guia_cinzas) tem
+    fala própria no momento em que é entregue."""
+    return FALA_ENTREGA.get(quest_id)
+
+
 def pedido_pendente(user_id):
     """O primeiro pedido da corrente (11 -> 12 -> 13 -> 14) que o jogador
     ainda não concluiu, e o estado dele ('antes'/'durante') -- (None, None)
