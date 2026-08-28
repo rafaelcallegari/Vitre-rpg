@@ -4550,3 +4550,139 @@ próprias, as três combinações de dobra de habilidade, e as duas falas da
 entrega do fecho) — o resto das novas asserções (regressão dos outros
 slots, "Sombra não dobra buff/cura", "defender consome o uso") já eram
 verdade antes da mudança e continuam passando, sem indicar problema.
+
+## Dano elemental — o `elemento` da arma chega no combate
+
+As 24 armas elementais (Pacote 2) sempre tiveram o campo `elemento` em
+`ITENS`, mas ele nunca chegava no combate — `combate.py:_bonus_arma_de()`
+lia só `atk`. Uma elemental era +95 de ATK e +6 de atributo; fogo ou gelo
+não mudavam nada. O Guia da Torre chegou a ganhar uma nota temporária
+avisando disso (ver commit anterior) — ela sai junto desta mudança.
+
+### Por que uma tabela nova, não reusar `CONDICOES_ELEMENTO`
+
+`CONDICOES_ELEMENTO` foi desenhada pro sentido chefe → jogador (telegraph
+dos chefes 11+). Invertida (jogador → alvo, pela arma), os seis tipos
+ficam desiguais: `gelo` (`pula_turno`, duração 3) viraria uma rodada de
+graça enorme contra qualquer chefe; `sombrio` (`reduz_cura`) seria efeito
+morto, porque chefe não se cura. Em vez de forçar a mesma tabela nos dois
+sentidos, `game_data.CONDICOES_ARMA_ELEMENTAL` é nova, com potência e
+duração calibradas pra fazer sentido como algo que o JOGADOR aplica:
+
+| Elemento | Nome | tipo | valor | duração |
+|---|---|---|---|---|
+| fogo | «Brasa» | `dano_por_rodada` | 0.03 | 3 |
+| gelo | «Travamento» | `pula_turno` | 0 | 1 |
+| raio | «Curto» | `bloqueia_skill` | 0 | 2 |
+| ar | «Corrente» | `chance_erro` | 0.25 | 3 |
+| divino | «Marca» | `vulneravel` | 0.20 | 3 |
+| sombrio | «Sanguessuga» | `dano_por_rodada` + `drena` 0.5 | 0.02 | 3 |
+
+Nenhum tipo novo em `condicoes.py` — os seis já existiam. `drena` em
+especial já existia no motor (`condicoes._tick_dano`) e nunca tinha sido
+usado por nenhuma condição real; é o que dá função ao sombrio em vez dele
+repetir a armadilha do `reduz_cura`.
+
+### Pontos de consulta novos, não tipos novos
+
+Três dos seis tipos já tinham onde ser lidos contra "chefe" como alvo:
+- `dano_por_rodada` (+ `drena`): `condicoes._tick_dano` já tratava
+  `alvo == "chefe"` genericamente, e a cura de `drena` pro `origem` nunca
+  checava quem é o alvo — funcionou de graça pro sombrio.
+- `pula_turno`: `condicoes.pode_agir(luta, "chefe")` já é a primeira
+  checagem de `Luta.turno_do_chefe()`.
+- `vulneravel`: `condicoes.multiplicador_dano_causado(luta, "chefe")` já
+  era chamado no loop de ataque básico (golpe de Ruptura já usava isso).
+  **Só no ataque básico** — os três `_efeito_*` de dano de habilidade
+  nunca chamaram esse multiplicador, nem antes deste cartão; não estendi
+  isso agora por ser um comportamento pré-existente fora do escopo daqui.
+
+Os outros dois não tinham nenhum ponto de consulta pro chefe como alvo, e
+precisaram de um novo dentro de `Luta.turno_do_chefe()`:
+- `chance_erro` (Corrente/ar): um roll novo com
+  `condicoes.chance_de_erro(self, "chefe")` no começo do bloco `else` —
+  se acerta, o chefe erra a rodada inteira (golpe carregado ou ataque
+  normal, o que fosse acontecer). Não afeta `_resolver_condicao_pendente()`
+  (uma condição já telegrafada resolve mesmo se o chefe errar a ação
+  desta rodada).
+- `bloqueia_skill` (Curto/raio): chefe não tem "lançar habilidade", então
+  o análogo escolhido foi impedir **começar** um golpe carregado —
+  `condicoes.pode_lancar_habilidade(self, "chefe")` guarda a rolagem de
+  `CHANCE_CARREGAR`. Golpe carregado que já estava em preparo quando Curto
+  pegou **resolve normal** (a condição não cancela um preparo em
+  andamento, só impede um novo começar). Decisão tomada com o Rafael via
+  pergunta direta antes de implementar — a alternativa (cancelar o preparo
+  em andamento também) foi descartada por ser mais forte do que o cartão
+  pedia.
+
+### Ciclo de fraquezas
+
+Constante nomeada `game_data.CICLO_ELEMENTOS` (acesso à tabela de
+condição por `.get()`, nunca subscript direto — regra do `PAPEL_NPC`, ver
+§ Padrão — mapa de domínio nunca é subscript direto):
+
+```
+ar → raio → gelo → fogo → sombrio → divino → ar
+```
+
+Forte no seguinte (×1,25), fraco no anterior (×0,85), neutro nos outros
+quatro (×1,00) — inclusive contra um alvo sem elemento (`None` ou fora do
+ciclo, como `"luz"`/`"sombra"` da Mortalha, que é outro sistema).
+`game_data.multiplicador_elemento(elemento_arma, elemento_alvo)` nunca
+levanta exceção pra entrada desconhecida, só cai em neutro. A ordem não é
+arbitrária: segue os andares (ar=11, raio=12, gelo=13, fogo=14,
+sombrio=15 fase 1, divino=15 fase 2) — a arma forjada no andar N é forte
+contra o chefe do N+1, e a única exceção é a arma de ar, fraca contra o
+divino (chefe final).
+
+### Elemento em todo monstro, teto por rodada
+
+Os 3 monstros de cada andar 1-15 e os 5 chefes de 1-10 ganharam
+`"elemento"` em `game_data.ANDARES` (os chefes 11-15 já tinham, desde o
+Pacote 2). Cada andar 1-10 herdou o elemento do próprio conteúdo do andar
+(ex.: andar 5 é gelo porque é o Lago Congelado); 11-15 repete o elemento
+da fase 1 do chefe daquele andar.
+
+**Teto de uma aplicação por elemento por rodada**, sem isso uma party de
+quatro elementais do mesmo elemento chegaria perto de 100% de uptime (25%
+por golpe, refrescando a cada acerto) — inaceitável pro gelo, que travaria
+o chefe a luta inteira. Implementado como `Luta.elementos_aplicados_rodada`
+(um `set`), populado em `combate._talvez_condicionar_chefe()` e limpo no
+fim de `turno_do_chefe()`. Condição já ativa no chefe **refresca a
+duração** em vez de empilhar uma segunda entrada — `_talvez_condicionar_chefe`
+procura por `nome` antes de chamar `condicoes.aplicar()`.
+
+### Onde vale — chefe recebe tudo, caçada só o multiplicador
+
+- **Luta de chefe** (`combate.py`): multiplicador (`_fator_elemento_arma`)
+  e condição (`_talvez_condicionar_chefe`) nos cinco pontos onde dano é
+  causado ao chefe — ataque básico (os dois laços duplicados de
+  `registrar_acao`/`on_timeout`) e os três `_efeito_*` de dano de
+  habilidade (Dardo Arcano, Golpe Aberto, Corte Rápido). `raide.py` herda
+  tudo de graça — `PainelRaide` não sobrescreve `registrar_acao` nem
+  `on_timeout`, só `fim_da_luta`/`_continuar`/`__init__`. `RAIDE_CHEFE` não
+  tem `"elemento"`, então o multiplicador cai neutro lá, mas a CONDIÇÃO
+  ainda aplica normalmente (ela só depende do elemento da ARMA, não do
+  alvo) — testado manualmente, comportamento esperado.
+- **Caçada e exploração** (`bot.py:simular_combate`): só o multiplicador,
+  lido de `s["equipamento"]["arma"]` (já resolvido por `stats()`) contra
+  `mob.get("elemento")`. Sem `Luta`, sem `registrar()`, sem `condicoes.py`
+  — não portei o motor de condição pra lá, de propósito (loop de 60
+  iterações, instantâneo, sem rodada persistente onde uma condição faria
+  sentido durar).
+
+### Testes
+
+`tests/test_dano_elemental.py`: o ciclo fecha (cada elemento com 1 forte,
+1 fraco, 4 neutros, invariante genérica sobre `CICLO_ELEMENTOS`, não seis
+asserções soltas); alvo/arma sem elemento cai em neutro sem exceção
+(inclusive `"luz"`/`"sombra"` da Mortalha); teto por rodada (dois golpes
+do mesmo elemento aplicam uma vez, elementos diferentes aplicam os dois);
+refresh de duração não empilha; `drena` do sombrio devolve cura ao
+portador respeitando `hp_max`; multiplicador presente na caçada e
+condição ausente dela (o dict do monstro não ganha chave nova depois da
+luta). Validado revertendo `bot.py`/`combate.py`/`game_data.py` via `git
+stash`: 9 dos 10 testes quebram — o único que sobrevive
+(`test_cacada_nao_aplica_condicao_nenhuma_no_monstro`) é uma checagem de
+fronteira que deveria ser verdade com ou sem a mudança, não uma prova de
+comportamento novo.

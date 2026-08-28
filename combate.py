@@ -13,7 +13,10 @@ import habilidades as hab
 import pronomes
 import travas
 from andares_altos import ANDAR_ACIMA_DO_SELO, LIMITE_VIAJAR
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO, SALAO_TIERS
+from game_data import (
+    ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO,
+    CONDICOES_ARMA_ELEMENTAL, SALAO_TIERS, multiplicador_elemento,
+)
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
 
 # helpers emprestados do bot.py, preenchidos por instalar()
@@ -50,6 +53,13 @@ RODADA_1_SEM_CHEFE = True
 # andares 11+: telegraph de condição elemental, independente do golpe
 # carregado (rolls separados, de propósito — ver decisoes.md § Condições)
 CHANCE_TELEGRAFAR_CONDICAO = 0.25
+
+# arma elemental (todo andar): chance por golpe que acerta o alvo de amarrar
+# a condição de CONDICOES_ARMA_ELEMENTAL nele — teto de uma aplicação por
+# elemento por rodada (Luta.elementos_aplicados_rodada), senão uma party de
+# 4 elementais do mesmo elemento chega perto de 100% de uptime. Ver
+# decisoes.md § Dano elemental.
+CHANCE_CONDICAO_ELEMENTO_ARMA = 0.25
 FASE2_LIMIAR = 0.5   # fração de hp_chefe_max que dispara o "fase2" do chefe
 # ANDAR_ACIMA_DO_SELO vem de andares_altos.py: acima dele, material de chefe
 # segue chefes_derrotados (100% primeira vez, 15% repetição) em vez da
@@ -296,6 +306,7 @@ class Luta:
         self.materiais_extras = []        # material da fase 1 quando o chefe troca de fase (andar 15)
         self.encerrada = False
         self.condicoes = []   # ver condicoes.py — sangramento, confusão, elementos etc.
+        self.elementos_aplicados_rodada = set()  # teto de 1 aplicação por elemento, por rodada
         self.log = []
 
     @property
@@ -385,7 +396,12 @@ class Luta:
         na rodada 1, que é só do jogador (RODADA_1_SEM_CHEFE). Chefe com
         "elemento" (andares 11+) também rola, de forma independente do golpe
         carregado, pra telegrafar/aplicar uma condição elemental — os dois
-        podem acontecer na mesma rodada."""
+        podem acontecer na mesma rodada. Corrente (chance_erro) e Curto
+        (bloqueia_skill) são as condições que a ARMA elemental do jogador
+        pode ter amarrado no chefe (qualquer andar) — ver decisoes.md §
+        Dano elemental pros pontos de consulta novos que esses dois tipos
+        precisaram aqui (os outros quatro já eram consultados em pontos que
+        já existiam)."""
         alvos = self.ativos
         if not alvos:
             return
@@ -396,7 +412,9 @@ class Luta:
             self.registrar(f"{self.chefe['nome']} está sob efeito e perde a rodada.")
         else:
             self._resolver_condicao_pendente()
-            if self.carregando:
+            if random.random() < condicoes.chance_de_erro(self, "chefe"):
+                self.registrar(f"🌬️ Corrente desvia o golpe de {self.chefe['nome']} — ele erra a rodada.")
+            elif self.carregando:
                 self.carregando = False
                 self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
                 for c in alvos:
@@ -411,7 +429,9 @@ class Luta:
                     self.registrar(f"· {c.nome} toma **{dano}**{aparou}")
                     if c.hp <= 0:
                         c.caiu = True
-            elif random.random() < CHANCE_CARREGAR:
+            # Curto (bloqueia_skill) só impede COMEÇAR a carregar -- um golpe
+            # já em preparo (ramo acima) resolve normal, ver decisoes.md
+            elif condicoes.pode_lancar_habilidade(self, "chefe") and random.random() < CHANCE_CARREGAR:
                 self.carregando = True
                 self.registrar(f"{self.chefe['nome']} recua e começa a se preparar.")
             else:
@@ -438,6 +458,7 @@ class Luta:
             c.sombra_ativa = False   # "nessa rodada" -- some no fim dela, usada ou não
             c.salvar_estado()
         self.rodada += 1
+        self.elementos_aplicados_rodada = set()
 
     def _resolver_condicao_pendente(self):
         """Aplica a condição que foi telegrafada na rodada anterior. Se o
@@ -782,6 +803,45 @@ def _bonus_arma_de(c):
     return ITENS.get(c.jogador["arma"], {}).get("atk", 0)
 
 
+def _elemento_arma_de(c):
+    return ITENS.get(c.jogador["arma"], {}).get("elemento")
+
+
+def _fator_elemento_arma(luta, c):
+    """Multiplicador de dano da arma elemental de c contra o elemento do
+    chefe (1.0 se qualquer um dos dois não tiver elemento)."""
+    return multiplicador_elemento(_elemento_arma_de(c), luta.chefe.get("elemento"))
+
+
+def _talvez_condicionar_chefe(luta, c):
+    """25% de chance por golpe que acerta o chefe de amarrar a condição da
+    arma elemental de c nele (CONDICOES_ARMA_ELEMENTAL) -- teto de uma
+    aplicação por elemento por rodada (senão uma party de 4 elementais do
+    mesmo elemento chega perto de 100% de uptime, ver decisoes.md § Dano
+    elemental). Condição já ativa no chefe refresca a duração em vez de
+    empilhar. origem=c.id é o que faz `drena` (Sanguessuga) devolver cura
+    pra c em condicoes._tick_dano."""
+    elemento = _elemento_arma_de(c)
+    dados = CONDICOES_ARMA_ELEMENTAL.get(elemento)
+    if not dados or elemento in luta.elementos_aplicados_rodada:
+        return
+    if random.random() >= CHANCE_CONDICAO_ELEMENTO_ARMA:
+        return
+    luta.elementos_aplicados_rodada.add(elemento)
+    existente = next(
+        (cond for cond in luta.condicoes if cond["alvo"] == "chefe" and cond["nome"] == dados["nome"]),
+        None,
+    )
+    if existente:
+        existente["duracao"] = dados["duracao"]
+        luta.registrar(f"{dados['emoji']} **{dados['nome']}** renovado em {luta.chefe['nome']}.")
+        return
+    condicoes.aplicar(
+        luta, "chefe", dados["tipo"], dados["nome"], dados["emoji"],
+        dados["duracao"], dados["valor"], origem=c.id, drena=dados.get("drena"),
+    )
+
+
 def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
     """Dano bruto de uma skill: mesma variação (±15%) e crítico de um golpe
     normal, sobre a MESMA base do ataque normal (atributo + atk da arma) —
@@ -796,13 +856,14 @@ def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
 
 
 def _efeito_dardo_arcano(luta, c, dados):
-    dano = max(1, int(_rolar_dano_habilidade(c, MULTIPLICADOR_DARDO_ARCANO)))
+    dano = max(1, int(_rolar_dano_habilidade(c, MULTIPLICADOR_DARDO_ARCANO) * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
     luta.registrar(
         f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano, ignorando a defesa."
     )
+    _talvez_condicionar_chefe(luta, c)
 
 
 def _efeito_ruptura(luta, c, dados):
@@ -814,6 +875,7 @@ def _efeito_ruptura(luta, c, dados):
 
 def _efeito_golpe_aberto(luta, c, dados):
     dano = at.aplicar_defesa(_rolar_dano_habilidade(c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
@@ -833,6 +895,7 @@ def _efeito_golpe_aberto(luta, c, dados):
             luta, "chefe", "dano_por_rodada", "Sangramento", "🩸",
             duracao=3, valor=VALOR_SANGRAMENTO, origem=c.id,
         )
+    _talvez_condicionar_chefe(luta, c)
 
 
 def _efeito_pancada_atordoante(luta, c, dados):
@@ -859,11 +922,13 @@ def _efeito_corte_rapido(luta, c, dados):
             _rolar_dano_habilidade(c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
             luta.chefe["def"],
         )
+        dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
         dano = _aplicar_sombra(luta, c, dano)
         luta.hp_chefe -= dano
         luta.verificar_fase2()
         total += dano
         golpes.append(str(dano))
+        _talvez_condicionar_chefe(luta, c)
     luta.registrar(
         f"{dados['emoji']} {c.nome} desfere **{dados['nome']}** — "
         f"{' + '.join(golpes)} = {total} de dano."
@@ -1133,11 +1198,13 @@ class PainelLuta(discord.ui.View):
                     c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
+                dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
                 dano = _aplicar_sombra(luta, c, dano)
                 luta.hp_chefe -= dano
                 luta.verificar_fase2()
                 luta.registrar(f"{c.nome} acerta **{dano}**")
                 ganhar_furia(c, critico)
+                _talvez_condicionar_chefe(luta, c)
         fim = await self.fim_da_luta()
         if fim:
             await self.encerrar(interaction, fim)
@@ -1243,11 +1310,13 @@ class PainelLuta(discord.ui.View):
                             c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                         )
                         dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
+                        dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
                         dano = _aplicar_sombra(luta, c, dano)
                         luta.hp_chefe -= dano
                         luta.verificar_fase2()
                         luta.registrar(f"{c.nome} acerta **{dano}**")
                         ganhar_furia(c, critico)
+                        _talvez_condicionar_chefe(luta, c)
             if luta.hp_chefe > 0:
                 luta.turno_do_chefe()
 

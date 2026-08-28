@@ -233,110 +233,110 @@ ANDARES = {
         "cor": 0x7FB069,
         "descricao": "Grama alta até o joelho e o céu de pedra do andar de cima. Todo mundo começa aqui.",
         "monstros": [
-            {"nome": "Javali das Planícies", "hp": 42, "atk": 8, "def": 1, "xp": 18, "moedas": 26, "drops": [("presa_javali", 0.55), ("essencia_do_vento", 0.55)]},
-            {"nome": "Lobo da Névoa", "hp": 38, "atk": 9, "def": 1, "xp": 19, "moedas": 24, "drops": [("presa_javali", 0.45), ("essencia_do_vento", 0.45)]},
-            {"nome": "Slime Azulado", "hp": 52, "atk": 6, "def": 2, "xp": 17, "moedas": 28, "drops": [("presa_javali", 0.60), ("essencia_do_vento", 0.50)]},
+            {"nome": "Javali das Planícies", "hp": 42, "atk": 8, "def": 1, "xp": 18, "moedas": 26, "elemento": "ar", "drops": [("presa_javali", 0.55), ("essencia_do_vento", 0.55)]},
+            {"nome": "Lobo da Névoa", "hp": 38, "atk": 9, "def": 1, "xp": 19, "moedas": 24, "elemento": "ar", "drops": [("presa_javali", 0.45), ("essencia_do_vento", 0.45)]},
+            {"nome": "Slime Azulado", "hp": 52, "atk": 6, "def": 2, "xp": 17, "moedas": 28, "elemento": "ar", "drops": [("presa_javali", 0.60), ("essencia_do_vento", 0.50)]},
         ],
-        "boss": {"nome": "«Vargash, o Kobold Coroado»", "hp": 165, "atk": 13, "def": 2, "xp": 150, "moedas": 260, "drops": [("fragmento_selo", 1.0), ("coroa_velha", 1.0)]},
+        "boss": {"nome": "«Vargash, o Kobold Coroado»", "hp": 165, "atk": 13, "def": 2, "xp": 150, "moedas": 260, "elemento": "ar", "drops": [("fragmento_selo", 1.0), ("coroa_velha", 1.0)]},
     },
     2: {
         "nome": "Bosque Sussurrante",
         "cor": 0x3E7C59,
         "descricao": "As árvores repetem, com meio segundo de atraso, tudo o que você fala.",
         "monstros": [
-            {"nome": "Aranha Tecelã", "hp": 72, "atk": 13, "def": 3, "xp": 32, "moedas": 45, "drops": [("seda_sussurrante", 0.55), ("ambar_de_seiva", 0.55)]},
-            {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "drops": [("seda_sussurrante", 0.50), ("ambar_de_seiva", 0.50)]},
-            {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "drops": [("seda_sussurrante", 0.45), ("ambar_de_seiva", 0.45)]},
+            {"nome": "Aranha Tecelã", "hp": 72, "atk": 13, "def": 3, "xp": 32, "moedas": 45, "elemento": "sombrio", "drops": [("seda_sussurrante", 0.55), ("ambar_de_seiva", 0.55)]},
+            {"nome": "Cogumelo Andante", "hp": 82, "atk": 11, "def": 4, "xp": 30, "moedas": 48, "elemento": "sombrio", "drops": [("seda_sussurrante", 0.50), ("ambar_de_seiva", 0.50)]},
+            {"nome": "Corvo de Ferro", "hp": 62, "atk": 15, "def": 2, "xp": 34, "moedas": 42, "elemento": "sombrio", "drops": [("seda_sussurrante", 0.45), ("ambar_de_seiva", 0.45)]},
         ],
-        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "drops": [("fragmento_selo", 1.0), ("novelo_da_rainha", 1.0)]},
+        "boss": {"nome": "«Aracnia, a Rainha dos Fios»", "hp": 285, "atk": 26, "def": 5, "xp": 260, "moedas": 450, "elemento": "sombrio", "drops": [("fragmento_selo", 1.0), ("novelo_da_rainha", 1.0)]},
     },
     3: {
         "nome": "Ruínas Afundadas",
         "cor": 0x5C6B73,
         "descricao": "Uma cidade inteira submersa até a metade. Alguma coisa ainda anda lá embaixo.",
         "monstros": [
-            {"nome": "Esqueleto Enferrujado", "hp": 102, "atk": 18, "def": 5, "xp": 46, "moedas": 65, "drops": [("osso_enferrujado", 0.55), ("essencia_da_agua", 0.55)]},
-            {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "drops": [("osso_enferrujado", 0.50), ("essencia_da_agua", 0.50)]},
-            {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "drops": [("osso_enferrujado", 0.45), ("essencia_da_agua", 0.45)]},
+            {"nome": "Esqueleto Enferrujado", "hp": 102, "atk": 18, "def": 5, "xp": 46, "moedas": 65, "elemento": "sombrio", "drops": [("osso_enferrujado", 0.55), ("essencia_da_agua", 0.55)]},
+            {"nome": "Rato Colossal", "hp": 92, "atk": 20, "def": 4, "xp": 48, "moedas": 62, "elemento": "sombrio", "drops": [("osso_enferrujado", 0.50), ("essencia_da_agua", 0.50)]},
+            {"nome": "Lodo Ácido", "hp": 115, "atk": 16, "def": 6, "xp": 44, "moedas": 68, "elemento": "sombrio", "drops": [("osso_enferrujado", 0.45), ("essencia_da_agua", 0.45)]},
         ],
-        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "drops": [("fragmento_selo", 1.0), ("lasca_do_guardiao", 1.0)]},
+        "boss": {"nome": "«Guardião de Pedra Rachada»", "hp": 410, "atk": 39, "def": 8, "xp": 380, "moedas": 650, "elemento": "sombrio", "drops": [("fragmento_selo", 1.0), ("lasca_do_guardiao", 1.0)]},
     },
     4: {
         "nome": "Deserto de Sal",
         "cor": 0xD9C5A0,
         "descricao": "Branco até onde a vista alcança. O chão range quando você pisa.",
         "monstros": [
-            {"nome": "Escorpião de Cristal", "hp": 132, "atk": 23, "def": 7, "xp": 60, "moedas": 85, "drops": [("cristal_de_sal", 0.55), ("lagrima_de_sal", 0.55)]},
-            {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "drops": [("cristal_de_sal", 0.45), ("lagrima_de_sal", 0.45)]},
-            {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "drops": [("cristal_de_sal", 0.50), ("lagrima_de_sal", 0.50)]},
+            {"nome": "Escorpião de Cristal", "hp": 132, "atk": 23, "def": 7, "xp": 60, "moedas": 85, "elemento": "fogo", "drops": [("cristal_de_sal", 0.55), ("lagrima_de_sal", 0.55)]},
+            {"nome": "Bandido Errante", "hp": 122, "atk": 26, "def": 6, "xp": 62, "moedas": 90, "elemento": "fogo", "drops": [("cristal_de_sal", 0.45), ("lagrima_de_sal", 0.45)]},
+            {"nome": "Verme das Dunas", "hp": 145, "atk": 21, "def": 8, "xp": 58, "moedas": 82, "elemento": "fogo", "drops": [("cristal_de_sal", 0.50), ("lagrima_de_sal", 0.50)]},
         ],
-        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "drops": [("fragmento_selo", 1.0), ("presa_de_zarhak", 1.0)]},
+        "boss": {"nome": "«Zarhak, o Verme Ancião»", "hp": 530, "atk": 52, "def": 11, "xp": 500, "moedas": 850, "elemento": "fogo", "drops": [("fragmento_selo", 1.0), ("presa_de_zarhak", 1.0)]},
     },
     5: {
         "nome": "Lago Congelado",
         "cor": 0x8ECAE6,
         "descricao": "O gelo é grosso o bastante pra andar e fino o bastante pra ouvir.",
         "monstros": [
-            {"nome": "Lobo de Gelo", "hp": 162, "atk": 28, "def": 9, "xp": 74, "moedas": 105, "drops": [("nucleo_gelado", 0.55), ("essencia_do_gelo", 0.55)]},
-            {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "drops": [("nucleo_gelado", 0.45), ("essencia_do_gelo", 0.45)]},
-            {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "drops": [("nucleo_gelado", 0.50), ("essencia_do_gelo", 0.50)]},
+            {"nome": "Lobo de Gelo", "hp": 162, "atk": 28, "def": 9, "xp": 74, "moedas": 105, "elemento": "gelo", "drops": [("nucleo_gelado", 0.55), ("essencia_do_gelo", 0.55)]},
+            {"nome": "Espírito da Neblina", "hp": 148, "atk": 32, "def": 7, "xp": 78, "moedas": 100, "elemento": "gelo", "drops": [("nucleo_gelado", 0.45), ("essencia_do_gelo", 0.45)]},
+            {"nome": "Urso Corrompido", "hp": 180, "atk": 26, "def": 11, "xp": 72, "moedas": 110, "elemento": "gelo", "drops": [("nucleo_gelado", 0.50), ("essencia_do_gelo", 0.50)]},
         ],
-        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "drops": [("fragmento_selo", 1.0), ("uivo_congelado", 1.0)]},
+        "boss": {"nome": "«Nivalgar, o Uivo Branco»", "hp": 650, "atk": 65, "def": 14, "xp": 620, "moedas": 1050, "elemento": "gelo", "drops": [("fragmento_selo", 1.0), ("uivo_congelado", 1.0)]},
     },
     6: {
         "nome": "Mina Abandonada",
         "cor": 0x6B4E31,
         "descricao": "As lamparinas ainda estão acesas. Ninguém apagou porque ninguém saiu.",
         "monstros": [
-            {"nome": "Golem de Minério", "hp": 205, "atk": 31, "def": 13, "xp": 88, "moedas": 125, "drops": [("minerio_negro", 0.55), ("rubi_fosco", 0.55)]},
-            {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "drops": [("minerio_negro", 0.45), ("rubi_fosco", 0.45)]},
-            {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "drops": [("minerio_negro", 0.50), ("rubi_fosco", 0.50)]},
+            {"nome": "Golem de Minério", "hp": 205, "atk": 31, "def": 13, "xp": 88, "moedas": 125, "elemento": "raio", "drops": [("minerio_negro", 0.55), ("rubi_fosco", 0.55)]},
+            {"nome": "Morcego Sanguinário", "hp": 175, "atk": 36, "def": 9, "xp": 92, "moedas": 120, "elemento": "raio", "drops": [("minerio_negro", 0.45), ("rubi_fosco", 0.45)]},
+            {"nome": "Mineiro Enlouquecido", "hp": 190, "atk": 34, "def": 11, "xp": 90, "moedas": 130, "elemento": "raio", "drops": [("minerio_negro", 0.50), ("rubi_fosco", 0.50)]},
         ],
-        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "drops": [("fragmento_selo", 1.0), ("batida_do_nucleo", 1.0)]},
+        "boss": {"nome": "«Núcleo Vivo da Mina»", "hp": 770, "atk": 78, "def": 17, "xp": 740, "moedas": 1250, "elemento": "raio", "drops": [("fragmento_selo", 1.0), ("batida_do_nucleo", 1.0)]},
     },
     7: {
         "nome": "Campos de Cinzas",
         "cor": 0xB5651D,
         "descricao": "Não chove aqui. Cai cinza, e ela é quente.",
         "monstros": [
-            {"nome": "Cavaleiro Queimado", "hp": 232, "atk": 38, "def": 14, "xp": 102, "moedas": 145, "drops": [("brasa_eterna", 0.55), ("essencia_de_fogo", 0.55)]},
-            {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "drops": [("brasa_eterna", 0.45), ("essencia_de_fogo", 0.45)]},
-            {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "drops": [("brasa_eterna", 0.50), ("essencia_de_fogo", 0.50)]},
+            {"nome": "Cavaleiro Queimado", "hp": 232, "atk": 38, "def": 14, "xp": 102, "moedas": 145, "elemento": "fogo", "drops": [("brasa_eterna", 0.55), ("essencia_de_fogo", 0.55)]},
+            {"nome": "Elemental de Brasa", "hp": 210, "atk": 43, "def": 11, "xp": 106, "moedas": 140, "elemento": "fogo", "drops": [("brasa_eterna", 0.45), ("essencia_de_fogo", 0.45)]},
+            {"nome": "Abutre de Ferro", "hp": 220, "atk": 40, "def": 13, "xp": 104, "moedas": 150, "elemento": "fogo", "drops": [("brasa_eterna", 0.50), ("essencia_de_fogo", 0.50)]},
         ],
-        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "drops": [("fragmento_selo", 1.0), ("elmo_de_ignar", 1.0)]},
+        "boss": {"nome": "«Ignar, o Cavaleiro de Brasas»", "hp": 890, "atk": 91, "def": 20, "xp": 860, "moedas": 1450, "elemento": "fogo", "drops": [("fragmento_selo", 1.0), ("elmo_de_ignar", 1.0)]},
     },
     8: {
         "nome": "Catedral Quebrada",
         "cor": 0x9A8C98,
         "descricao": "O teto sumiu, os bancos continuam ocupados.",
         "monstros": [
-            {"nome": "Estátua Animada", "hp": 265, "atk": 42, "def": 17, "xp": 116, "moedas": 165, "drops": [("fragmento_sino", 0.55), ("vitral_partido", 0.55)]},
-            {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "drops": [("fragmento_sino", 0.45), ("vitral_partido", 0.45)]},
-            {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "drops": [("fragmento_sino", 0.50), ("vitral_partido", 0.50)]},
+            {"nome": "Estátua Animada", "hp": 265, "atk": 42, "def": 17, "xp": 116, "moedas": 165, "elemento": "divino", "drops": [("fragmento_sino", 0.55), ("vitral_partido", 0.55)]},
+            {"nome": "Monge Silente", "hp": 240, "atk": 47, "def": 14, "xp": 120, "moedas": 160, "elemento": "divino", "drops": [("fragmento_sino", 0.45), ("vitral_partido", 0.45)]},
+            {"nome": "Sino Amaldiçoado", "hp": 280, "atk": 40, "def": 18, "xp": 114, "moedas": 172, "elemento": "divino", "drops": [("fragmento_sino", 0.50), ("vitral_partido", 0.50)]},
         ],
-        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "drops": [("fragmento_selo", 1.0), ("sino_sem_badalo", 1.0)]},
+        "boss": {"nome": "«Coro dos Sem Rosto»", "hp": 1010, "atk": 104, "def": 23, "xp": 980, "moedas": 1650, "elemento": "divino", "drops": [("fragmento_selo", 1.0), ("sino_sem_badalo", 1.0)]},
     },
     9: {
         "nome": "Céu Partido",
         "cor": 0x4361EE,
         "descricao": "O andar acabou e vira ponte. Não olhe pra baixo — não tem baixo.",
         "monstros": [
-            {"nome": "Harpia Tempestade", "hp": 292, "atk": 48, "def": 18, "xp": 130, "moedas": 185, "drops": [("pena_do_trovao", 0.55), ("essencia_estelar", 0.55)]},
-            {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "drops": [("pena_do_trovao", 0.45), ("essencia_estelar", 0.45)]},
-            {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "drops": [("pena_do_trovao", 0.50), ("essencia_estelar", 0.50)]},
+            {"nome": "Harpia Tempestade", "hp": 292, "atk": 48, "def": 18, "xp": 130, "moedas": 185, "elemento": "raio", "drops": [("pena_do_trovao", 0.55), ("essencia_estelar", 0.55)]},
+            {"nome": "Dragão Jovem", "hp": 320, "atk": 45, "def": 21, "xp": 128, "moedas": 195, "elemento": "raio", "drops": [("pena_do_trovao", 0.45), ("essencia_estelar", 0.45)]},
+            {"nome": "Sentinela Alada", "hp": 275, "atk": 52, "def": 16, "xp": 134, "moedas": 180, "elemento": "raio", "drops": [("pena_do_trovao", 0.50), ("essencia_estelar", 0.50)]},
         ],
-        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "drops": [("fragmento_selo", 1.0), ("escama_de_vyrra", 1.0)]},
+        "boss": {"nome": "«Vyrra, a Serpente do Trovão»", "hp": 1130, "atk": 117, "def": 26, "xp": 1100, "moedas": 1850, "elemento": "raio", "drops": [("fragmento_selo", 1.0), ("escama_de_vyrra", 1.0)]},
     },
     10: {
         "nome": "Salão do Selo",
         "cor": 0x2B2D42,
         "descricao": "Dez portas atrás de você. Uma na frente. Nenhuma janela.",
         "monstros": [
-            {"nome": "Cavaleiro Espelhado", "hp": 325, "atk": 53, "def": 20, "xp": 144, "moedas": 205, "drops": [("eco_cristalizado", 0.55), ("perola_do_eco", 0.55)]},
-            {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "drops": [("eco_cristalizado", 0.45), ("perola_do_eco", 0.45)]},
-            {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "drops": [("eco_cristalizado", 0.50), ("perola_do_eco", 0.50)]},
+            {"nome": "Cavaleiro Espelhado", "hp": 325, "atk": 53, "def": 20, "xp": 144, "moedas": 205, "elemento": "divino", "drops": [("eco_cristalizado", 0.55), ("perola_do_eco", 0.55)]},
+            {"nome": "Eco do Jogador", "hp": 300, "atk": 58, "def": 18, "xp": 148, "moedas": 200, "elemento": "divino", "drops": [("eco_cristalizado", 0.45), ("perola_do_eco", 0.45)]},
+            {"nome": "Guardião do Selo", "hp": 350, "atk": 50, "def": 23, "xp": 142, "moedas": 215, "elemento": "divino", "drops": [("eco_cristalizado", 0.50), ("perola_do_eco", 0.50)]},
         ],
-        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "drops": [("fragmento_selo", 1.0), ("martelo_do_arquiteto", 1.0)]},
+        "boss": {"nome": "«O Arquiteto do Décimo Selo»", "hp": 1260, "atk": 130, "def": 29, "xp": 1220, "moedas": 2050, "elemento": "divino", "drops": [("fragmento_selo", 1.0), ("martelo_do_arquiteto", 1.0)]},
     },
 
     # ---- acima do selo: sem paredes, sem loja, sem ferreiro, sem carroça ----
@@ -348,9 +348,9 @@ ANDARES = {
         "cor": 0x8ECAE6,
         "descricao": "O teto sumiu. A torre continua, mas agora é só as bordas de uma sala que o céu invadiu.",
         "monstros": [
-            {"nome": "Grifo de Vidro", "hp": 330, "atk": 58, "def": 21, "xp": 156, "moedas": 222, "drops": [("pluma_eterea", 0.55)]},
-            {"nome": "Sentinela Suspensa", "hp": 355, "atk": 56, "def": 24, "xp": 158, "moedas": 226, "drops": [("pluma_eterea", 0.50)]},
-            {"nome": "Corrente de Vento", "hp": 375, "atk": 60, "def": 20, "xp": 154, "moedas": 220, "drops": [("pluma_eterea", 0.45)]},
+            {"nome": "Grifo de Vidro", "hp": 330, "atk": 58, "def": 21, "xp": 156, "moedas": 222, "elemento": "ar", "drops": [("pluma_eterea", 0.55)]},
+            {"nome": "Sentinela Suspensa", "hp": 355, "atk": 56, "def": 24, "xp": 158, "moedas": 226, "elemento": "ar", "drops": [("pluma_eterea", 0.50)]},
+            {"nome": "Corrente de Vento", "hp": 375, "atk": 60, "def": 20, "xp": 154, "moedas": 220, "elemento": "ar", "drops": [("pluma_eterea", 0.45)]},
         ],
         "boss": {
             "nome": "«Guardiã do Terraço»", "hp": 4140, "atk": 171, "def": 35,
@@ -363,9 +363,9 @@ ANDARES = {
         "cor": 0x6247AA,
         "descricao": "Relâmpago sem trovão — a luz chega, o som não vem. Alguma coisa aqui em cima engole barulho.",
         "monstros": [
-            {"nome": "Coluna Carregada", "hp": 365, "atk": 64, "def": 23, "xp": 168, "moedas": 237, "drops": [("farpa_eletrica", 0.55)]},
-            {"nome": "Arco Que Ainda Zune", "hp": 385, "atk": 66, "def": 25, "xp": 170, "moedas": 240, "drops": [("farpa_eletrica", 0.50)]},
-            {"nome": "Servo de Cobre", "hp": 400, "atk": 62, "def": 27, "xp": 166, "moedas": 235, "drops": [("farpa_eletrica", 0.45)]},
+            {"nome": "Coluna Carregada", "hp": 365, "atk": 64, "def": 23, "xp": 168, "moedas": 237, "elemento": "raio", "drops": [("farpa_eletrica", 0.55)]},
+            {"nome": "Arco Que Ainda Zune", "hp": 385, "atk": 66, "def": 25, "xp": 170, "moedas": 240, "elemento": "raio", "drops": [("farpa_eletrica", 0.50)]},
+            {"nome": "Servo de Cobre", "hp": 400, "atk": 62, "def": 27, "xp": 166, "moedas": 235, "elemento": "raio", "drops": [("farpa_eletrica", 0.45)]},
         ],
         "boss": {
             "nome": "«Arauto do Pátio»", "hp": 4500, "atk": 197, "def": 41,
@@ -378,9 +378,9 @@ ANDARES = {
         "cor": 0xCAF0F8,
         "descricao": "Branco em toda direção, inclusive pra baixo. Os próprios passos somem depois do terceiro.",
         "monstros": [
-            {"nome": "Estátua de Gelo Fino", "hp": 390, "atk": 70, "def": 26, "xp": 180, "moedas": 252, "drops": [("estilhaco_gelido", 0.55)]},
-            {"nome": "Eco Congelado", "hp": 410, "atk": 68, "def": 28, "xp": 182, "moedas": 255, "drops": [("estilhaco_gelido", 0.50)]},
-            {"nome": "Vigia Sem Rosto", "hp": 425, "atk": 74, "def": 24, "xp": 178, "moedas": 250, "drops": [("estilhaco_gelido", 0.45)]},
+            {"nome": "Estátua de Gelo Fino", "hp": 390, "atk": 70, "def": 26, "xp": 180, "moedas": 252, "elemento": "gelo", "drops": [("estilhaco_gelido", 0.55)]},
+            {"nome": "Eco Congelado", "hp": 410, "atk": 68, "def": 28, "xp": 182, "moedas": 255, "elemento": "gelo", "drops": [("estilhaco_gelido", 0.50)]},
+            {"nome": "Vigia Sem Rosto", "hp": 425, "atk": 74, "def": 24, "xp": 178, "moedas": 250, "elemento": "gelo", "drops": [("estilhaco_gelido", 0.45)]},
         ],
         "boss": {
             "nome": "«Curadora da Ala Branca»", "hp": 4860, "atk": 223, "def": 47,
@@ -393,9 +393,9 @@ ANDARES = {
         "cor": 0xF3722C,
         "descricao": "Calor sem chama à vista. Se tem fogo aqui, ele decidiu não aparecer pra ninguém ver.",
         "monstros": [
-            {"nome": "Vidro Fundido", "hp": 415, "atk": 78, "def": 28, "xp": 192, "moedas": 267, "drops": [("cinza_quente", 0.55)]},
-            {"nome": "Fôlego Retido", "hp": 435, "atk": 76, "def": 30, "xp": 194, "moedas": 270, "drops": [("cinza_quente", 0.50)]},
-            {"nome": "Estátua de Sal Requentado", "hp": 450, "atk": 82, "def": 26, "xp": 190, "moedas": 265, "drops": [("cinza_quente", 0.45)]},
+            {"nome": "Vidro Fundido", "hp": 415, "atk": 78, "def": 28, "xp": 192, "moedas": 267, "elemento": "fogo", "drops": [("cinza_quente", 0.55)]},
+            {"nome": "Fôlego Retido", "hp": 435, "atk": 76, "def": 30, "xp": 194, "moedas": 270, "elemento": "fogo", "drops": [("cinza_quente", 0.50)]},
+            {"nome": "Estátua de Sal Requentado", "hp": 450, "atk": 82, "def": 26, "xp": 190, "moedas": 265, "elemento": "fogo", "drops": [("cinza_quente", 0.45)]},
         ],
         "boss": {
             "nome": "«Guardião do Solário»", "hp": 5220, "atk": 249, "def": 53,
@@ -408,9 +408,9 @@ ANDARES = {
         "cor": 0x22223B,
         "descricao": "Uma cadeira grande demais pra qualquer um. Ninguém se sentou nela ainda — e talvez seja melhor assim.",
         "monstros": [
-            {"nome": "Guarda Sem Nome", "hp": 440, "atk": 84, "def": 30, "xp": 204, "moedas": 282, "drops": [("po_de_estrela", 0.55)]},
-            {"nome": "Sombra Que Ajoelha", "hp": 460, "atk": 82, "def": 32, "xp": 206, "moedas": 285, "drops": [("po_de_estrela", 0.50)]},
-            {"nome": "Retrato Vivo", "hp": 475, "atk": 88, "def": 28, "xp": 202, "moedas": 280, "drops": [("po_de_estrela", 0.45)]},
+            {"nome": "Guarda Sem Nome", "hp": 440, "atk": 84, "def": 30, "xp": 204, "moedas": 282, "elemento": "sombrio", "drops": [("po_de_estrela", 0.55)]},
+            {"nome": "Sombra Que Ajoelha", "hp": 460, "atk": 82, "def": 32, "xp": 206, "moedas": 285, "elemento": "sombrio", "drops": [("po_de_estrela", 0.50)]},
+            {"nome": "Retrato Vivo", "hp": 475, "atk": 88, "def": 28, "xp": 202, "moedas": 280, "elemento": "sombrio", "drops": [("po_de_estrela", 0.45)]},
         ],
         # duas fases, ver decisoes.md § Andar 15 — combate.py troca pra
         # "fase2" sozinho quando o hp cruza 50%, sem resetar nada da luta.
@@ -439,6 +439,51 @@ CONDICOES_ELEMENTO = {
     "fogo": {"tipo": "dano_por_rodada", "nome": "Queimadura", "emoji": "🔥", "duracao": 3, "valor": 0.06},
     "sombrio": {"tipo": "reduz_cura", "nome": "Ferida Sombria", "emoji": "🌑", "duracao": 2, "valor": 0.50},
     "divino": {"tipo": "vulneravel", "nome": "Marca", "emoji": "✨", "duracao": 4, "valor": 0.30},
+}
+
+# Ciclo de fraquezas das armas elementais (cartão "Dano elemental"). Cada
+# elemento é forte contra o SEGUINTE do ciclo (dano x1.25 nele) e fraco
+# contra o ANTERIOR (x0.85) — neutro (x1.0) contra os outros quatro,
+# incluindo alvo sem elemento nenhum. A ordem segue os andares 11-15 (ar=11,
+# raio=12, gelo=13, fogo=14, sombrio=15 fase 1) fechando em divino (15 fase
+# 2, chefe final) de volta pro ar — por isso ar é a única arma fraca contra
+# o chefe final. Ver decisoes.md § Dano elemental.
+CICLO_ELEMENTOS = ("ar", "raio", "gelo", "fogo", "sombrio", "divino")
+MULTIPLICADOR_ELEMENTO_FORTE = 1.25
+MULTIPLICADOR_ELEMENTO_FRACO = 0.85
+
+
+def multiplicador_elemento(elemento_arma, elemento_alvo):
+    """Fator de dano de uma arma elemental contra o elemento do alvo.
+    Neutro (1.0) se qualquer um dos dois estiver ausente ou fora do ciclo —
+    alvo sem elemento nunca levanta exceção."""
+    if elemento_arma not in CICLO_ELEMENTOS or elemento_alvo not in CICLO_ELEMENTOS:
+        return 1.0
+    i = CICLO_ELEMENTOS.index(elemento_arma)
+    forte_contra = CICLO_ELEMENTOS[(i + 1) % len(CICLO_ELEMENTOS)]
+    fraco_contra = CICLO_ELEMENTOS[(i - 1) % len(CICLO_ELEMENTOS)]
+    if elemento_alvo == forte_contra:
+        return MULTIPLICADOR_ELEMENTO_FORTE
+    if elemento_alvo == fraco_contra:
+        return MULTIPLICADOR_ELEMENTO_FRACO
+    return 1.0
+
+
+# Condição que a ARMA elemental do jogador amarra no ALVO (chefe, andares
+# 1-15) quando o golpe conecta — direção inversa de CONDICOES_ELEMENTO
+# (chefe -> jogador), por isso é uma tabela NOVA e não uma reaproveitada:
+# invertida ficaria desigual (gelo travando o CHEFE viraria rodada de graça
+# demais pro jogador; "reduz_cura" de sombrio seria efeito morto porque
+# chefe não se cura). Os seis tipos já existem em condicoes.py — nenhum tipo
+# novo, só pontos de consulta novos em combate.py pro chefe como alvo. Ver
+# decisoes.md § Dano elemental.
+CONDICOES_ARMA_ELEMENTAL = {
+    "fogo": {"tipo": "dano_por_rodada", "nome": "Brasa", "emoji": "🔥", "duracao": 3, "valor": 0.03},
+    "gelo": {"tipo": "pula_turno", "nome": "Travamento", "emoji": "🔒", "duracao": 1, "valor": 0},
+    "raio": {"tipo": "bloqueia_skill", "nome": "Curto", "emoji": "⚡", "duracao": 2, "valor": 0},
+    "ar": {"tipo": "chance_erro", "nome": "Corrente", "emoji": "🌬️", "duracao": 3, "valor": 0.25},
+    "divino": {"tipo": "vulneravel", "nome": "Marca", "emoji": "✨", "duracao": 3, "valor": 0.20},
+    "sombrio": {"tipo": "dano_por_rodada", "nome": "Sanguessuga", "emoji": "🩸", "duracao": 3, "valor": 0.02, "drena": 0.5},
 }
 
 # Fase 2: as 4 bases. Os 12 ramos (ascensões) entram depois.

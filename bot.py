@@ -23,6 +23,7 @@ import pronomes
 import travas
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario,
+    multiplicador_elemento,
 )
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
@@ -386,6 +387,14 @@ def simular_combate(s, hp, mob, andar_num):
     des_mob = at.destreza_monstro(andar_num)
     log = []
 
+    # só o multiplicador de tipo entra na caçada/exploração -- esse loop não
+    # tem objeto Luta, registrar() nem condicoes.py, então a condição da
+    # arma elemental (Brasa, Travamento etc.) não porta pra cá, só o dano.
+    # Ver decisoes.md § Dano elemental.
+    arma_equipada = s["equipamento"]["arma"]
+    elemento_arma = arma_equipada[1].get("elemento") if arma_equipada else None
+    fator_elemento = multiplicador_elemento(elemento_arma, mob.get("elemento"))
+
     if random.random() >= at.chance_iniciativa(des, des_mob):
         dm, _ = calcular_dano(mob["atk"], s["def"])
         hp -= dm
@@ -395,6 +404,7 @@ def simular_combate(s, hp, mob, andar_num):
 
     for _ in range(60):
         d, _ = calcular_dano(s["atk"], mob["def"], s["critico"])
+        d = max(1, int(d * fator_elemento))
         hp_mob -= d
         if hp_mob <= 0:
             log.append(f"Você acerta **{d}** e derruba o alvo.")
