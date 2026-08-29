@@ -280,8 +280,9 @@ def test_mortalha_de_luz_uma_vez_por_luta():
     asyncio.run(botao.callback(it2))
 
     it2.response.send_message.assert_awaited_once()
+    mensagem = it2.response.send_message.call_args.args[0]
+    assert "já ativou" in mensagem   # recusa de "já usou", não de "não tem"
     assert c.hp == 1   # segunda tentativa não curou de novo
-    assert botao.disabled is True
 
 
 def test_mortalha_de_luz_nao_consome_pocao_nem_elixir():
@@ -327,7 +328,6 @@ def test_mortalha_de_sombra_nao_dobra_de_novo_na_rodada_seguinte(monkeypatch):
     asyncio.run(painel.registrar_acao(_interacao(1), c, "atacar"))   # rodada 2: normal
 
     assert hp_antes - luta.hp_chefe == 100
-    assert botao.disabled is True   # e não dá pra ativar de novo
 
 
 # ---------------------------------------------------------------- Sombra x habilidade
@@ -446,7 +446,10 @@ def test_ativar_sombra_e_depois_defender_consome_o_uso_da_luta():
     assert c.sombra_ativa is False     # e o buff da rodada foi embora sem servir pra nada
 
 
-def test_botao_mortalha_desabilita_apos_uso():
+def test_botao_mortalha_continua_presente_e_habilitado_apos_uso():
+    """Regressão: `self.disabled = True` no callback apagava o botão pra
+    PARTY INTEIRA (view compartilhada), não só pra quem já usou -- ver
+    decisoes.md § Mortalha de Luz/Sombra."""
     c = _combatente(1, mortalha="mortalha_luz")
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     painel = combate.PainelLuta(luta)
@@ -454,7 +457,52 @@ def test_botao_mortalha_desabilita_apos_uso():
 
     asyncio.run(botao.callback(_interacao(1)))
 
-    assert botao.disabled is True
+    assert botao.disabled is False
+    assert botao in painel.children
+
+
+def test_segundo_jogador_da_party_ainda_usa_a_propria_mortalha_apos_o_primeiro():
+    """O bug: um botão compartilhado desabilitado pelo primeiro clique
+    travava a party inteira no Discord de verdade (um botão `disabled` não
+    dispatcha clique nenhum, nem do segundo jogador), mesmo com
+    `mortalha_usada` sendo por jogador. A asserção de `disabled` no meio é o
+    que amarra este teste ao sintoma real -- sem ela, chamar `.callback()`
+    direto (como o teste faz) ignoraria o `disabled` que só o Discord
+    checaria de verdade."""
+    c1 = _combatente(1, mortalha="mortalha_luz", hp=1)
+    c2 = _combatente(2, mortalha="mortalha_sombra")
+    luta = combate.Luta([c1, c2], CHEFE_TESTE, andar_num=1)
+    painel = combate.PainelLuta(luta)
+    botao = _botao_mortalha(painel)
+
+    asyncio.run(botao.callback(_interacao(1)))
+    assert c1.mortalha_usada is True
+    assert c1.hp == c1.s["hp_max"]   # efeito de luz aplicou
+    assert botao.disabled is False   # senão o Discord nunca entregaria o clique do segundo jogador
+
+    it2 = _interacao(2)
+    asyncio.run(botao.callback(it2))
+
+    it2.response.send_message.assert_not_called()   # segundo jogador não foi recusado
+    assert c2.mortalha_usada is True
+    assert c2.sombra_ativa is True   # efeito de sombra também aplicou, na mesma luta
+
+
+def test_mortalha_recusa_quem_nao_tem_a_peca_equipada():
+    c = _combatente(1)   # sem mortalha nenhuma
+    outro = _combatente(2, mortalha="mortalha_luz")   # só pra o botão aparecer no painel
+    luta = combate.Luta([c, outro], CHEFE_TESTE, andar_num=1)
+    painel = combate.PainelLuta(luta)
+    botao = _botao_mortalha(painel)
+
+    it = _interacao(1)
+    asyncio.run(botao.callback(it))
+
+    it.response.send_message.assert_awaited_once()
+    mensagem = it.response.send_message.call_args.args[0]
+    assert "não tem" in mensagem.lower()
+    assert "Selen" in mensagem   # explica onde conseguir, não só recusa seca
+    assert c.mortalha_usada is False
 
 
 def test_painel_novo_da_mesma_luta_nao_mostra_o_botao_depois_de_usado():

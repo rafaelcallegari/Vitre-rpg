@@ -1067,12 +1067,21 @@ class BotaoMortalha(discord.ui.Button):
     """Botão compartilhado, igual Atacar/Defender/Fugir -- só existe no
     painel se ALGUÉM ativo qualifica (ver PainelLuta.__init__), mas o efeito
     é sempre do combatente que clicou; quem não tem mortalha ou já usou a
-    dele leva recusa ephemeral, mesmo padrão do botão Habilidade pra quem
-    não tem classe. NÃO chama registrar_acao — é a diferença central desta
-    skill: ativa e ainda ataca na mesma rodada, não gasta o turno (decidido
-    duas vezes, ver decisoes.md). `PainelLuta.interaction_check` já barra
-    quem não está na luta, já saiu dela, ou já tem `c.acao` definido nesta
-    rodada -- nenhuma checagem extra precisa disso aqui."""
+    dele leva recusa ephemeral, duas mensagens diferentes (ver callback),
+    mesmo padrão do botão Habilidade pra quem não tem classe. NÃO chama
+    registrar_acao — é a diferença central desta skill: ativa e ainda ataca
+    na mesma rodada, não gasta o turno (decidido duas vezes, ver
+    decisoes.md). `PainelLuta.interaction_check` já barra quem não está na
+    luta, já saiu dela, ou já tem `c.acao` definido nesta rodada -- nenhuma
+    checagem extra precisa disso aqui.
+
+    NUNCA seta `self.disabled` aqui -- este botão é uma instância ÚNICA
+    compartilhada pela view inteira da party (não um por jogador), então
+    desabilitar `self` apaga o botão pra todo mundo depois do primeiro uso,
+    mesmo que `mortalha_usada` seja por combatente. Foi bug real (ver
+    decisoes.md § Mortalha de Luz/Sombra): trava geral onde deveria ser só
+    a checagem por jogador. Regra vale pra qualquer botão futuro que
+    apareça uma vez só no painel mas precise de estado por combatente."""
 
     def __init__(self):
         super().__init__(label="Mortalha", emoji="🕯️", style=discord.ButtonStyle.success, row=1)
@@ -1081,9 +1090,18 @@ class BotaoMortalha(discord.ui.Button):
         painel = self.view
         luta = painel.luta
         c = painel.combatente_de(interaction)
-        if not _mortalha_disponivel(c):
+        if not c.jogador.get("mortalha"):
             await interaction.response.send_message(
-                "Você não tem a mortalha disponível agora.", ephemeral=True
+                "Você não tem uma Mortalha equipada. Ela é forjada pela Selen (andar 9), "
+                "com as quatro peças da Guia — e precisa estar equipada pra ativar.",
+                ephemeral=True,
+            )
+            return
+        if c.mortalha_usada:
+            await interaction.response.send_message(
+                "Você já ativou a sua Mortalha nesta luta — é um uso por jogador, por luta. "
+                "O resto da party ainda pode usar a deles.",
+                ephemeral=True,
             )
             return
         await interaction.response.defer()
@@ -1100,7 +1118,6 @@ class BotaoMortalha(discord.ui.Button):
             luta.registrar(
                 f"{dados['emoji']} {c.nome} ativa **{dados['nome']}** — o próximo golpe vem em dobro."
             )
-        self.disabled = True
         await responder(interaction, luta.embed(), painel)
 
 

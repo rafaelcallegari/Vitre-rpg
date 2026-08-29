@@ -4401,12 +4401,14 @@ turno; esta não gasta nada).
 - **Luz não passa por `condicoes.reducao_cura_recebida`** (a redução de
   cura que Ferida Sombria aplica em poção/regeneração) — é uma cura cheia
   sem condição, "deliberadamente forte" (nota do próprio card no Notion).
-- **Botão desabilita a si mesmo (`self.disabled = True`) após o uso**,
-  mas o painel (`PainelLuta`) reusa a MESMA instância de View rodada após
-  rodada dentro da mesma luta — só reconstrói via `_continuar()` quando
-  uma rodada estoura por timeout. Por isso `_mortalha_disponivel` também
-  precisa ser checado de novo em `__init__` (não só o `disabled` do botão
-  velho): um painel novo pós-timeout não pode reoferecer a skill já usada.
+- **O botão NÃO desabilita a si mesmo após o uso** — ver
+  § Correção — `self.disabled` no botão compartilhado travava a party
+  inteira, mais abaixo, pra por que essa frase mudou de "desabilita"
+  (como este arquivo dizia até 28/08) pra "não desabilita". A checagem de
+  quem qualifica é só `_mortalha_disponivel` (por combatente), consultada
+  de novo toda vez que `PainelLuta.__init__` roda — inclusive no painel
+  novo que `_continuar()` cria pós-timeout, que por isso já não reoferece
+  a skill pra quem já usou, sem precisar de nenhum estado no botão em si.
 - **Novos ITENS (`mortalha_luz`/`mortalha_sombra`)**: `def: 20`,
   `andar_min: 14` (só pra EQUIPAR — forjar não olha andar nenhum, só as
   quatro peças), `elemento: "luz"/"sombra"` (lido por `BotaoMortalha` pra
@@ -4750,3 +4752,60 @@ mecanismo que já era verdade com os valores antigos — não é regressão,
 é o mesmo motivo do `test_cacada_nao_aplica_condicao_nenhuma_no_monstro` do
 cartão anterior. Suíte completa (414 testes, 410 de antes + 4 novos)
 passando.
+
+## Correção — `self.disabled` no botão compartilhado travava a party inteira
+
+Reportado como "a Mortalha trava a party depois do primeiro uso". O estado
+nunca foi o problema — `Combatente.mortalha_usada` já era por jogador desde
+o cartão original, e `_mortalha_disponivel(c)` já checava o combatente
+certo. O bug era só de UI: `BotaoMortalha.callback` fazia
+`self.disabled = True` no fim, e `self` é a ÚNICA instância do botão,
+compartilhada pela `PainelLuta` (`View`) da luta inteira — a mesma instância
+que `Atacar`/`Defender`/`Fugir` usam, reaproveitada rodada após rodada
+(`_continuar()` só troca de instância pós-timeout). Desabilitar `self`
+apagava o botão pra TODO mundo na party, mesmo com o `mortalha_usada` de
+cada um ainda em `False`. A seção anterior deste arquivo (§ Mortalha de
+Luz/Sombra) chegou a documentar esse `self.disabled = True` como
+comportamento correto — estava errado, e o bullet foi corrigido no mesmo
+commit desta correção.
+
+- **Correção: removida a linha `self.disabled = True`.** Nada mais mudou na
+  lógica — a checagem por jogador (`c.jogador.get("mortalha")` +
+  `c.mortalha_usada`) já era a certa, só precisava não ser mascarada pelo
+  botão sumindo pra todo mundo.
+- **Regra geral pra qualquer botão futuro de painel compartilhado**: um
+  botão que aparece UMA VEZ no painel (`Atacar`, `Defender`, `Mortalha`,
+  qualquer outro que não seja instanciado por combatente) nunca pode gravar
+  estado de "já usei" em si mesmo (`self.algumacoisa = ...` que sobrevive
+  entre cliques) quando esse estado deveria ser por jogador — o dono do
+  estado é sempre o `Combatente`, nunca o `discord.ui.Button`. Vale mesmo
+  quando o efeito parece "óbvio" de desabilitar (uma skill de uso único).
+- **Recusa ephemeral virou duas mensagens, não uma genérica**: sem a peça
+  equipada explica que a Mortalha é forjada com a Selen (andar 9) usando as
+  quatro peças da Guia; já usada nesta luta explica que é um uso por
+  jogador por luta e que o resto da party ainda pode usar a deles. Mesmo
+  espírito do padrão "recusa explicada" já usado em `rpg encantar`/
+  `rpg melhorar` pra mortalha (ver § Mortalha — recusas explicadas,
+  acima) — texto que ensina a regra, não só recusa seca.
+- **Nada mudou fora de `combate.py`**: `def: 20` das duas peças, a skill
+  não gastar a rodada (decidido duas vezes antes) e a ausência de qualquer
+  trava extra (cooldown, teto por combate, restrição a chefe) continuam
+  exatamente como estavam — o pedido foi só a UI, não o balanceamento.
+- Testado em `tests/test_mortalha_luz_sombra.py`: dois testes antigos que
+  afirmavam `botao.disabled is True` depois do uso (`test_mortalha_de_luz_
+  uma_vez_por_luta`, `test_mortalha_de_sombra_nao_dobra_de_novo_na_rodada_
+  seguinte`) tiveram essa asserção removida/trocada — não testavam a regra
+  de negócio, testavam o sintoma do bug. `test_botao_mortalha_desabilita_
+  apos_uso` foi substituído por `test_botao_mortalha_continua_presente_e_
+  habilitado_apos_uso` (inverte a asserção). Dois testes novos: party de
+  2 com mortalha equipada, o primeiro usa e o segundo AINDA consegue —
+  com uma asserção de `botao.disabled is False` entre os dois cliques,
+  porque chamar `.callback()` direto (como o teste faz) não passa pelo
+  dispatch de verdade do Discord, que é quem checaria `disabled` antes de
+  entregar o clique; e quem não tem a peça leva a mensagem de "não tem"
+  (cita a Selen), nunca a de "já usou". Validado recolocando só a linha
+  `self.disabled = True`: exatamente os dois testes novos quebram
+  (`test_botao_mortalha_continua_presente_e_habilitado_apos_uso` e
+  `test_segundo_jogador_da_party_ainda_usa_a_propria_mortalha_apos_o_
+  primeiro`) — nenhum outro, incluindo os dois antigos já ajustados.
+  Suíte completa (416 testes, 414 de antes + 2 novos) passando.
