@@ -558,6 +558,42 @@ ASCENSOES = {
     "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO},
 }
 
+# ---------------- dungeon (andar 9, fatia 1 -- ver decisoes.md) ----------------
+# O portão da ascensão: só abre no andar 9, nível >= NIVEL_ASCENSAO_PADRAO.
+# Nesta fatia o pool é só o suficiente pro sorteio ter o que sortear -- 2
+# salas por tipo, conteúdo de verdade (espelhos, Orbe) entra depois. "achado"
+# nunca "tesouro": tesouro já é o item de andar do Salão da Guilda.
+DUNGEON_SALAS_POR_RUN = 5
+
+DUNGEON_POOL = [
+    {"chave": "camara_dos_ecos", "tipo": "combate", "nome": "Câmara dos Ecos",
+     "texto": "Vozes repetem seus próprios passos -- algo se aproxima na escuridão."},
+    {"chave": "corredor_sussurrante", "tipo": "combate", "nome": "Corredor Sussurrante",
+     "texto": "As paredes sussurram um aviso tarde demais."},
+    {"chave": "salao_do_espelho_rachado", "tipo": "evento", "nome": "Salão do Espelho Rachado",
+     "texto": "Um espelho trincado reflete um você que nunca foi."},
+    {"chave": "jardim_suspenso", "tipo": "evento", "nome": "Jardim Suspenso",
+     "texto": "Flores que não deveriam crescer aqui embaixo -- crescem."},
+    {"chave": "piso_instavel", "tipo": "armadilha", "nome": "Piso Instável",
+     "texto": "O chão cede um pouco a cada passo."},
+    {"chave": "corrente_solta", "tipo": "armadilha", "nome": "Corrente Solta",
+     "texto": "Alguma coisa presa aqui não devia estar tão perto."},
+    {"chave": "bau_esquecido", "tipo": "achado", "nome": "Baú Esquecido",
+     "texto": "Poeira de anos cobre uma tampa que ainda destranca."},
+    {"chave": "nicho_da_torre", "tipo": "achado", "nome": "Nicho da Torre",
+     "texto": "Um vão na pedra guarda o que a Torre não quis levar embora."},
+]
+
+# classe -> chave do espelho -- acesso sempre por .get(), nunca subscript,
+# porque nesta fatia toda entrada aponta pro mesmo placeholder (os espelhos
+# de verdade, um design de reflexo por classe, entram numa fatia futura).
+DUNGEON_ESPELHOS = {
+    "guerreiro": "espelho_placeholder",
+    "mago": "espelho_placeholder",
+    "ladino": "espelho_placeholder",
+    "orador": "espelho_placeholder",
+}
+
 # Catálogo de habilidades. Cada chave segue este formato:
 #   "chave": {
 #       "nome": str, "emoji": str, "classe": uma chave de CLASSES,

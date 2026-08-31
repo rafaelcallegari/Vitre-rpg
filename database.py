@@ -1,5 +1,6 @@
 # database.py
 import asyncio
+import json
 import os
 import sqlite3
 import threading
@@ -134,6 +135,12 @@ CREATE TABLE IF NOT EXISTS guilda_salao (
 CREATE TABLE IF NOT EXISTS estado_temporada (
     id     INTEGER PRIMARY KEY CHECK (id = 1),
     numero INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS dungeon_run (
+    user_id     INTEGER PRIMARY KEY,
+    salas       TEXT,     -- json: lista das chaves sorteadas, na ordem
+    indice      INTEGER NOT NULL DEFAULT 0,
+    iniciada_em REAL
 );
 """
 
@@ -629,18 +636,40 @@ def criar_jogador(user_id, nome):
         )
 
 
-def atualizar_jogador(user_id, **campos):
-    """Sempre que o HP muda, carimba hp_em — a regeneração depende disso."""
-    if not campos:
-        return
+def _atualizar_jogador_na_conexao(conn, user_id, campos):
+    """Miolo de atualizar_jogador, recebendo uma conexão já aberta -- existe
+    separado pra quem precisa juntar essa escrita com outra na MESMA
+    transação (ver atualizar_jogador_e_apagar_dungeon_run)."""
     if "hp" in campos and "hp_em" not in campos:
         campos["hp_em"] = time.time()
     if "mana" in campos and "mana_em" not in campos:
         campos["mana_em"] = time.time()
     sets = ", ".join(f"{k} = ?" for k in campos)
     valores = list(campos.values()) + [user_id]
+    conn.execute(f"UPDATE jogadores SET {sets} WHERE user_id = ?", valores)
+
+
+def atualizar_jogador(user_id, **campos):
+    """Sempre que o HP muda, carimba hp_em — a regeneração depende disso."""
+    if not campos:
+        return
     with conectar() as conn:
-        conn.execute(f"UPDATE jogadores SET {sets} WHERE user_id = ?", valores)
+        _atualizar_jogador_na_conexao(conn, user_id, campos)
+
+
+def atualizar_jogador_e_apagar_dungeon_run(user_id, campos):
+    """Usada só por processar_morte (bot.py): a penalidade de morte e a
+    limpeza de dungeon_run (se existir) andam na MESMA transação/commit --
+    sem isso, um restart da Discloud entre as duas escritas separadas podia
+    deixar uma linha órfã em dungeon_run apontando pra uma run que a morte
+    já encerrou. DELETE sem linha correspondente é no-op, então isso roda
+    sem custo extra pra morte de fora da dungeon (cacar/explorar/boss). Ver
+    decisoes.md § Dungeon (fatia 1)."""
+    if not campos:
+        return
+    with conectar() as conn:
+        _atualizar_jogador_na_conexao(conn, user_id, campos)
+        conn.execute("DELETE FROM dungeon_run WHERE user_id = ?", (user_id,))
 
 
 def marcar_combate(user_id):
@@ -1193,6 +1222,44 @@ def concluir_sidequest(user_id, quest_id):
             "UPDATE sidequests SET estado = 'concluida' WHERE user_id = ? AND quest_id = ?",
             (user_id, quest_id),
         )
+
+
+# ---------------- dungeon (andar 9) ----------------
+# Uma run por jogador -- a PK em dungeon_run.user_id garante isso mesmo se
+# dungeon.py chamar criar_dungeon_run sem checar antes (ON CONFLICT DO
+# NOTHING: a segunda tentativa é descartada, a primeira run continua valendo
+# como estava). HP/mana do jogador NÃO moram aqui -- só salas/indice. Ver
+# decisoes.md § Dungeon (fatia 1).
+def criar_dungeon_run(user_id, salas):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO dungeon_run (user_id, salas, indice, iniciada_em)
+               VALUES (?, ?, 0, ?)""",
+            (user_id, json.dumps(salas), time.time()),
+        )
+
+
+def get_dungeon_run(user_id):
+    with conectar() as conn:
+        row = conn.execute("SELECT * FROM dungeon_run WHERE user_id = ?", (user_id,)).fetchone()
+    if not row:
+        return None
+    return {
+        "user_id": row["user_id"],
+        "salas": json.loads(row["salas"]),
+        "indice": row["indice"],
+        "iniciada_em": row["iniciada_em"],
+    }
+
+
+def atualizar_dungeon_run_indice(user_id, indice):
+    with conectar() as conn:
+        conn.execute("UPDATE dungeon_run SET indice = ? WHERE user_id = ?", (indice, user_id))
+
+
+def apagar_dungeon_run(user_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM dungeon_run WHERE user_id = ?", (user_id,))
 
 
 # ---------------- inventário ----------------

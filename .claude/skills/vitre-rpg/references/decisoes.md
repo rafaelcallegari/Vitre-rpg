@@ -4879,4 +4879,127 @@ empilhar direto) quebra só o teste de renovação; baixar a `duracao` guardada
 de Ruptura de 4 pra 3 quebra só o teste do contrato N+1 dela — nenhuma
 mudança derrubou testes fora do escopo pretendido. Suíte completa: 463
 (416 de antes + 47 novos), 462 passando + 1 xfail esperado.
+
+## Dungeon (fatia 1) — motor: entrada, sorteio, persistência, morte, retomada
+
+Vitre 0.4. Primeira fatia de quatro — dungeon + 12 skills de ascensão + 4
+espelhos + mestres sobem num deploy só, no fim da fatia 4. Esta fatia fica
+no GitHub mas **não vai pro ar**: sem espelhos de verdade, sem Orbe, sem
+skills de ascensão, e nada disso muda o Guia da Torre ainda.
+
+### Por que a run mora no banco, não em memória (ao contrário de `travas._em_luta`)
+
+`travas.py` documenta explicitamente por que a trava de luta de chefe é só
+RAM: "luta não sobrevive a restart do bot... uma trava sobrevivendo a
+restart soft-lockaria todo mundo". A run de dungeon é o oposto de propósito:
+o bot roda no PC do Rafael (Discloud), reinicia com frequência bem maior do
+que um servidor dedicado ficaria de pé, e perder o progresso de uma run de 5
+salas a cada reinício ia deixar a dungeon inutilizável na prática — ninguém
+termina uma run sem o bot cair no meio. `dungeon_run(user_id, salas, indice,
+iniciada_em)` entra no `SCHEMA` como `CREATE TABLE IF NOT EXISTS`, igual
+`guilda_salao`/`estado_temporada` — não é `ALTER TABLE` em `jogadores`,
+então não entra na dança de migração numerada. HP e mana continuam sendo os
+do jogador de sempre (não uma cópia dentro da run) — de propósito: assim a
+regeneração de 5%/min fora de luta (teto 70%) continua valendo entre salas,
+o mesmo comportamento de sempre, sem reinventar nada.
+
+### Por que "achado", nunca "tesouro"
+
+O quarto tipo de sala (ao lado de combate/evento/armadilha) não podia se
+chamar "tesouro" porque essa palavra já é o item de andar não-farmável do
+Salão da Guilda (`guilda_salao`/`salao.py`) — reusar o nome ia confundir o
+jogador (dois sistemas de recompensa completamente diferentes com o mesmo
+rótulo) e o código (grep por "tesouro" passaria a bater em dois lugares sem
+relação). `game_data.DUNGEON_POOL` usa `"achado"` como `tipo`, e nenhuma
+`chave` do pool contém a palavra "tesouro" — travado em
+`test_achado_nunca_e_chamado_de_tesouro`.
+
+### Resolução instantânea, não turno-por-botão
+
+Sala de tipo `combate` reusa `bot.simular_combate` contra
+`game_data.ANDARES[9]["monstros"]` — o mesmo motor de `rpg cacar`/`rpg
+explorar`, não `combate.Luta`/`PainelLuta` (que é só do chefe por decisão de
+design já fechada, ver § Invariantes de design). Isso também é por que
+"Luta de chefe e dungeon não coexistem" (frase do cartão) já sai de graça
+sem trava extra: não existe estado de luta persistente pra colidir com uma
+run de dungeon — cada sala resolve e termina na mesma chamada de comando,
+igual uma caçada. **Não** adicionei `fora_de_dungeon()` em `rpg boss`/`rpg
+party` (ficaria em `combate.py`, e o cartão pediu explicitamente pra não
+reescrever esse arquivo nesta fatia, e a lista de testes do cartão não pede
+isso) — se Rafael quiser bloquear `rpg boss` durante uma run aberta também,
+é cartão à parte.
+
+### `rpg dungeon` resolve UMA sala por chamada, não a run inteira
+
+Cada `rpg dungeon` resolve a sala em `run["indice"]` e avança (ou encerra a
+run, se acabou de passar a 5ª). É o que dá sentido literal a "avanço sala a
+sala" e à persistência: se um comando resolvesse as 5 de uma vez (como
+`explorar` faz com 3 caçadas), não haveria run pra sobreviver a um restart
+no meio do caminho. Run aberta → `rpg dungeon` CONTINUA de onde parou (não
+sorteia de novo); sem run → checa andar 9 + nível 15 e sorteia uma nova.
+
+### Trava de `rpg viajar` — nova entrada em `travas.py`, não reuso de `_em_luta`
+
+`travas.DungeonAberta` + `travas.fora_de_dungeon()` seguem o mesmo formato
+de `EmLutaDeChefe`/`fora_de_luta()` (exceção + `commands.check` + entrada em
+`on_command_error`), mas o predicado lê o banco (`dungeon.tem_run_aberta`),
+não um dict do módulo — coerente com a run sobrevivendo a restart (ver
+acima). `travas.py` passou a importar `dungeon` no topo; não fecha ciclo
+porque `dungeon.py` não importa `travas` nem `bot` no escopo do módulo (só
+via o dict `H`, populado tarde). `rpg boss`/`rpg party` não ganharam essa
+trava nesta fatia — ver seção anterior.
+
+### Morte na dungeon não inventa penalidade — e não pode deixar linha órfã
+
+Perder uma sala de combate chama `H["a_processar_morte"]` — o mesmo
+`bot.a_processar_morte` de `cacar`/`explorar`/`boss`, penalidade idêntica
+(20% das moedas, HP de volta a 30%). O que mudou foi `processar_morte`
+(bot.py): a escrita em `jogadores` e o `DELETE FROM dungeon_run` agora
+acontecem na MESMA transação, via `database.atualizar_jogador_e_apagar_
+dungeon_run` (extrai o miolo de `atualizar_jogador` pra uma função que
+recebe a conexão já aberta, `_atualizar_jogador_na_conexao`, reusada pelas
+duas). Antes dessa junção, um restart da Discloud bem no meio das duas
+escritas separadas podia deixar `dungeon_run` com uma linha apontando pra
+uma run que a morte já encerrou. `DELETE` sem linha correspondente é no-op,
+então toda morte (dentro ou fora da dungeon) paga esse preço sem custo real
+— mais simples que ramificar "é morte de dungeon? apaga; senão, não".
+
+### `INSERT OR IGNORE`, não `ON CONFLICT ... DO NOTHING`, pra criar a run
+
+`criar_dungeon_run` usa `INSERT OR IGNORE` (mesmo idioma de
+`criar_jogador`), não `ON CONFLICT(user_id) DO NOTHING` como `sidequests`
+usa. Motivo descoberto validando: `ON CONFLICT` referencia a constraint
+pelo nome — se a PK de `dungeon_run.user_id` sumisse, a cláusula vira SQL
+inválido e TODO INSERT quebra com `OperationalError`, não só o de
+duplicata (testado e revertido de propósito, span de teste maior que o
+pretendido). `INSERT OR IGNORE` degrada graciosamente: sem a PK, a segunda
+tentativa simplesmente passa a inserir uma segunda linha em vez de ser
+ignorada — só o teste de duplicata (`test_criar_dungeon_run_duas_vezes_
+direto_no_banco_nao_duplica_nem_sobrescreve`) cai, exatamente o que "valide
+revertendo: quebre o guard da PK e veja só o teste de run dupla cair" pedia.
+
+### Testes
+
+`tests/test_dungeon.py`, 21 testes novos (463 → 484: 483 passando + 1
+xfail antigo). Cobre a lista do cartão: sorteio (5 salas do pool, sem
+repetir, reprodutível com semente fixa), retomada (apaga o objeto Python,
+relê pelo banco, cai na mesma sala — inclusive no meio da run, não só recém
+criada), morte (apaga a run E chama `a_processar_morte` de verdade via
+`AsyncMock(wraps=...)`, sem mockar o efeito colateral), duas entradas
+seguidas não duplicam (nível de comando E nível de banco direto), `rpg
+dungeon sair` não chama `a_processar_morte`, entrada recusada fora do andar
+9 / abaixo do nível 15, e `rpg viajar` recusado com run aberta (predicado
+isolado + integração nos `checks` reais do comando, mesmo padrão de
+`test_manutencao_e_aviso.py`). Mais três testes de dado (pool tem os 4
+tipos, "achado" nunca "tesouro", `DUNGEON_ESPELHOS.get()` não explode pra
+classe desconhecida).
+
+Validado revertendo: sem a PK de `dungeon_run.user_id`, só o teste de
+duplicata cai (depois de trocar `ON CONFLICT` por `INSERT OR IGNORE` — ver
+seção acima); sem a transação combinada em `processar_morte`, os dois
+testes de linha órfã caem; sem `@travas.fora_de_dungeon()` em `rpg viajar`,
+só o teste de integração da trava cai (o predicado isolado continua
+passando, porque testa a função, não o comando registrado). Suíte completa:
+484 (463 de antes + 21 novos), 483 passando + 1 xfail (o bug de ordem do
+tick, cartão anterior, não relacionado a esta fatia).
   Suíte completa (416 testes, 414 de antes + 2 novos) passando.

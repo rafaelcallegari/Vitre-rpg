@@ -491,7 +491,11 @@ def processar_morte(j, s):
     if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
         campos["andar"] = andares_altos.ANDAR_ACIMA_DO_SELO
         campos["andar_max"] = andares_altos.ANDAR_ACIMA_DO_SELO
-    db.atualizar_jogador(j["user_id"], **campos)
+    # mesma transação que limpa uma dungeon_run aberta, se houver -- não
+    # pode sobrar linha órfã apontando pra uma run que a morte já encerrou.
+    # No-op pra morte fora da dungeon (cacar/explorar/boss): DELETE sem
+    # linha correspondente não custa nada. Ver decisoes.md § Dungeon (fatia 1).
+    db.atualizar_jogador_e_apagar_dungeon_run(j["user_id"], campos)
     return perda
 
 
@@ -529,6 +533,9 @@ async def on_command_error(ctx, erro):
         return
     if isinstance(erro, travas.EmLutaDeChefe):
         await ctx.send(travas.MENSAGEM_BLOQUEIO)
+        return
+    if isinstance(erro, travas.DungeonAberta):
+        await ctx.send(travas.MENSAGEM_DUNGEON_ABERTA)
         return
     if isinstance(erro, travas.ManutencaoAtiva):
         await ctx.send(
@@ -877,6 +884,7 @@ def aviso_flor_do_andar_1(user_id, andar_atual):
 
 @bot.command(name="viajar", aliases=["ir", "travel"])
 @travas.fora_de_luta()
+@travas.fora_de_dungeon()
 async def viajar(ctx, destino: int = 0):
     j = await pegar_jogador(ctx)
     if not j:
@@ -2169,6 +2177,18 @@ guildas.instalar(bot, globals())
 import raide
 
 raide.instalar(bot, globals())
+
+# dungeon — motor da dungeon do andar 9 (fatia 1/4, ver decisoes.md). Não usa
+# combate.H nem Luta/PainelLuta (resolução instantânea, como cacar/explorar),
+# então a ordem em relação a combate/raide não importa; instalado no bloco
+# tardio só por consistência com o resto (contexto = globals() precisa ver
+# pegar_jogador/stats/simular_combate/a_processar_morte, todos definidos
+# antes deste ponto). travas.py já importa dungeon direto (fora_de_dungeon())
+# desde o topo do arquivo -- essa importação aqui só reaproveita o módulo já
+# carregado e chama instalar().
+import dungeon
+
+dungeon.instalar(bot, globals())
 
 # agenda — aviso automático da carroça do Bramm
 import agenda

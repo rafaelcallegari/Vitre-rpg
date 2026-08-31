@@ -11,6 +11,8 @@ import time
 
 from discord.ext import commands
 
+import dungeon
+
 # registro em memória, de propósito: luta não sobrevive a restart do bot
 # (View e estado da Luta são só RAM), então a trava também não deveria —
 # uma trava sobrevivendo a restart soft-lockaria todo mundo que estava
@@ -157,6 +159,29 @@ def fora_de_manutencao():
     async def predicado(ctx):
         if manutencao_ativa():
             raise ManutencaoAtiva(manutencao_restante())
+        return True
+    return commands.check(predicado)
+
+
+# ---------------------------------------------------------------- dungeon
+class DungeonAberta(commands.CheckFailure):
+    """Levantado quando `rpg viajar` é chamado com uma run de dungeon aberta."""
+
+
+MENSAGEM_DUNGEON_ABERTA = (
+    "🕳️ Você está dentro da dungeon — `rpg dungeon sair` primeiro (sem penalidade), ou termine a run."
+)
+
+
+def fora_de_dungeon():
+    """Check pra `rpg viajar` -- viajar e dungeon não coexistem, senão dava
+    pra sair do andar 9 no meio de uma run sem fechar ela. Ao contrário de
+    em_luta() acima, a run SOBREVIVE a restart (persiste em dungeon_run, não
+    neste módulo) -- então esse check lê o banco pela função de dungeon.py,
+    não um dict em memória daqui. Ver decisoes.md § Dungeon (fatia 1)."""
+    async def predicado(ctx):
+        if dungeon.tem_run_aberta(ctx.author.id):
+            raise DungeonAberta()
         return True
     return commands.check(predicado)
 
