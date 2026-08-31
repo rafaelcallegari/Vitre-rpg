@@ -4808,4 +4808,75 @@ commit desta correção.
   (`test_botao_mortalha_continua_presente_e_habilitado_apos_uso` e
   `test_segundo_jogador_da_party_ainda_usa_a_propria_mortalha_apos_o_
   primeiro`) — nenhum outro, incluindo os dois antigos já ajustados.
+
+## Testes do motor de condições (`condicoes.py` + os 8 efeitos)
+
+Cartão de infra: cobrir o motor genérico de condições (`_valor_absoluto`,
+`tick()`, as duas consultas com tick próprio, as seis consultadas na hora de
+agir) e os 8 `_efeito_*` de habilidade em `combate.py`. Regressão pura, sem
+mudar comportamento — a única mudança de comportamento real seria corrigir o
+bug de ordem abaixo, e essa correção ficou fora deste cartão de propósito.
+
+### Bug encontrado — ordem de inserção em `luta.condicoes` decide se
+### `reducao_cura_recebida` conta uma Ferida Sombria que expira na mesma rodada
+
+`condicoes.tick()` aplica o efeito de cada condição e decrementa a duração
+dela no MESMO passo do laço, uma condição de cada vez — não em duas
+passadas separadas (primeiro todo mundo aplica, depois todo mundo
+decrementa). A docstring de `reducao_cura_recebida` promete que uma Ferida
+Sombria (`reduz_cura`) que está expirando nesta mesma rodada não pode contar
+contra uma cura que também tica agora — motivo dado: `reducao_cura_recebida`
+é consultada de dentro do próprio `_tick_cura`, então precisa filtrar por
+`duracao > 0` bem na hora.
+
+Essa promessa só se sustenta se a condição `reduz_cura` aparecer ANTES da
+`cura_por_rodada` em `luta.condicoes` — nesse caso, quando o laço chega na
+`cura_por_rodada` e ela consulta `reducao_cura_recebida`, a Ferida Sombria já
+foi processada e já teve a `duracao` decrementada pra 0, então o filtro
+`duracao > 0` a exclui, como prometido. Se a ordem for a contrária
+(`cura_por_rodada` antes de `reduz_cura`), a Ferida Sombria ainda está com
+`duracao == 1` (não decrementada) no momento da consulta — ela CONTA, e a
+cura sai reduzida numa rodada em que não deveria contar mais.
+
+A ordem de inserção em `luta.condicoes` é a ordem em que as skills foram
+lançadas na rodada (cada `condicoes.aplicar()` faz `append`) — não é algo que
+o motor controla ou documenta, é um acidente de quem agiu primeiro. Não
+corrigido neste cartão: a correção óbvia (separar `tick()` em duas
+passadas — primeiro aplicar todos os efeitos, depois decrementar todas as
+durações) muda o timing de toda a família "buff consultado depois" (regra
+N+1, ver § acima em `combate.py:788-795`) e merece cartão próprio, não uma
+mudança de dois minutos escondida dentro de um cartão de testes.
+
+### Testes
+
+`tests/test_condicoes.py`, 47 testes novos (416 → 463: 462 passando + 1
+xfail). Blocos 1-5 usam `LutaFake`/`CombatenteFake` — `condicoes.py` não
+importa discord, não vale subir `bot.py`/`database` só pra testar dict-in,
+dict-out. Bloco 6 (os 8 efeitos) usa `combate.Combatente`/`Luta` de verdade,
+mesmo padrão de `tests/test_mortalha_luz_sombra.py`, porque as skills leem
+`jogador`/stats de verdade.
+
+O contrato de duração N+1 (`combate.py:788-795`) é travado CONTANDO TICKS —
+chama `condicoes.tick()` N vezes e confirma que a condição ainda está em
+`luta.condicoes` a cada uma, e só desaparece no tick N+1 — não lendo
+`cond["duracao"]` direto do dict, que seria regressão contra o literal e não
+contra o comportamento. `Sangramento`/`Palavra de Alento` (duração literal,
+sem o +1) são travados do mesmo jeito, mas com N aplicações reais em vez de
+N ticks sobrevividos.
+
+O bug de ordem acima ganhou dois testes: `test_ferida_sombria_..._quando_vem_
+antes_na_lista` (passa — é a ordem que a docstring pressupõe) e
+`test_ferida_sombria_..._quando_vem_depois_na_lista`, marcado
+`@pytest.mark.xfail` com o motivo explicado no `reason=`. `duracao=1` nos
+dois testes de propósito, pra forçar a condição a expirar na MESMA rodada em
+que a cura tica — é exatamente o caso que a docstring promete e que só uma
+das duas ordens cumpre.
+
+Validado revertendo funções-chave de propósito, uma de cada vez: teto de
+`reducao_dano_recebido` (0.5→0.9) quebra só o teste do teto; remover a
+renovação da 1ª pilha de Sangramento no 4º uso de Golpe Aberto (deixando
+empilhar direto) quebra só o teste de renovação; baixar a `duracao` guardada
+de Ruptura de 4 pra 3 quebra só o teste do contrato N+1 dela — nenhuma
+mudança derrubou testes fora do escopo pretendido. Suíte completa: 463
+(416 de antes + 47 novos), 462 passando + 1 xfail esperado.
   Suíte completa (416 testes, 414 de antes + 2 novos) passando.
