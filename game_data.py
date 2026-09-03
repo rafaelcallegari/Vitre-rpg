@@ -585,7 +585,12 @@ PASSIVAS = {
     },
     "instinto_ladino": {
         "nome": "Instinto de Ladrão", "emoji": "💰",
-        "desc": "+20% de moedas e +15% de CHANCE de material em caçada, exploração e chefe.",
+        "desc": (
+            "+20% de moedas em tudo, e acha mais material em tudo -- com o "
+            "ganho MAIOR justamente onde material é mais raro: no chefe "
+            "repetido acima do Selo (andares 11-15), a chance de material "
+            "praticamente dobra."
+        ),
         "valor_moedas": 0.20, "valor_material": 0.15,
     },
 }

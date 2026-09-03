@@ -5,6 +5,8 @@
 # Ladrão (dinheiro e material). Ver decisoes.md § Step 2a.
 import asyncio
 
+import pytest
+
 import bot
 import combate
 import database as db
@@ -238,6 +240,32 @@ def test_assassino_e_arqueiro_tem_duas_passivas_cada():
     decisoes.md § Step 2a."""
     assert set(game_data.ASCENSOES["assassino"]["passivas"]) == {"sangue_frio", "instinto_ladino"}
     assert set(game_data.ASCENSOES["arqueiro"]["passivas"]) == {"olho_de_aguia", "instinto_ladino"}
+
+
+def test_instinto_ladino_e_aditivo_ganho_relativo_maior_em_chance_baixa(monkeypatch):
+    """Documentação executável da assimetria de propósito (ver decisoes.md
+    § Step 2a — Ajustes do Ladino): o bônus SOMA (nunca multiplica) na
+    chance, então o mesmo +0.15 rende ganho relativo bem maior quando a
+    chance base já é baixa. Chance de monstro comum (0.50) vira 0.65
+    (+30% relativo); chance do chefe repetido acima do Selo (0.15, ver
+    combate.recompensar) vira 0.30 (+100% relativo, dobra) -- a MESMA
+    passiva, o MESMO bônus fixo. Se alguém trocar por multiplicativo, os
+    números abaixo divergem do que o texto da passiva promete."""
+    j = _jogador_ladino(1, ascensao="assassino")
+    bonus = passivas.bonus_material(j)
+
+    chance_monstro_comum = min(1.0, 0.50 + bonus)
+    chance_chefe_repetido_acima_do_selo = min(1.0, 0.15 + bonus)
+
+    assert chance_monstro_comum == pytest.approx(0.65)
+    assert chance_chefe_repetido_acima_do_selo == pytest.approx(0.30)
+
+    # prova comportamental no caminho real (rolar_drops) pro caso de monstro comum
+    mob = {"drops": [("item", 0.50)]}
+    monkeypatch.setattr(bot.random, "random", lambda: 0.649)   # abaixo de 0.65 -- passa
+    assert bot.rolar_drops(mob, bonus) == ["item"]
+    monkeypatch.setattr(bot.random, "random", lambda: 0.65)    # 0.65 não é < 0.65 -- falha
+    assert bot.rolar_drops(mob, bonus) == []
 
 
 def _ctx(user_id=1):

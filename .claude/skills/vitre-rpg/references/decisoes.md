@@ -5302,3 +5302,45 @@ tem a passiva), os quatro testes "sem ascensão recebe exatamente o que
 recebia antes" (`cacar`, `explorar`, chefe ≤10, chefe 11+) caem juntos —
 exatamente os quatro que existem pra pegar esse erro. Suíte completa: 524
 (510 de antes + 14 novos), 523 passando + 1 xfail antigo.
+
+## Ajustes do Ladino
+
+Dois ajustes independentes no que o Step 2a entregou, cada um em commit
+próprio. Ainda dentro do pacote 0.4 (não sobe sozinho).
+
+### Commit 1 — a não-linearidade do Instinto de Ladrão é intencional
+
+`PASSIVAS["instinto_ladino"]["valor_material"] = 0.15` é um bônus fixo
+(aditivo) somado à chance de CADA rolagem de material — decisão já fechada
+no Step 2a (§ chance, não quantidade) e reafirmada aqui: **não muda**.
+Só o texto mudou, porque "+15% de CHANCE" é verdade literal e ao mesmo
+tempo engana o jogador sobre o que ele vai SENTIR jogando: o mesmo +0.15
+rende ganhos relativos bem diferentes dependendo da chance base —
++25%–33% num monstro comum (chance de 0.45 a 0.60), mas **dobra** a chance
+do chefe repetido acima do Selo (0.15 → 0.30, andares 11-15, onde
+`chefes_derrotados` já reduz a chance de material pra 15% depois da
+primeira vitória — ver decisoes.md § Dungeon/Morte e reconquista pro
+histórico dessa mecânica). Isso não é acidente de fórmula: é a identidade
+do ramo. O Ladino é quem farma material de chefe, e o mesmo bônus fixo
+render MAIS justamente onde material é mais raro é o que faz o Instinto
+de Ladrão parecer feito sob medida pra esse papel, em vez de um +X%
+genérico que qualquer classe poderia ter. `PASSIVAS["instinto_ladino"]["desc"]`
+agora fala nesses termos (o que o jogador sente, com o exemplo do chefe
+repetido) em vez de repetir só o número que subestima.
+
+Registrado aqui pra ninguém "consertar" isso um dia achando que é bug de
+arredondamento ou fórmula errada: **é o desenho**. Se o Ladino ainda
+parecer fraco depois de mais playtest, o próximo ajuste é nos NÚMEROS
+(`valor_material`, ou o piso de 15%/100% de `chance_material` em
+`combate.recompensar` — carta à parte, não aqui), nunca trocar o aditivo
+por multiplicativo — isso apagaria exatamente a assimetria que dá
+identidade ao ramo.
+
+**Teste:** `test_instinto_ladino_e_aditivo_ganho_relativo_maior_em_chance_baixa`
+(`tests/test_ladino.py`) trava os dois números junto — chance 0.50 vira
+0.65, chance 0.15 vira 0.30, mesma passiva — mais uma prova comportamental
+no caminho real (`bot.rolar_drops`) pro caso de chance baixa. Validado
+revertendo: com `valor_material` dobrado dentro de `passivas.bonus_material`
+(simulando alguém trocar a fórmula), só esse teste cai — os outros 523
+continuam passando, o que por si só já mostra que nenhum outro teste
+prende esse número; agora prende.
