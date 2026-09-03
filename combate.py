@@ -91,7 +91,8 @@ REDUCAO_VOTO_DE_FERRO = 0.20
 # Ver decisoes.md § Dano de skill abaixo do ataque básico.
 MULTIPLICADOR_DARDO_ARCANO = 2.0     # dano puro (+ ignora defesa, bônus à parte)
 MULTIPLICADOR_GOLPE_ABERTO = 1.3     # dano + sangramento (o efeito)
-MULTIPLICADOR_CORTE_RAPIDO = 1.0     # dano puro, por golpe — 2 golpes = 2 ataques
+MULTIPLICADOR_CORTE_RAPIDO = 1.35    # dano puro, por golpe — 2 golpes = 2.7 nominal (era 1.0/2.0 -- ver
+                                      # decisoes.md § Ajustes do Ladino, assimetria de defesa com Dardo Arcano)
 
 # skills de ascensão do Ladino (Step 2a) -- mesma base do ataque normal que
 # as acima, ver decisoes.md § Dano de skill abaixo do ataque básico.

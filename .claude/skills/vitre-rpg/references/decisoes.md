@@ -5344,3 +5344,58 @@ revertendo: com `valor_material` dobrado dentro de `passivas.bonus_material`
 (simulando alguém trocar a fórmula), só esse teste cai — os outros 523
 continuam passando, o que por si só já mostra que nenhum outro teste
 prende esse número; agora prende.
+
+### Commit 2 — Corte Rápido: `1.0` → `1.35` por golpe
+
+Achado no playtest: `MULTIPLICADOR_CORTE_RAPIDO` (2 golpes, `1.0` cada,
+nominal `2.0` total) passa por `at.aplicar_defesa`; `MULTIPLICADOR_DARDO_ARCANO`
+(também nominal `2.0`) não passa — é a skill de dano puro do Mago,
+desenhada de propósito pra ignorar defesa (ver decisoes.md § Dano de skill
+abaixo do ataque básico). Contra um chefe no teto de redução
+(`TETO_REDUCAO = 0.60`, alcançado a partir de 75 de defesa —
+`defesa/(defesa+K_DEFESA) ≥ 0.60`), o MESMO nominal `2.0` virava `0.8`
+efetivo pro Ladino e continuava `2.0` pro Mago — quase 1/3. Isso empilhava
+em cima do Ladino já pagando 30 de energia pela versão de dois golpes
+contra os 12 de mana do Dardo Arcano.
+
+`MULTIPLICADOR_CORTE_RAPIDO = 1.35` (nominal `2.7` total) reduz a
+assimetria sem apagá-la: no teto de redução, o efetivo sobe de `0.8` pra
+`1.08` — a razão contra o Dardo Arcano (efetivo/nominal do Dardo, que não
+muda com defesa) sai de `~0.40` pra `~0.54`. Continua abaixo — **de
+propósito**: Corte Rápido rola crítico duas vezes (uma por golpe), então
+ele já casa melhor com Ponto Cego (bônus de crítico) e com Olho de Águia
+(Step 2a, bônus no multiplicador do crítico) do que uma skill de golpe
+único. `BONUS_CRITICO_CORTE_RAPIDO` (0.10) e `BONUS_CRITICO_PONTO_CEGO`
+(0.45) não mudaram — o eixo deste ajuste é DANO, a chance de crítico já
+vem certa da arma (`at.critico_da_arma`) e o kit de ascensão já foi
+desenhado contando com ela.
+
+`1.35` é ponto de partida pra playtest, não número final — e a assimetria
+de defesa **continua existindo**, só menor. Registrado aqui pra o próximo
+ajuste, se o Ladino ainda parecer fraco depois de mais jogo, ser
+perfuração de defesa (reduzir a fração que `aplicar_defesa` aplica no
+Corte Rápido, ou nas skills do Ladino em geral) — não mais um empurrão no
+multiplicador, que já fez sua parte razoável aqui sem virar `2.0`/golpe e
+apagar de vez a diferença de desenho com o Dardo Arcano.
+
+### Testes
+
+`tests/test_ladino.py`, 3 testes novos: o multiplicador vale nos DOIS
+golpes (total = 2× um golpe isolado, mesma variância travada); a razão
+Corte Rápido/Dardo Arcano contra defesa no teto SOBE de ~0.40 pra acima de
+0.45 (prova que a assimetria diminuiu) mas o Corte Rápido continua abaixo
+do Dardo Arcano (prova que ela não sumiu) — combatentes com o MESMO valor
+de atributo (20) e `hab.fator_afinidade` travado em 1.0 pros dois, porque
+desarmado default pra afinidade "destreza" e penalizaria só o Mago (0.5x)
+numa comparação que não é sobre afinidade de arma; Golpe Fatal/Flecha
+Perfurante (Step 2a) com os multiplicadores intactos, regressão explícita
+de que este ajuste mexeu só no Corte Rápido.
+
+Validado revertendo: com `MULTIPLICADOR_CORTE_RAPIDO` de volta a `1.0`, só
+`test_corte_rapido_assimetria_de_defesa_com_dardo_arcano_diminuiu_mas_nao_sumiu`
+cai (a razão volta pra ~0.40, abaixo do piso de 0.45 que o teste exige) —
+os outros 526 continuam passando, inclusive o teste "vale nos dois golpes"
+(esse é auto-referente ao multiplicador atual, não fixa o valor — só prova
+consistência entre os dois hits, propositalmente separado do teste que
+prende o número). Suíte completa: 528 (525 de antes + 3 novos), 527
+passando + 1 xfail antigo.

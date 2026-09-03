@@ -449,3 +449,70 @@ def test_recompensar_chefe_acima_do_selo_aplica_bonus_na_chance_nao_na_quantidad
     _nivel, _subiu, _xp, _moedas, itens = asyncio.run(combate.recompensar(luta, c))
 
     assert itens == ["item_y"]   # uma unidade a mais na CHANCE de cair, não duas do mesmo item
+
+
+# ==================================================================
+# Escalonamento do Corte Rápido -- MULTIPLICADOR_CORTE_RAPIDO 1.0 -> 1.35
+# (2 golpes = 2.7 nominal, era 2.0). Ver decisoes.md § Ajustes do Ladino.
+# ==================================================================
+
+def test_corte_rapido_multiplicador_novo_vale_nos_dois_golpes(monkeypatch):
+    """Não é só o primeiro golpe que escala com o multiplicador novo --
+    os dois hits usam MULTIPLICADOR_CORTE_RAPIDO, então o total é o dobro
+    de um golpe único isolado (mesma base, mesma variância travada)."""
+    _sem_variancia(monkeypatch)
+    c = _combatente(1, classe="ladino", destreza=20)
+    dados = game_data.HABILIDADES["corte_rapido"]
+    chefe_sem_def = {**CHEFE_TESTE, "def": 0}
+
+    golpe_unico = int(combate._rolar_dano_habilidade(
+        combate.Luta([c], chefe_sem_def, andar_num=1), c,
+        combate.MULTIPLICADOR_CORTE_RAPIDO, critico_extra=combate.BONUS_CRITICO_CORTE_RAPIDO,
+    ))
+
+    luta = combate.Luta([c], chefe_sem_def, andar_num=1)
+    combate._efeito_corte_rapido(luta, c, dados)
+    dano_total = luta.hp_chefe_max - luta.hp_chefe
+
+    assert dano_total == golpe_unico * 2
+
+
+def test_corte_rapido_assimetria_de_defesa_com_dardo_arcano_diminuiu_mas_nao_sumiu(monkeypatch):
+    """Corte Rápido passa por at.aplicar_defesa, Dardo Arcano não -- contra
+    defesa no teto de redução (0.60) isso sempre vai deixar Corte Rápido
+    atrás do Dardo Arcano (proposital, ver decisoes.md), mas o multiplicador
+    novo encolhe a distância: com o multiplicador antigo (1.0/golpe, 2.0
+    nominal) a razão dano_corte/dano_dardo contra defesa alta ficava em
+    ~0.40 (2.0 x 0.40 teto / 2.0 nominal do dardo); com 1.35/golpe (2.7
+    nominal x 0.40 = 1.08) a razão sobe pra ~0.54. destreza/inteligencia
+    iguais (20) pra comparar maçã com maçã -- hab.poder_base só olha o
+    valor do atributo, não qual atributo é. fator_afinidade travado em 1.0
+    pros dois -- sem arma, o desarmado default pra "destreza" (ver
+    hab.fator_afinidade), o que penalizaria só o mago (afinidade
+    inteligência) e não é o que este teste quer medir."""
+    _sem_variancia(monkeypatch)
+    monkeypatch.setattr(combate.hab, "fator_afinidade", lambda classe, arma: 1.0)
+    ladino = _combatente(1, classe="ladino", destreza=20)
+    mago = _combatente(2, classe="mago", inteligencia=20)
+    chefe_def_no_teto = {**CHEFE_TESTE, "def": 500}   # >=75 já é o teto de 0.60 de redução
+    dados_corte = game_data.HABILIDADES["corte_rapido"]
+    dados_dardo = game_data.HABILIDADES["dardo_arcano"]
+
+    luta_corte = combate.Luta([ladino], chefe_def_no_teto, andar_num=1)
+    combate._efeito_corte_rapido(luta_corte, ladino, dados_corte)
+    dano_corte = luta_corte.hp_chefe_max - luta_corte.hp_chefe
+
+    luta_dardo = combate.Luta([mago], chefe_def_no_teto, andar_num=1)
+    combate._efeito_dardo_arcano(luta_dardo, mago, dados_dardo)
+    dano_dardo = luta_dardo.hp_chefe_max - luta_dardo.hp_chefe
+
+    assert dano_corte < dano_dardo   # a assimetria continua existindo -- proposital
+    razao = dano_corte / dano_dardo
+    assert razao > 0.45   # bem acima da razão antiga (~0.40 com o multiplicador 1.0) -- diminuiu
+
+
+def test_golpe_fatal_e_flecha_perfurante_nao_mudaram():
+    """Regressão do Step 2a -- este ajuste mexe só no Corte Rápido."""
+    assert combate.MULTIPLICADOR_GOLPE_FATAL_BASE == 1.2
+    assert combate.BONUS_GOLPE_FATAL_EXECUCAO == 1.3
+    assert combate.MULTIPLICADOR_FLECHA_PERFURANTE == 1.8
