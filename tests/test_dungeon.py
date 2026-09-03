@@ -5,7 +5,9 @@
 # ascensão -- ver decisoes.md § Dungeon (fatia 1). Esta fatia não vai pra
 # produção (deploy não acontece até a fatia 4).
 import asyncio
+import json
 import random
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -206,6 +208,30 @@ def test_criar_dungeon_run_duas_vezes_direto_no_banco_nao_duplica_nem_sobrescrev
 
     run = db.get_dungeon_run(1)
     assert run["salas"] == list(SALAS_DE_TESTE)   # a primeira run venceu, não a segunda
+
+
+def test_insert_or_ignore_engole_qualquer_violacao_de_constraint_nao_so_pk_duplicada():
+    """O comentário acima de criar_dungeon_run (database.py) descreve INSERT
+    OR IGNORE, não ON CONFLICT DO NOTHING -- e a diferença importa: IGNORE
+    engole TODA violação de constraint da tabela, não só a PK duplicada que
+    o teste acima cobre. Prova com o NOT NULL de `indice` (criar_dungeon_run
+    nunca manda um `indice` diferente de 0, então isso só dá pra forçar
+    direto no banco). Depois prova a outra metade: a run válida seguinte
+    grava normalmente, com as salas certas -- a tentativa inválida não
+    deixou o banco num estado que atrapalhe a próxima escrita."""
+    with db.conectar() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO dungeon_run (user_id, salas, indice, iniciada_em) "
+            "VALUES (?, ?, NULL, ?)",
+            (1, json.dumps(list(SALAS_DE_TESTE)), time.time()),
+        )
+    assert db.get_dungeon_run(1) is None   # violou NOT NULL, IGNORE engoliu, nada gravou
+
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+    run = db.get_dungeon_run(1)
+    assert run is not None
+    assert run["salas"] == list(SALAS_DE_TESTE)
+    assert run["indice"] == 0
 
 
 # ==================================================================

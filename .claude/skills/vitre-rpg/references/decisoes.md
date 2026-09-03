@@ -5003,3 +5003,69 @@ passando, porque testa a função, não o comando registrado). Suíte completa:
 484 (463 de antes + 21 novos), 483 passando + 1 xfail (o bug de ordem do
 tick, cartão anterior, não relacionado a esta fatia).
   Suíte completa (416 testes, 414 de antes + 2 novos) passando.
+
+## Correção — morte fora da dungeon apagava a run aberta
+
+Cartão Alta/Infra achado na revisão da fatia 1 (seção anterior). Bug: o
+comentário de `processar_morte` afirmava que `atualizar_jogador_e_apagar_
+dungeon_run` era "no-op pra morte fora da dungeon (caçar/explorar/boss)" —
+mas `travas.fora_de_dungeon()` só está em `rpg viajar`. Com uma run aberta,
+`cacar`/`explorar`/`boss` funcionam normalmente; morrer em qualquer um
+apagava a run junto com a penalidade, sem mensagem nenhuma. Caminho
+completo: limpa 3 das 5 salas, sai pra caçar, morre pro monstro, `rpg
+dungeon` de novo sorteia salas novas do zero.
+
+### Caminho A: escopar o `DELETE`, não estender a trava
+
+Duas formas de fechar isso: (1) estender `fora_de_dungeon()` pra `cacar`/
+`explorar`/`boss`/`party`, trancando o jogador dentro da dungeon até
+terminar ou sair; ou (2) só apagar a run quando a morte for DENTRO da
+dungeon. Fui de (2). A trava `fora_de_dungeon()` fica exatamente como está,
+só em `rpg viajar` — sair e voltar pra caçar continua sendo liberdade de
+propósito, não um estado que precisa de saída explícita. O motivo de fundo é
+o mesmo que já justificou a run morar no banco em vez de memória (ver §
+Dungeon acima, "Por que a run mora no banco"): a run aberta é progresso que
+o jogador TEM GUARDADO, não um lugar onde ele ESTÁ. Escopar o `DELETE` é a
+resposta que mantém essa ideia coerente; travar `cacar`/`explorar`/`boss`
+teria sido tratar a run como local físico, contradizendo a decisão que
+persistiu ela em primeiro lugar.
+
+### Como: `na_dungeon` explícito, default seguro
+
+`processar_morte(j, s, na_dungeon=False)` (bot.py): só quando `na_dungeon=
+True` chama `db.atualizar_jogador_e_apagar_dungeon_run` (penalidade + DELETE
+na mesma transação/commit, sem perder a atomicidade da fatia 1 — só mudou
+QUANDO o DELETE entra, nunca se ele compartilha commit). Caso contrário
+chama `db.atualizar_jogador` puro, sem tocar em `dungeon_run`. Só
+`dungeon.py` sabe se a morte foi dentro da dungeon (`_resolver_combate`
+passa `na_dungeon=True`); `cacar`/`explorar`/`combate.finalizar_derrota`
+não sabem e não precisam saber — usam o default. Default `False` de
+propósito: um caminho de morte novo que esquecer o parâmetro preserva a run
+em vez de repetir este mesmo bug em silêncio.
+
+Comentários desatualizados corrigidos no mesmo commit: o de `processar_morte`
+que descrevia o no-op falso, o de `atualizar_jogador_e_apagar_dungeon_run`
+(database.py) que dizia "sem custo extra pra morte de fora da dungeon", e o
+de `criar_dungeon_run` que ainda falava em `ON CONFLICT DO NOTHING` quando o
+código usa `INSERT OR IGNORE` (achado de quebra revisando a área, sem
+relação com o bug da run).
+
+### Testes
+
+`tests/test_morte.py`, 4 testes novos: par espelhado (fora da dungeon com
+run aberta preserva a run no MESMO `indice`; dentro apaga a run na mesma
+transação da penalidade), mais morte fora sem run nenhuma (não quebra) e um
+teste cruzando os 4 casos de (run aberta?) × (`na_dungeon`?) provando que a
+penalidade (moedas, hp, mortes, reset de andar acima do Selo) é idêntica nos
+quatro — só o destino da run muda. `tests/test_dungeon.py`, 1 teste novo:
+`INSERT OR IGNORE` engole QUALQUER violação de constraint na tabela, não só
+PK duplicada — provado forçando o NOT NULL de `indice` direto no banco (a
+função nunca manda um `indice` diferente de 0, não dava pra chegar lá só
+chamando `criar_dungeon_run`), e a run válida seguinte grava certa depois.
+Suíte completa: 489 (484 de antes + 5 novos), 488 passando + 1 xfail (mesmo
+xfail antigo, não relacionado).
+
+Validado revertendo: com o `DELETE` voltando a incondicional (`if
+na_dungeon` removido, sempre chamando `atualizar_jogador_e_apagar_dungeon_
+run`), só `test_morte_fora_da_dungeon_preserva_a_run_aberta_no_mesmo_indice`
+cai — 1 falha, os outros 487 continuam passando.

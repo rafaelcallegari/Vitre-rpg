@@ -476,12 +476,20 @@ async def bloqueado_por_cooldown(ctx, comando, segundos):
     return False
 
 
-def processar_morte(j, s):
+def processar_morte(j, s, na_dungeon=False):
     """Penalidade normal (20% das moedas, volta com 30% do HP) + reconquista:
     morrer acima do andar 10 zera andar_max pra 10 — o andar 11+ inteiro
     precisa ser reconquistado do zero. `chefes_derrotados` NÃO zera aqui —
     a torre esquece onde o jogador estava, nunca quem ele matou (ver
-    decisoes.md § Morte e reconquista / Roguelike acima do Selo)."""
+    decisoes.md § Morte e reconquista / Roguelike acima do Selo).
+
+    `na_dungeon` diz se ESTA morte aconteceu dentro da dungeon -- só
+    dungeon.py sabe disso, então quem chama precisa passar explicitamente.
+    Só nesse caso a run aberta é apagada, na mesma transação da penalidade.
+    Default False: um caminho de morte novo que esquecer o parâmetro
+    preserva a run em vez de apagar em silêncio uma run que não tem nada a
+    ver com essa morte (ver decisoes.md § Morte fora da dungeon não apaga a
+    run)."""
     perda = int(j["moedas"] * 0.20)
     campos = {
         "hp": int(s["hp_max"] * 0.3),
@@ -491,11 +499,12 @@ def processar_morte(j, s):
     if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
         campos["andar"] = andares_altos.ANDAR_ACIMA_DO_SELO
         campos["andar_max"] = andares_altos.ANDAR_ACIMA_DO_SELO
-    # mesma transação que limpa uma dungeon_run aberta, se houver -- não
-    # pode sobrar linha órfã apontando pra uma run que a morte já encerrou.
-    # No-op pra morte fora da dungeon (cacar/explorar/boss): DELETE sem
-    # linha correspondente não custa nada. Ver decisoes.md § Dungeon (fatia 1).
-    db.atualizar_jogador_e_apagar_dungeon_run(j["user_id"], campos)
+    if na_dungeon:
+        # mesma transação/commit que limpa a dungeon_run -- não pode sobrar
+        # linha órfã apontando pra uma run que essa morte já encerrou.
+        db.atualizar_jogador_e_apagar_dungeon_run(j["user_id"], campos)
+    else:
+        db.atualizar_jogador(j["user_id"], **campos)
     return perda
 
 

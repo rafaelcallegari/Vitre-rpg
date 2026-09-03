@@ -76,7 +76,7 @@ async def _resolver_combate(ctx, j, s, run, sala):
     e.description = sala["texto"] + "\n\n" + "\n".join(log)
 
     if not venceu:
-        perda = await H["a_processar_morte"](j, s)
+        perda = await H["a_processar_morte"](j, s, na_dungeon=True)
         e.color = 0x8B0000
         e.add_field(
             name="Você caiu na dungeon",

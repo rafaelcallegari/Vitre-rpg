@@ -658,13 +658,16 @@ def atualizar_jogador(user_id, **campos):
 
 
 def atualizar_jogador_e_apagar_dungeon_run(user_id, campos):
-    """Usada só por processar_morte (bot.py): a penalidade de morte e a
-    limpeza de dungeon_run (se existir) andam na MESMA transação/commit --
-    sem isso, um restart da Discloud entre as duas escritas separadas podia
-    deixar uma linha órfã em dungeon_run apontando pra uma run que a morte
-    já encerrou. DELETE sem linha correspondente é no-op, então isso roda
-    sem custo extra pra morte de fora da dungeon (cacar/explorar/boss). Ver
-    decisoes.md § Dungeon (fatia 1)."""
+    """Usada só por processar_morte (bot.py), e só quando a morte aconteceu
+    DENTRO da dungeon: a penalidade de morte e a limpeza de dungeon_run
+    andam na MESMA transação/commit -- sem isso, um restart da Discloud
+    entre as duas escritas separadas podia deixar uma linha órfã em
+    dungeon_run apontando pra uma run que a morte já encerrou. Morte de fora
+    da dungeon (cacar/explorar/chefe da torre) NÃO chama esta função -- usa
+    atualizar_jogador puro, porque uma run aberta é progresso guardado, não
+    um lugar onde o jogador está, e não deve sumir por causa de uma morte em
+    outro lugar. Ver decisoes.md § Dungeon (fatia 1) e § Morte fora da
+    dungeon não apaga a run."""
     if not campos:
         return
     with conectar() as conn:
@@ -1226,9 +1229,9 @@ def concluir_sidequest(user_id, quest_id):
 
 # ---------------- dungeon (andar 9) ----------------
 # Uma run por jogador -- a PK em dungeon_run.user_id garante isso mesmo se
-# dungeon.py chamar criar_dungeon_run sem checar antes (ON CONFLICT DO
-# NOTHING: a segunda tentativa é descartada, a primeira run continua valendo
-# como estava). HP/mana do jogador NÃO moram aqui -- só salas/indice. Ver
+# dungeon.py chamar criar_dungeon_run sem checar antes (INSERT OR IGNORE: a
+# segunda tentativa é descartada, a primeira run continua valendo como
+# estava). HP/mana do jogador NÃO moram aqui -- só salas/indice. Ver
 # decisoes.md § Dungeon (fatia 1).
 def criar_dungeon_run(user_id, salas):
     with conectar() as conn:
