@@ -15,6 +15,7 @@ COLUNAS_ESPERADAS = {
     "anel_instancia_id", "colar_instancia_id",
     "avatar_msg_id", "avatar_url",
     "mortalha", "mortalha_instancia_id",
+    "ascensao",
 }
 
 
@@ -157,3 +158,9 @@ def test_migracao_14_nao_reprocessa_upgrades_quando_falta_so_a_coluna_de_joia():
     db.init_db()
     assert "joia_atributo" in _colunas_instancias()
     assert _contar_instancias() == 1
+
+
+# ---- migração 17: coluna da ascensão de verdade (Step 2a) ----
+def test_migracao_17_ascensao_comeca_null():
+    db.criar_jogador(1, "Alice")
+    assert db.get_jogador(1)["ascensao"] is None

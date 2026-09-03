@@ -543,20 +543,37 @@ CLASSES = {
 # sem tocar em bot.py. É por ramo (e não só a constante abaixo) de propósito
 # -- permite um ramo abrir em nível diferente dos irmãos no futuro.
 NIVEL_ASCENSAO_PADRAO = 15
+# "skill" (chave em HABILIDADES) e "passivas" (lista de chaves em PASSIVAS,
+# abaixo) nasceram no Step 2a (motor de ascensão) -- None/[] pra todo ramo
+# que ainda não tem conteúdo de verdade (só o Ladino ganha os dois nesta
+# leva; os outros 3 ramos entram cartão a cartão, sem tocar aqui de novo
+# até terem skill/passiva pra valer). O Ladino ficou com dois ramos, não
+# três -- "Batedor de Carteira" nunca ganhou skill/passiva própria e foi
+# cortado do design. Ver decisoes.md § Step 2a.
 ASCENSOES = {
-    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO},
-    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO},
-    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO},
-    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "batedor_de_carteira": {"nome": "Batedor de Carteira", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO},
-    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO},
-    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO},
+    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
 }
+
+# Passivas de ascensão -- efeito permanente que um ramo carrega, sem custo
+# de recurso e sem precisar ser lançada (ao contrário de "skill" acima).
+# Cada chave aqui é referenciada por ASCENSOES[ramo]["passivas"]. Formato:
+#   "chave": {"nome": str, "emoji": str, "desc": str, ...campos extras com
+#       o(s) número(s) da passiva, o nome do campo varia por passiva (ex.:
+#       "valor" pra um número só, "valor_x"/"valor_y" pra mais de um)}
+# passivas.py é o ÚNICO lugar que lê esses campos numéricos -- nenhum outro
+# módulo sabe o nome de uma passiva. Vazio até o Step 2a ganhar conteúdo de
+# verdade. Ver decisoes.md § Step 2a.
+PASSIVAS = {}
 
 # ---------------- dungeon (andar 9, fatia 1 -- ver decisoes.md) ----------------
 # O portão da ascensão: só abre no andar 9, nível >= NIVEL_ASCENSAO_PADRAO.

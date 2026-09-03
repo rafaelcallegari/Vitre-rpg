@@ -1914,11 +1914,11 @@ async def ascencao(ctx):
     nivel_mais_comum = Counter(niveis_todos).most_common(1)[0][0]
     promete_marca = len(set(niveis_todos)) > 1
     if not promete_marca:
-        texto_nivel = f"A ascensão libera no nível {nivel_geral}, trocando a base por um dos 3 ramos."
+        texto_nivel = f"A ascensão libera no nível {nivel_geral}, trocando a base por um dos ramos abaixo."
     else:
         texto_nivel = (
             f"A ascensão libera a partir do nível {nivel_geral}, trocando a base por um "
-            "dos 3 ramos — bases marcadas abaixo abrem em nível diferente das demais."
+            "dos ramos abaixo — bases marcadas abaixo abrem em nível diferente das demais."
         )
 
     e = discord.Embed(

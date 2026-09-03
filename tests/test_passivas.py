@@ -1,0 +1,51 @@
+# tests/test_passivas.py
+# Step 2a, commit 1: o motor genérico de passivas de ascensão. Nenhuma
+# passiva de verdade existe ainda (game_data.PASSIVAS está vazio e todo
+# ramo em ASCENSOES tem "passivas": []) -- as quatro consultas têm que
+# devolver o valor neutro em qualquer cenário possível: sem ascensão, com
+# ascensão desconhecida (ramo removido do jogo) e com ascensão válida mas
+# sem essa passiva específica ainda. Ver decisoes.md § Step 2a.
+import database as db
+import game_data
+import passivas
+
+
+def _jogador(ascensao=None):
+    db.criar_jogador(1, "Alice")
+    if ascensao is not None:
+        db.atualizar_jogador(1, ascensao=ascensao)
+    return db.get_jogador(1)
+
+
+def _assert_neutro(j):
+    assert passivas.critico_garantido(j, rodada=1) is False
+    assert passivas.multiplicador_critico(j) == 1.0
+    assert passivas.bonus_moedas(j) == 0.0
+    assert passivas.bonus_material(j) == 0.0
+
+
+def test_ascensao_null_devolve_neutro_nas_quatro_consultas():
+    _assert_neutro(_jogador())
+
+
+def test_ascensao_desconhecida_nao_quebra_e_devolve_neutro():
+    """Ramo que já existiu e foi removido do jogo (Batedor de Carteira, ver
+    decisoes.md) não pode virar KeyError num combate em andamento -- é
+    exatamente o cenário que `passivas._ramo` existe pra blindar."""
+    assert "batedor_de_carteira" not in game_data.ASCENSOES
+    _assert_neutro(_jogador(ascensao="batedor_de_carteira"))
+
+
+def test_ascensao_valida_sem_passiva_de_verdade_ainda_devolve_neutro():
+    """mago_gelo é um ramo válido em ASCENSOES, mas não tem skill/passiva
+    de verdade até seu próprio cartão -- não pode falhar por isso."""
+    _assert_neutro(_jogador(ascensao="mago_gelo"))
+
+
+def test_todos_os_ramos_restantes_tem_passivas_vazia_e_skill_none():
+    """Motor genérico: os 11 ramos que sobraram (Batedor de Carteira saiu)
+    começam sem conteúdo -- só o Ladino ganha skill/passiva nesta leva."""
+    assert len(game_data.ASCENSOES) == 11
+    for chave, dados in game_data.ASCENSOES.items():
+        assert dados["skill"] is None, chave
+        assert dados["passivas"] == [], chave

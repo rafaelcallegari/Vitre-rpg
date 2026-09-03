@@ -5069,3 +5069,89 @@ Validado revertendo: com o `DELETE` voltando a incondicional (`if
 na_dungeon` removido, sempre chamando `atualizar_jogador_e_apagar_dungeon_
 run`), só `test_morte_fora_da_dungeon_preserva_a_run_aberta_no_mesmo_indice`
 cai — 1 falha, os outros 487 continuam passando.
+
+## Step 2a — motor de ascensão e passivas + o Ladino
+
+Vitre 0.4. Três commits (HEAD `3255d57`, suíte em 489), separados de
+propósito — o 3º mexe em recompensa de caçada/exploração/chefe, código que
+jogadores já usam hoje; os dois primeiros não tocam nada alcançável em
+produção (ascensão continua "ainda não jogável", ver § Dungeon acima).
+NÃO SOBE sozinho: o pacote 0.4 inteiro (dungeon + skills de ascensão +
+espelhos + mestres) deploya junto, só no fim do Step 4.
+
+### Commit 1 — coluna `jogadores.ascensao` + motor genérico de passivas
+
+Migração 17, mesmo padrão numerado de sempre: `COLUNAS_ASCENSAO` +
+`ALTER TABLE` guardado por `PRAGMA table_info`, NULL pra todo mundo.
+Nenhum comando escreve na coluna ainda — só existe pra `passivas.py` ter o
+que ler, e pros testes simularem um jogador ascendido via
+`db.atualizar_jogador(user_id, ascensao=...)` direto.
+
+`passivas.py` (módulo novo) espelha `condicoes.py` na FORMA — uma função de
+consulta por efeito, `combate.py`/pontos de recompensa nunca fazem
+`if jogador["ascensao"] == "assassino"` espalhado — mas é um motor mais
+simples: quatro funções fixas (`critico_garantido`, `multiplicador_critico`,
+`bonus_moedas`, `bonus_material`), cada uma inerentemente sobre UM efeito
+específico, não um dispatcher genérico por "tipo" (não haveria com o que
+despachar — só quatro efeitos existem no desenho todo). As quatro leem
+`game_data.ASCENSOES[ramo]["passivas"]` (lista de chaves) e, quando a chave
+que procuram está lá, o número vem de `game_data.PASSIVAS[chave]` — nunca
+um literal solto em `passivas.py`. Eu escrevi as quatro funções JÁ
+completas nesta leva (checam por nome as chaves `"sangue_frio"`,
+`"olho_de_aguia"`, `"instinto_ladino"` que só passam a existir de verdade
+no commit 2/3) — decisão consciente: como toda `ASCENSOES[ramo]["passivas"]`
+está vazia neste commit, o comportamento observável é 100% neutro
+igual, e os commits 2/3 viram PURAMENTE dados (`game_data.py`) + código de
+combate/recompensa que CHAMA essas funções já existentes — `passivas.py`
+não é tocado de novo depois deste commit.
+
+`multiplicador_critico` merece nota: o esboço original do cartão dizia
+"1.0 = sem passiva" pra ela, mas Olho de Águia é descrita como "soma
+BONUS_CRITICO_OLHO_DE_AGUIA (0.4) ao multiplicador base (1.8)" — aditivo
+numa base que não é 1.0. Resolvi mantendo o contrato "1.0 = neutro"
+literalmente: a função devolve uma RAZÃO (`(at.MULTIPLICADOR_CRITICO +
+bonus) / at.MULTIPLICADOR_CRITICO`), recalculada a cada chamada — dá
+exatamente +0.4 hoje, E continua dando exatamente +0.4 se
+`at.MULTIPLICADOR_CRITICO` for rebalanceado depois, porque o motor de
+`combate.py` sempre multiplica (nunca substitui) o multiplicador base pela
+razão. Documentado aqui porque é uma interpretação minha de uma
+inconsistência do cartão, não algo que o cartão resolveu explicitamente.
+
+Segurança contra ramo removido: `passivas._ramo(jogador)` só devolve a
+ascensão do jogador se ela **ainda** for uma chave válida em `ASCENSOES` —
+nunca `ASCENSOES[jogador["ascensao"]]` direto. Testado de propósito com
+`"batedor_de_carteira"` (ver abaixo) — um jogador que ascendeu pra um ramo
+que depois saiu do jogo não pode virar `KeyError` no meio de um combate.
+
+### Batedor de Carteira sai de `ASCENSOES` — o Ladino fica com dois ramos
+
+Decisão de conteúdo, não só de código: o Ladino ganha Assassino e Arqueiro
+nesta leva, sem terceiro ramo. `ASCENSOES["batedor_de_carteira"]` foi
+removido (não zerado/desativado — removido). `rpg classe`/`rpg ascencao`
+leem de `ASCENSOES` pra montar a lista de ramos por base, então a wiki
+esqueceu o nome sozinha, sem nenhum texto solto pra editar — exceto duas
+frases genéricas em `bot.py` (`ascencao()`) que hardcodavam "um dos 3
+ramos" pressupondo as 4 bases uniformes; viraram "um dos ramos abaixo"
+(sem contar), porque contar exigiria calcular por base, e a lista logo
+abaixo já mostra quantos ramos cada base tem.
+
+### Testes
+
+`tests/test_passivas.py` (novo): as quatro consultas neutras pra ascensão
+NULL, pra ascensão desconhecida (`"batedor_de_carteira"`, provando a
+blindagem acima) e pra ascensão válida sem passiva de verdade ainda
+(`"mago_gelo"`); mais um teste que os 11 ramos restantes começam com
+`skill: None, passivas: []`. `tests/test_database_migracao.py`: coluna
+`ascensao` em `COLUNAS_ESPERADAS` (cobre banco velho via
+`test_migracao_cria_todas_as_colunas_esperadas` e banco já migrado via
+`test_migracao_e_idempotente_rodando_de_novo_na_mesma_base`) + um teste
+dedicado que ela nasce NULL. `tests/test_classe_profissao_wiki.py`: dois
+testes que `rpg classe ladino`/`rpg ascencao` não mencionam mais Batedor de
+Carteira e continuam listando Assassino/Arqueiro.
+
+Validado revertendo: tirando a checagem de segurança de `passivas._ramo`
+(voltando a devolver `jogador["ascensao"]` sem confirmar contra
+`ASCENSOES`), só `test_ascensao_desconhecida_nao_quebra_e_devolve_neutro`
+cai — com `KeyError: 'batedor_de_carteira'`, exatamente o crash que a
+blindagem existe pra evitar. Suíte completa: 496 (489 de antes + 7 novos),
+495 passando + 1 xfail antigo.

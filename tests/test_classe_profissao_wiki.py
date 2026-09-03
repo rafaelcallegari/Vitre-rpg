@@ -162,6 +162,34 @@ def test_classe_wiki_nivel_do_ramo_vem_do_dado_nao_de_texto_fixo(monkeypatch):
     assert f"faltam {nivel_ordinario - nivel_jogador} níveis" in campo_ascensao.value
 
 
+def test_classe_wiki_ladino_lista_so_dois_ramos_sem_batedor_de_carteira():
+    """Step 2a: Batedor de Carteira saiu de ASCENSOES -- a wiki lê de lá e
+    tem que sumir sozinha, sem texto solto pra atualizar em bot.py."""
+    db.criar_jogador(1, "Alice")
+    db.atualizar_jogador(1, classe="ladino", pronome="ele")
+    ctx = _ctx()
+
+    asyncio.run(bot.classe_cmd.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    campo_ascensao = next(f for f in e.fields if "Ascens" in f.name)
+    assert "Batedor de Carteira" not in campo_ascensao.value
+    for ramo in ("Assassino", "Arqueiro"):
+        assert ramo in campo_ascensao.value
+
+
+def test_ascencao_ladino_lista_so_dois_ramos_sem_batedor_de_carteira():
+    ctx = _ctx()
+
+    asyncio.run(bot.ascencao.callback(ctx))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    campo_ladino = next(f for f in e.fields if "Ladin" in f.name)
+    assert "Batedor de Carteira" not in campo_ladino.value
+    assert "Assassino" in campo_ladino.value
+    assert "Arqueiro" in campo_ladino.value
+
+
 def test_ascencao_sem_personagem_nao_quebra():
     ctx = _ctx()   # sem db.criar_jogador -- simula quem nunca deu `rpg comecar`
 

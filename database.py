@@ -244,6 +244,15 @@ COLUNAS_MORTALHA = {
     "mortalha_instancia_id": "INTEGER",
 }
 
+COLUNAS_ASCENSAO = {
+    # migração 17 -- infraestrutura da ascensão de verdade (Step 2a: motor
+    # de passivas + o Ladino). NULL pra todo mundo -- ninguém ascendeu
+    # ainda, e a ascensão continua "ainda não jogável" (nenhum comando
+    # escreve nesta coluna nesta carta). Só passivas.py lê. Ver
+    # decisoes.md § Step 2a.
+    "ascensao": "TEXT DEFAULT NULL",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -540,6 +549,17 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_MORTALHA[coluna]}"
                 )
             print("Banco migrado: slot de mortalha criado -- ninguém equipado ainda (peça nenhuma existe).")
+
+        # migração 17: coluna da ascensão de verdade (Step 2a). NULL pra
+        # todo mundo -- ninguém ascendeu ainda, ninguém escreve aqui nesta
+        # carta. Ver COLUNAS_ASCENSAO acima e decisoes.md § Step 2a.
+        novas_ascensao = [c for c in COLUNAS_ASCENSAO if c not in colunas]
+        if novas_ascensao:
+            for coluna in novas_ascensao:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ASCENSAO[coluna]}"
+                )
+            print("Banco migrado: coluna ascensao criada -- ninguém ascendeu ainda.")
 
 
 def _migrar_upgrades_para_instancias(conn):
