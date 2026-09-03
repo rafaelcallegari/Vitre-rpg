@@ -37,17 +37,18 @@ def test_ascensao_desconhecida_nao_quebra_e_devolve_neutro():
 
 
 def test_ascensao_valida_sem_passiva_de_verdade_ainda_devolve_neutro():
-    """mago_gelo é um ramo válido em ASCENSOES, mas não tem skill/passiva
+    """mago_fogo é um ramo válido em ASCENSOES, mas não tem skill/passiva
     de verdade até seu próprio cartão -- não pode falhar por isso."""
-    _assert_neutro(_jogador(ascensao="mago_gelo"))
+    _assert_neutro(_jogador(ascensao="mago_fogo"))
 
 
 def test_ramos_sem_conteudo_de_verdade_continuam_neutros():
-    """Motor genérico: os 9 ramos que não são do Ladino (Batedor de
-    Carteira saiu, Assassino/Arqueiro ganharam conteúdo no commit 2)
-    continuam sem skill/passiva -- só o Ladino tem isso nesta leva."""
-    sem_conteudo = set(game_data.ASCENSOES) - {"assassino", "arqueiro"}
-    assert len(sem_conteudo) == 9
+    """Motor genérico: os ramos que ainda não tiveram cartão próprio (Step
+    2a fez o Ladino; Step 2b, commit 1, fez o Mago de Gelo) continuam sem
+    skill/passiva."""
+    tem_conteudo = {"assassino", "arqueiro", "mago_gelo"}
+    sem_conteudo = set(game_data.ASCENSOES) - tem_conteudo
+    assert len(sem_conteudo) == 8
     for chave in sem_conteudo:
         assert game_data.ASCENSOES[chave]["skill"] is None, chave
         assert game_data.ASCENSOES[chave]["passivas"] == [], chave

@@ -68,3 +68,14 @@ def bonus_material(jogador):
     if _tem_passiva(jogador, "instinto_ladino"):
         return PASSIVAS["instinto_ladino"]["valor_material"]
     return 0.0
+
+
+def bonus_duracao_travamento(jogador):
+    """Rodadas ADICIONAIS em todo Travamento (pula_turno) que o JOGADOR
+    aplica no chefe -- Prisão de Cristal (skill) e o Travamento da arma
+    elemental (gelo) os dois consultam isto. 0 = nenhuma passiva mexe
+    nisso. É bônus de quem APLICA, não de quem sofre -- por isso o
+    parâmetro é sempre o jogador que deu o golpe, nunca o alvo."""
+    if _tem_passiva(jogador, "inverno_constante"):
+        return PASSIVAS["inverno_constante"]["valor"]
+    return 0

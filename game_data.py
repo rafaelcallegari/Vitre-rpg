@@ -545,13 +545,12 @@ CLASSES = {
 NIVEL_ASCENSAO_PADRAO = 15
 # "skill" (chave em HABILIDADES) e "passivas" (lista de chaves em PASSIVAS,
 # abaixo) nasceram no Step 2a (motor de ascensão) -- None/[] pra todo ramo
-# que ainda não tem conteúdo de verdade (só o Ladino ganha os dois nesta
-# leva; os outros 3 ramos entram cartão a cartão, sem tocar aqui de novo
-# até terem skill/passiva pra valer). O Ladino ficou com dois ramos, não
-# três -- "Batedor de Carteira" nunca ganhou skill/passiva própria e foi
-# cortado do design. Ver decisoes.md § Step 2a.
+# que ainda não tem conteúdo de verdade. Cada cartão preenche um ramo por
+# vez, sem tocar nos que ainda não chegaram na fila. O Ladino ficou com
+# dois ramos, não três -- "Batedor de Carteira" nunca ganhou skill/passiva
+# própria e foi cortado do design. Ver decisoes.md § Step 2a / Step 2b.
 ASCENSOES = {
-    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "prisao_de_cristal", "passivas": ["inverno_constante"]},
     "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
@@ -592,6 +591,11 @@ PASSIVAS = {
             "praticamente dobra."
         ),
         "valor_moedas": 0.20, "valor_material": 0.15,
+    },
+    "inverno_constante": {
+        "nome": "Inverno Constante", "emoji": "❄️",
+        "desc": "Todo Travamento que você aplica no chefe dura 1 rodada a mais.",
+        "valor": 1,
     },
 }
 
@@ -700,6 +704,11 @@ HABILIDADES = {
         "nome": "Flecha Perfurante", "emoji": "🏹", "classe": "ladino",
         "recurso": "energia", "custo": 45, "ascensao": "arqueiro",
         "desc": "Dano em DES que ignora a defesa do chefe.",
+    },
+    "prisao_de_cristal": {
+        "nome": "Prisão de Cristal", "emoji": "🧊", "classe": "mago",
+        "recurso": "mana", "custo": 20, "ascensao": "mago_gelo",
+        "desc": "Dano em INT que passa pela defesa do chefe + Travamento (perde a próxima ação).",
     },
 }
 

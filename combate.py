@@ -100,6 +100,15 @@ MULTIPLICADOR_GOLPE_FATAL_BASE = 1.2      # alvo com HP cheio
 BONUS_GOLPE_FATAL_EXECUCAO = 1.3          # + até isso, conforme o alvo perde HP -- teto 2.5 com o alvo a 0
 MULTIPLICADOR_FLECHA_PERFURANTE = 1.8     # dano puro, ignora defesa (igual Dardo Arcano)
 
+# skills de ascensão do Mago (Step 2b) -- calibragem ACIMA da régua de
+# propósito: 2.0 (nominal igual ao Dardo Arcano) + o efeito, e as três
+# passam por at.aplicar_defesa (Dardo Arcano continua sendo a única que
+# ignora defesa -- é a identidade dele desde o nível 1). Ver decisoes.md §
+# Step 2b pro porquê da exceção à régua de "~1,3 ataque + efeito".
+MULTIPLICADOR_PRISAO_DE_CRISTAL = 2.0
+TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS = 1   # N rodadas travado -- regra N+1 (ver comentário
+                                            # "Duração de condições" logo acima de _multiplicador_afinidade)
+
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
 COR_SALA = 0xA8DADC
@@ -831,7 +840,16 @@ def _talvez_condicionar_chefe(luta, c):
     mesmo elemento chega perto de 100% de uptime, ver decisoes.md § Dano
     elemental). Condição já ativa no chefe refresca a duração em vez de
     empilhar. origem=c.id é o que faz `drena` (Sanguessuga) devolver cura
-    pra c em condicoes._tick_dano."""
+    pra c em condicoes._tick_dano.
+
+    Travamento (gelo) consulta passivas.bonus_duracao_travamento (Inverno
+    Constante, Step 2b) -- é bônus de quem APLICA (c), não de quem sofre.
+    O refresh nunca ENCOLHE uma duração já ativa (max, não overwrite): isso
+    importa quando Prisão de Cristal (skill do mago de gelo) já setou um
+    Travamento mais longo (regra N+1 + Inverno Constante) e o MESMO golpe
+    também rola a arma elemental por cima -- sem o max(), a rolagem da arma
+    sobrescreveria com o valor cru, mais curto, desfazendo o bônus da
+    skill."""
     elemento = _elemento_arma_de(c)
     dados = CONDICOES_ARMA_ELEMENTAL.get(elemento)
     if not dados or elemento in luta.elementos_aplicados_rodada:
@@ -839,17 +857,20 @@ def _talvez_condicionar_chefe(luta, c):
     if random.random() >= CHANCE_CONDICAO_ELEMENTO_ARMA:
         return
     luta.elementos_aplicados_rodada.add(elemento)
+    duracao = dados["duracao"]
+    if dados["tipo"] == "pula_turno":
+        duracao += passivas.bonus_duracao_travamento(c.jogador)
     existente = next(
         (cond for cond in luta.condicoes if cond["alvo"] == "chefe" and cond["nome"] == dados["nome"]),
         None,
     )
     if existente:
-        existente["duracao"] = dados["duracao"]
+        existente["duracao"] = max(existente["duracao"], duracao)
         luta.registrar(f"{dados['emoji']} **{dados['nome']}** renovado em {luta.chefe['nome']}.")
         return
     condicoes.aplicar(
         luta, "chefe", dados["tipo"], dados["nome"], dados["emoji"],
-        dados["duracao"], dados["valor"], origem=c.id, drena=dados.get("drena"),
+        duracao, dados["valor"], origem=c.id, drena=dados.get("drena"),
     )
 
 
@@ -1023,6 +1044,25 @@ def _efeito_flecha_perfurante(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_prisao_de_cristal(luta, c, dados):
+    """Mago de Gelo: dano em cima da MESMA base do ataque normal (com
+    defesa, ao contrário do Dardo Arcano) + Travamento no chefe --
+    TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS (1) rodada, regra N+1 (duracao=2)
+    +passivas.bonus_duracao_travamento (Inverno Constante)."""
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_PRISAO_DE_CRISTAL), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano.")
+    duracao = TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS + 1 + passivas.bonus_duracao_travamento(c.jogador)
+    condicoes.aplicar(
+        luta, "chefe", "pula_turno", "Travamento", "🔒",
+        duracao=duracao, valor=0, origem=c.id,
+    )
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1034,6 +1074,7 @@ EFEITOS_HABILIDADE = {
     "voto_de_ferro": _efeito_voto_de_ferro,
     "golpe_fatal": _efeito_golpe_fatal,
     "flecha_perfurante": _efeito_flecha_perfurante,
+    "prisao_de_cristal": _efeito_prisao_de_cristal,
 }
 
 

@@ -5399,3 +5399,95 @@ os outros 526 continuam passando, inclusive o teste "vale nos dois golpes"
 consistência entre os dois hits, propositalmente separado do teste que
 prende o número). Suíte completa: 528 (525 de antes + 3 novos), 527
 passando + 1 xfail antigo.
+
+## Step 2b — o Mago (gelo, fogo, raio)
+
+Três commits, um por ramo (HEAD `bad4f89`, suíte em 528). Cada um mexe numa
+parte diferente do motor de combate — duração de condição (gelo),
+empilhamento (fogo), estado de turno do chefe (raio) — de propósito, pra
+revert independente continuar valendo se um dos três der problema sozinho.
+
+### Calibragem acima da régua — e por quê
+
+`decisoes.md` § "Dano de skill abaixo do ataque básico" fixa a régua do
+projeto: dano puro ~2 ataques, dano+efeito ~1,3 ataque+efeito, sempre sobre
+`hab.poder_base(jogador, bonus_arma)` (COM o bônus de arma — nunca só
+`at.ataque(atributo)` puro, esse é o bug que a régua existe pra não deixar
+repetir). As três skills de ascensão do Mago **furam a metade "dano+efeito"
+de propósito**: valem `2.0` — o NOMINAL do Dardo Arcano, não o `1.3` que a
+régua prescreveria pra "dano com efeito junto" — mais o efeito de cada uma,
+e **passam pela defesa do chefe** (`at.aplicar_defesa`), o que o Dardo
+Arcano nunca fez. A folga fica dentro da própria régua: contra defesa
+baixa, uma skill de `2.0` com defesa aplicada supera o Dardo Arcano de
+`2.0` sem defesa (a defesa baixa quase não desconta); contra defesa alta,
+a ordem inverte — Dardo Arcano ignora, as três novas perdem uma fatia
+grande. **Isso é o ponto**: mantém o Dardo Arcano como a skill-identidade
+do Mago desde o nível 1 (a que se destaca contra chefe blindado), sem as
+três de ascensão ficarem atrás dele o jogo inteiro só por levarem um
+efeito a mais — elas já pagam esse preço na curva de defesa, não precisam
+pagar de novo no multiplicador nominal.
+
+### Commit 1 — Mago de Gelo: Prisão de Cristal + Inverno Constante
+
+**Prisão de Cristal** (`MULTIPLICADOR_PRISAO_DE_CRISTAL = 2.0`, com
+defesa) aplica Travamento (`pula_turno`) no chefe. A duração exigiu
+cuidado: Travamento é uma condição CONSULTADA (não tem tick próprio), e o
+comentário "Duração de condições" logo acima de `_multiplicador_afinidade`
+documenta a regra N+1 — uma skill lançada no clique do botão aplica a
+condição ANTES do `condicoes.tick()` daquela mesma rodada rodar, então
+`tick()` desconta 1 rodada de graça na hora. `TRAVAMENTO_PRISAO_DE_CRISTAL_
+RODADAS = 1` (N, o que a descrição promete) vira `duracao=2` (`N+1`) na
+chamada de `condicoes.aplicar()` — contado em ticks nos testes (mesma
+técnica de `tests/test_condicoes.py`, bloco 4), não lendo `cond["duracao"]`
+direto.
+
+**Achado no caminho**: o Travamento que a ARMA elemental (gelo) já aplicava
+(`_talvez_condicionar_chefe`) tem um timing DIFERENTE — ela roda DEPOIS do
+`tick()` da rodada corrente (está dentro do loop de ataques, que só resolve
+depois que todo mundo escolheu ação e o `tick()` já rodou), então a
+condição chega pronta pro `turno_do_chefe()` desta MESMA rodada sem
+precisar de nenhum desconto — `duracao=1` (o valor cru da tabela,
+`CONDICOES_ARMA_ELEMENTAL["gelo"]`) já trava exatamente 1 rodada, sem regra
+N+1. Dois timings diferentes pra "1 rodada de trava", cada um com a conta
+certa pro PONTO em que a condição entra em `luta.condicoes`. Os testes
+refletem isso: os da skill contam a partir de ANTES do primeiro tick (regra
+N+1); os da arma contam a partir de DEPOIS (sem ajuste).
+
+**Inverno Constante** (`PASSIVAS["inverno_constante"]["valor"] = 1`) soma 1
+rodada em QUALQUER Travamento que o JOGADOR aplica — a skill e a arma
+elemental, os dois. `passivas.bonus_duracao_travamento(jogador)` é a nova
+consulta (padrão das outras: 0 = neutro), chamada nos dois pontos de
+aplicação com o AUTOR (`c.jogador`), nunca o alvo. Mago_gelo tem uma
+passiva só e ela é automática — não existe "mago_gelo sem Inverno
+Constante" pra testar, só "outro ramo" ou "sem ascensão" como controle.
+
+**Bug evitado, não só corrigido**: se a skill trava por 2 rodadas
+(N+1+bônus = 3 de duração guardada) e o MESMO golpe também rola o proc da
+arma elemental (mago de gelo com cajado de gelo — "o caso que mais importa
+acertar", como o cartão pediu), o caminho de "refresh" de
+`_talvez_condicionar_chefe` ia SOBRESCREVER com o valor cru da arma (mais
+curto), desfazendo o bônus que a skill acabou de aplicar. Trocado
+`existente["duracao"] = novo_valor` por `existente["duracao"] =
+max(existente["duracao"], novo_valor)` — um refresh nunca ENCOLHE uma
+duração já ativa. Testado direto (não só pelo comportamento indireto):
+aplica a skill, confirma `duracao == 3`, força o proc da arma por cima,
+confirma que continua `3`.
+
+### Testes
+
+`tests/test_mago_gelo.py`, 10 testes: gate de ascensão (não-ascendido não
+conhece, mago_gelo conhece, sem requisito de atributo); dano aplica defesa
+(ao contrário do Dardo Arcano); Travamento da skill dura 2 rodadas com
+Inverno Constante (mago_gelo) e 1 rodada sem (mago_fogo, sem ascensão) —
+contado em ticks; Travamento da arma elemental com e sem a passiva,
+timing próprio (ver acima); o `max()` que protege contra encolhimento.
+
+Validado revertendo, dois pontos separados: (1) tirando o `max()` (volta
+pra overwrite simples), só `test_refresh_da_arma_elemental_nunca_encolhe_
+um_travamento_mais_longo` cai; (2) tirando o `+1` da regra N+1 na skill
+(`duracao = TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS + bonus`, sem o `+1`),
+caem os 4 testes que dependem da duração real da skill (os 2 de duração
+direta, mais os 2 que reusam o mesmo caminho pra provar "sem a passiva") —
+exatamente o conjunto que deveria notar a condição expirando cedo demais.
+Suíte completa: 538 (528 de antes + 10 novos), 537 passando + 1 xfail
+antigo.
