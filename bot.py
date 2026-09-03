@@ -19,6 +19,7 @@ import despertar
 import dialogos
 import habilidades as hab
 import paginacao
+import passivas
 import pronomes
 import travas
 from game_data import (
@@ -439,8 +440,14 @@ def pontos_por_subir(j, subiu):
     return int(j["pontos"] or 0) + at.PONTOS_POR_NIVEL * subiu
 
 
-def rolar_drops(mob):
-    return [item for item, chance in mob.get("drops", []) if random.random() < chance]
+def rolar_drops(mob, bonus_chance=0.0):
+    """bonus_chance soma na chance de CADA item, não na quantidade (Instinto
+    de Ladrão, ver passivas.bonus_material e decisoes.md § Step 2a) --
+    0.0 reproduz exatamente o comportamento de sempre."""
+    return [
+        item for item, chance in mob.get("drops", [])
+        if random.random() < min(1.0, chance + bonus_chance)
+    ]
 
 
 def aplicar_regeneracao(j):
@@ -734,15 +741,16 @@ async def cacar(ctx):
 
     if venceu:
         nivel, xp, subiu = aplicar_xp(j, mob["xp"])
-        drops = rolar_drops(mob)
+        drops = rolar_drops(mob, passivas.bonus_material(j))
         for item in drops:
             db.add_item(j["user_id"], item)
         hp_final = hp_depois_do_nivel(hp_final, nivel, subiu, s["atribs"])
+        moedas_ganho = mob["moedas"] + int(mob["moedas"] * passivas.bonus_moedas(j))
         db.atualizar_jogador(
             j["user_id"], hp=hp_final, xp=xp, nivel=nivel,
-            pontos=pontos_por_subir(j, subiu), moedas=j["moedas"] + mob["moedas"],
+            pontos=pontos_por_subir(j, subiu), moedas=j["moedas"] + moedas_ganho,
         )
-        recompensa = f"+{mob['xp']} XP · +{mob['moedas']} 🪙"
+        recompensa = f"+{mob['xp']} XP · +{moedas_ganho} 🪙"
         if drops:
             recompensa += "\n" + "\n".join(f"{ITENS[i]['emoji']} {ITENS[i]['nome']}" for i in drops)
         e.add_field(name="Vitória", value=recompensa, inline=False)
@@ -797,7 +805,7 @@ async def explorar(ctx):
             break
         total_xp += mob["xp"]
         total_moedas += mob["moedas"]
-        drops_totais += rolar_drops(mob)
+        drops_totais += rolar_drops(mob, passivas.bonus_material(j))
         linhas.append(f"✅ {mob['nome']} — HP restante: {max(0, hp)}")
 
     e = discord.Embed(title=f"Exploração — {andar['nome']}", color=andar["cor"])
@@ -809,15 +817,16 @@ async def explorar(ctx):
         e.add_field(name="Você caiu", value=f"Perdeu **{perda}** 🪙. As recompensas foram perdidas.", inline=False)
     else:
         bonus = int(total_moedas * 0.5)
+        bonus_ladino = int(total_moedas * passivas.bonus_moedas(j))
         for item in drops_totais:
             db.add_item(j["user_id"], item)
         nivel, xp, subiu = aplicar_xp(j, total_xp)
         hp = hp_depois_do_nivel(hp, nivel, subiu, s["atribs"])
         db.atualizar_jogador(
             j["user_id"], hp=hp, xp=xp, nivel=nivel, pontos=pontos_por_subir(j, subiu),
-            moedas=j["moedas"] + total_moedas + bonus,
+            moedas=j["moedas"] + total_moedas + bonus + bonus_ladino,
         )
-        texto = f"+{total_xp} XP · +{total_moedas + bonus} 🪙 (bônus de exploração incluso)"
+        texto = f"+{total_xp} XP · +{total_moedas + bonus + bonus_ladino} 🪙 (bônus de exploração incluso)"
         if drops_totais:
             contagem = {}
             for i in drops_totais:

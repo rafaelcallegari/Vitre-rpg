@@ -545,18 +545,20 @@ async def recompensar(luta, combatente):
     if luta.andar_num > ANDAR_ACIMA_DO_SELO:
         vezes = await db.a_vezes_derrotado_chefe(j["user_id"], luta.andar_num)
         chance_material = 1.0 if vezes == 0 else 0.15
+        chance_material = min(1.0, chance_material + passivas.bonus_material(j))
         for item, _chance_original in list(chefe.get("drops", [])) + luta.materiais_extras:
             if random.random() < chance_material:
                 await db.a_add_item(j["user_id"], item)
                 itens_dropados.append(item)
         await db.a_registrar_vitoria_chefe(j["user_id"], luta.andar_num)
     else:
-        itens_dropados = H["rolar_drops"](chefe)
+        itens_dropados = H["rolar_drops"](chefe, passivas.bonus_material(j))
         for item in itens_dropados:
             await db.a_add_item(j["user_id"], item)
 
     xp_ganho = int(chefe["xp"])
-    moedas_ganho = int(chefe["moedas"])
+    moedas_base = int(chefe["moedas"])
+    moedas_ganho = moedas_base + int(moedas_base * passivas.bonus_moedas(j))
     nivel, xp, subiu = H["aplicar_xp"](j, xp_ganho)
     hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
 

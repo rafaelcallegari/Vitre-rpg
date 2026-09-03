@@ -5236,3 +5236,69 @@ Validado revertendo: tirando o `and not c.sangue_frio_disparado` de
 primeiro), só `test_rolar_critico_sangue_frio_dispara_uma_vez_por_combatente`
 cai. Suíte completa: 510 (496 de antes + 14 novos), 509 passando + 1 xfail
 antigo.
+
+### Commit 3 — Instinto de Ladrão: dinheiro e material
+
+Passiva ADICIONAL do assassino E do arqueiro — os dois ramos têm 2
+passivas agora (Sangue Frio + Instinto de Ladrão; Olho de Águia + Instinto
+de Ladrão). O Ladino trocou um terceiro ramo (Batedor de Carteira, commit
+1) por isso desde o início — intencional, não um ajuste de última hora:
+sem o terceiro ramo, cada um dos dois que sobraram podia carregar duas
+passivas sem esticar o orçamento de poder pensado pra três ramos com uma
+cada. `PASSIVAS["instinto_ladino"]` é UMA entrada só, referenciada pelas
+listas `passivas` dos dois ramos — não duas cópias com o mesmo número.
+
+**Chance, não quantidade.** Bônus de material mexe na CHANCE de cada item
+dropar, nunca na quantidade por drop. Motivo: todo material de chefe (e de
+monstro comum) já é um dict `{item: chance}` — um único rolamento por
+item, sem conceito de "quantidade por drop" em lugar nenhum do jogo hoje.
+"Quantidade" exigiria inventar um mecanismo novo (multi-rolagem ou
+estoque fracionário por acerto) só pra essa passiva, e o cartão já
+apontou o problema: um bônus de quantidade só importa DEPOIS que o item
+já caiu — numa chance base baixa, a maioria das vezes o bônus não muda
+nada (o item nem caiu pra ter "mais quantidade" de quê), o que sente
+esquisito pra quem tem a passiva e não vê ela fazer diferença na prática.
+Bônus de chance, ao contrário, sempre empurra a MESMA rolagem — sente
+mais material com mais frequência, de verdade, toda vez que joga.
+Implementação: `bot.rolar_drops(mob, bonus_chance=0.0)` ganhou o
+parâmetro (soma na chance de CADA item, `min(1.0, chance + bonus)` —
+nunca estoura 100%); o branch de andar 11+ em `combate.recompensar` some
+o bônus direto em `chance_material` (a variável que já existia pra
+distinguir primeira-vez de repetição). `passivas.bonus_material` segue
+neutro (0.0) — a MESMA função de consulta que já existia desde o commit
+1, só ganhou dado de verdade em `PASSIVAS["instinto_ladino"]`.
+
+Moedas: `bot.rolar_drops`/`combate.recompensar`/`cacar`/`explorar` sempre
+calculam `base + int(base * passivas.bonus_moedas(j))` — nunca
+`int(base * (1 + bonus))` — de propósito: com `bonus=0.0` o `int(base *
+0.0)` soma exatamente zero ao inteiro original, sem qualquer chance de
+arredondamento de ponto flutuante mudar o valor de quem não tem
+ascensão. Essa forma é o que faz o teste "sem ascensão recebe exatamente
+o que recebia antes" ser uma garantia de código, não só coincidência do
+exemplo testado.
+
+Só três pontos tocados (caçada, exploração, chefe — exatamente os que o
+cartão pediu). `dungeon.py` (fatia 1, ainda não em produção) também rola
+material via `H["rolar_drops"]`, mas ficou de fora — fora do escopo que o
+cartão listou, e não vale abrir mais uma frente numa carta que já mexe
+com código de produção pela primeira vez nesta leva.
+
+### Testes
+
+`tests/test_ladino.py`, 14 testes novos. `rolar_drops` isolada (função
+pura): sem bônus reproduz o comportamento de sempre, bônus muda o
+resultado, bônus nunca estoura 100%. `cacar`/`explorar`/
+`combate.recompensar` (os dois branches: andar ≤10 via `rolar_drops`,
+andar 11+ via `chance_material`) — cada um com o par: SEM ascensão (**o
+teste que mais importa**, moedas e material idênticos ao de sempre) e COM
+ascensão (bônus de moedas comparado contra `passivas.bonus_moedas`
+calculado, não um número mágico repetido; material provado como CHANCE —
+`assert itens == ["item_y"]`, uma unidade a mais na chance de cair, nunca
+duas do mesmo item na mesma rodada).
+
+Validado revertendo: com `passivas.bonus_moedas` sempre devolvendo
+`PASSIVAS["instinto_ladino"]["valor_moedas"]` (sem checar se o jogador
+tem a passiva), os quatro testes "sem ascensão recebe exatamente o que
+recebia antes" (`cacar`, `explorar`, chefe ≤10, chefe 11+) caem juntos —
+exatamente os quatro que existem pra pegar esse erro. Suíte completa: 524
+(510 de antes + 14 novos), 523 passando + 1 xfail antigo.

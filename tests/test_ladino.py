@@ -1,12 +1,16 @@
 # tests/test_ladino.py
 # Step 2a, commit 2: as duas skills do Ladino (Golpe Fatal/assassino,
 # Flecha Perfurante/arqueiro) e as duas passivas de combate (Sangue
-# Frio/assassino, Olho de Águia/arqueiro). Ver decisoes.md § Step 2a.
+# Frio/assassino, Olho de Águia/arqueiro). Commit 3 acrescenta Instinto de
+# Ladrão (dinheiro e material). Ver decisoes.md § Step 2a.
+import asyncio
+
 import bot
 import combate
 import database as db
 import game_data
 import habilidades as hab
+import passivas
 
 CHEFE_TESTE = {"nome": "Testinho", "hp": 999999, "atk": 1, "def": 0, "xp": 0, "moedas": 0}
 
@@ -221,3 +225,199 @@ def test_olho_de_aguia_aumenta_o_dano_do_critico_na_skill(monkeypatch):
     dano_sem = luta_sem.hp_chefe_max - luta_sem.hp_chefe
 
     assert dano_com > dano_sem
+
+
+# ==================================================================
+# Instinto de Ladrão (assassino + arqueiro) -- commit 3: +moedas e +CHANCE
+# de material (não quantidade, ver decisoes.md § Step 2a) em caçada,
+# exploração e chefe.
+# ==================================================================
+
+def test_assassino_e_arqueiro_tem_duas_passivas_cada():
+    """O Ladino trocou um terceiro ramo por isso -- intencional, ver
+    decisoes.md § Step 2a."""
+    assert set(game_data.ASCENSOES["assassino"]["passivas"]) == {"sangue_frio", "instinto_ladino"}
+    assert set(game_data.ASCENSOES["arqueiro"]["passivas"]) == {"olho_de_aguia", "instinto_ladino"}
+
+
+def _ctx(user_id=1):
+    from unittest.mock import AsyncMock, MagicMock
+    ctx = MagicMock()
+    ctx.author.id = user_id
+    ctx.send = AsyncMock()
+    return ctx
+
+
+def _forcar_vitoria(monkeypatch):
+    monkeypatch.setattr(bot, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+
+
+def _jogador_ladino(user_id=1, **campos):
+    db.criar_jogador(user_id, f"Jogador{user_id}")
+    padrao = dict(classe="ladino", destreza=20, andar=1)
+    padrao.update(campos)
+    db.atualizar_jogador(user_id, **padrao)
+    return db.get_jogador(user_id)
+
+
+# ---------------- rolar_drops (função pura) ----------------
+
+def test_rolar_drops_sem_bonus_reproduz_o_comportamento_de_sempre(monkeypatch):
+    mob = {"drops": [("a", 0.3), ("b", 0.8)]}
+    valores = iter([0.29, 0.79])   # os dois passam sem bônus
+    monkeypatch.setattr(bot.random, "random", lambda: next(valores))
+    assert bot.rolar_drops(mob) == ["a", "b"]
+
+
+def test_rolar_drops_bonus_chance_aumenta_a_chance_por_item(monkeypatch):
+    mob = {"drops": [("item_teste", 0.5)]}
+    monkeypatch.setattr(bot.random, "random", lambda: 0.55)   # falha em 0.5, passa em 0.5+0.10
+
+    assert bot.rolar_drops(mob, bonus_chance=0.0) == []
+    assert bot.rolar_drops(mob, bonus_chance=0.10) == ["item_teste"]
+
+
+def test_rolar_drops_bonus_nao_estoura_100_por_cento(monkeypatch):
+    mob = {"drops": [("item_teste", 0.95)]}
+    monkeypatch.setattr(bot.random, "random", lambda: 0.999999)   # só passaria acima de 100%
+    assert bot.rolar_drops(mob, bonus_chance=0.5) == ["item_teste"]   # min(1.0, 1.45) == 1.0
+
+
+# ---------------- rpg cacar ----------------
+
+def test_cacar_sem_ascensao_recebe_exatamente_o_que_recebia_antes(monkeypatch):
+    """O teste que mais importa: Instinto de Ladrão não pode mudar NADA pra
+    quem não tem essa ascensão -- é o único código deste commit que toca a
+    experiência de quem já joga."""
+    _forcar_vitoria(monkeypatch)
+    _jogador_ladino(1)
+    mob = game_data.ANDARES[1]["monstros"][0]
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+
+    asyncio.run(bot.bot.get_command("cacar").callback(_ctx(1)))
+
+    assert db.get_jogador(1)["moedas"] == mob["moedas"]
+
+
+def test_cacar_assassino_recebe_bonus_de_moedas_do_instinto_ladino(monkeypatch):
+    _forcar_vitoria(monkeypatch)
+    j = _jogador_ladino(1, ascensao="assassino")
+    mob = game_data.ANDARES[1]["monstros"][0]
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+    esperado = mob["moedas"] + int(mob["moedas"] * passivas.bonus_moedas(j))
+
+    asyncio.run(bot.bot.get_command("cacar").callback(_ctx(1)))
+
+    assert db.get_jogador(1)["moedas"] == esperado
+    assert esperado > mob["moedas"]   # sanity: o bônus realmente soma algo
+
+
+def test_cacar_sem_ascensao_nao_ganha_bonus_de_material(monkeypatch):
+    _forcar_vitoria(monkeypatch)
+    _jogador_ladino(1)
+    mob = game_data.ANDARES[1]["monstros"][0]   # Javali das Planícies -- os dois drops em 0.55
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+    monkeypatch.setattr(bot.random, "random", lambda: 0.60)   # falha em 0.55, e sem bônus continua falhando
+
+    asyncio.run(bot.bot.get_command("cacar").callback(_ctx(1)))
+
+    itens = [i["item"] for i in db.get_inventario(1)]
+    assert "presa_javali" not in itens
+    assert "essencia_do_vento" not in itens
+
+
+def test_cacar_assassino_ganha_bonus_de_chance_de_material(monkeypatch):
+    _forcar_vitoria(monkeypatch)
+    _jogador_ladino(1, ascensao="assassino")
+    mob = game_data.ANDARES[1]["monstros"][0]   # os dois drops em 0.55
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+    monkeypatch.setattr(bot.random, "random", lambda: 0.60)   # falha em 0.55, passa em 0.55+0.15
+
+    asyncio.run(bot.bot.get_command("cacar").callback(_ctx(1)))
+
+    itens = [i["item"] for i in db.get_inventario(1)]
+    assert "presa_javali" in itens
+    assert "essencia_do_vento" in itens
+
+
+# ---------------- rpg explorar ----------------
+
+def test_explorar_sem_ascensao_recebe_exatamente_o_que_recebia_antes(monkeypatch):
+    _forcar_vitoria(monkeypatch)
+    _jogador_ladino(1)
+    mob = game_data.ANDARES[1]["monstros"][0]
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+
+    asyncio.run(bot.bot.get_command("explorar").callback(_ctx(1)))
+
+    total_moedas = mob["moedas"] * 3
+    assert db.get_jogador(1)["moedas"] == total_moedas + int(total_moedas * 0.5)
+
+
+def test_explorar_arqueiro_recebe_bonus_de_moedas_do_instinto_ladino(monkeypatch):
+    _forcar_vitoria(monkeypatch)
+    j = _jogador_ladino(1, ascensao="arqueiro")
+    mob = game_data.ANDARES[1]["monstros"][0]
+    monkeypatch.setattr(bot.random, "choice", lambda lista: mob)
+    total_moedas = mob["moedas"] * 3
+    esperado = total_moedas + int(total_moedas * 0.5) + int(total_moedas * passivas.bonus_moedas(j))
+
+    asyncio.run(bot.bot.get_command("explorar").callback(_ctx(1)))
+
+    assert db.get_jogador(1)["moedas"] == esperado
+
+
+# ---------------- rpg boss (combate.recompensar) ----------------
+
+CHEFE_COM_DROP_PARCIAL = {
+    "nome": "Testinho", "hp": 999999, "atk": 1, "def": 0, "xp": 100, "moedas": 100,
+    "drops": [("item_x", 0.5)],
+}
+
+
+def test_recompensar_chefe_ate_andar_10_sem_ascensao_recebe_exatamente_o_que_recebia_antes(monkeypatch):
+    c = _combatente(1, classe="ladino", destreza=20)
+    luta = combate.Luta([c], CHEFE_COM_DROP_PARCIAL, andar_num=1)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.49)   # passa no 0.5 original
+
+    _nivel, _subiu, _xp, moedas_ganho, itens = asyncio.run(combate.recompensar(luta, c))
+
+    assert moedas_ganho == 100
+    assert itens == ["item_x"]
+
+
+def test_recompensar_chefe_ate_andar_10_aplica_bonus_de_moedas_e_material(monkeypatch):
+    c = _combatente(1, classe="ladino", destreza=20, ascensao="assassino")
+    luta = combate.Luta([c], CHEFE_COM_DROP_PARCIAL, andar_num=1)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.60)   # falha no 0.5 original, passa em 0.5+0.15
+
+    _nivel, _subiu, _xp, moedas_ganho, itens = asyncio.run(combate.recompensar(luta, c))
+
+    assert moedas_ganho == 100 + int(100 * passivas.bonus_moedas(c.jogador))
+    assert moedas_ganho > 100
+    assert itens == ["item_x"]
+
+
+def test_recompensar_chefe_acima_do_selo_sem_ascensao_recebe_exatamente_o_que_recebia_antes(monkeypatch):
+    c = _combatente(1, classe="ladino", destreza=20)
+    chefe = {"nome": "Testão", "hp": 999999, "atk": 1, "def": 0, "xp": 100, "moedas": 100, "drops": [("item_y", 1.0)]}
+    db.registrar_vitoria_chefe(1, 11)   # repetição -- chance_material base vira 0.15
+    luta = combate.Luta([c], chefe, andar_num=11)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.10)   # passa no 0.15 original
+
+    _nivel, _subiu, _xp, moedas_ganho, itens = asyncio.run(combate.recompensar(luta, c))
+
+    assert moedas_ganho == 100
+    assert itens == ["item_y"]
+
+
+def test_recompensar_chefe_acima_do_selo_aplica_bonus_na_chance_nao_na_quantidade(monkeypatch):
+    c = _combatente(1, classe="ladino", destreza=20, ascensao="arqueiro")
+    chefe = {"nome": "Testão", "hp": 999999, "atk": 1, "def": 0, "xp": 100, "moedas": 100, "drops": [("item_y", 1.0)]}
+    db.registrar_vitoria_chefe(1, 11)
+    luta = combate.Luta([c], chefe, andar_num=11)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.20)   # falha no 0.15 original, passa em 0.15+0.15
+
+    _nivel, _subiu, _xp, _moedas, itens = asyncio.run(combate.recompensar(luta, c))
+
+    assert itens == ["item_y"]   # uma unidade a mais na CHANCE de cair, não duas do mesmo item
