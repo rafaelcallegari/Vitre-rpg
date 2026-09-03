@@ -557,8 +557,8 @@ ASCENSOES = {
     "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
-    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
-    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_fatal", "passivas": ["sangue_frio"]},
+    "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "flecha_perfurante", "passivas": ["olho_de_aguia"]},
     "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
@@ -573,7 +573,17 @@ ASCENSOES = {
 # passivas.py é o ÚNICO lugar que lê esses campos numéricos -- nenhum outro
 # módulo sabe o nome de uma passiva. Vazio até o Step 2a ganhar conteúdo de
 # verdade. Ver decisoes.md § Step 2a.
-PASSIVAS = {}
+PASSIVAS = {
+    "sangue_frio": {
+        "nome": "Sangue Frio", "emoji": "🥶",
+        "desc": "O primeiro golpe da luta (rodada 1) é crítico garantido.",
+    },
+    "olho_de_aguia": {
+        "nome": "Olho de Águia", "emoji": "🦅",
+        "desc": "Aumenta o DANO do crítico (não a chance) -- soma ao multiplicador base.",
+        "valor": 0.4,
+    },
+}
 
 # ---------------- dungeon (andar 9, fatia 1 -- ver decisoes.md) ----------------
 # O portão da ascensão: só abre no andar 9, nível >= NIVEL_ASCENSAO_PADRAO.
@@ -619,6 +629,9 @@ DUNGEON_ESPELHOS = {
 #       "desc": str,
 #       "requisito": (atributo, valor_minimo) ou omitido — sem requisito = vem
 #           com a classe, disponível desde o nível 1,
+#       "ascensao": chave de ASCENSOES ou omitido — só quem está NAQUELE
+#           ramo conhece a skill; sem "requisito" de atributo junto, porque a
+#           ascensão já É o requisito (ver decisoes.md § Step 2a),
 #       "sidequest": True ou omitido — destravada por NPC, não por atributo,
 #       "alvo": "aliado_escolhido" ou omitido — omitido = afeta quem lança,
 #           o chefe, ou a party inteira (a função de efeito em combate.py sabe
@@ -667,6 +680,16 @@ HABILIDADES = {
         "nome": "Voto de Ferro", "emoji": "🛡️", "classe": "orador",
         "recurso": "mana", "custo": 18, "requisito": ("inteligencia", 15),
         "desc": "Reduz o dano recebido por toda a party por 2 rodadas.",
+    },
+    "golpe_fatal": {
+        "nome": "Golpe Fatal", "emoji": "💀", "classe": "ladino",
+        "recurso": "energia", "custo": 60, "ascensao": "assassino",
+        "desc": "Dano em DES que escala com o quanto o alvo já perdeu de HP — mortal contra alvo baixo.",
+    },
+    "flecha_perfurante": {
+        "nome": "Flecha Perfurante", "emoji": "🏹", "classe": "ladino",
+        "recurso": "energia", "custo": 45, "ascensao": "arqueiro",
+        "desc": "Dano em DES que ignora a defesa do chefe.",
     },
 }
 

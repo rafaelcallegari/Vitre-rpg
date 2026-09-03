@@ -28,10 +28,15 @@ def extras_de(jogador):
 def conhecida(jogador, chave, dados, extras=None):
     """Sem requisito = vem da classe. Com requisito = precisa do atributo.
     Marcada como sidequest = só conta se estiver em habilidades_extras,
-    não importa o atributo."""
+    não importa o atributo. Marcada com "ascensao" = só conta se o jogador
+    estiver NAQUELE ramo -- sem requisito de atributo, a ascensão É o
+    requisito (ver decisoes.md § Step 2a)."""
     if dados.get("sidequest"):
         extras = extras_de(jogador) if extras is None else extras
         return chave in extras
+    ascensao = dados.get("ascensao")
+    if ascensao:
+        return jogador["ascensao"] == ascensao
     requisito = dados.get("requisito")
     if not requisito:
         return True

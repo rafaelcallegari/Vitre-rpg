@@ -42,10 +42,12 @@ def test_ascensao_valida_sem_passiva_de_verdade_ainda_devolve_neutro():
     _assert_neutro(_jogador(ascensao="mago_gelo"))
 
 
-def test_todos_os_ramos_restantes_tem_passivas_vazia_e_skill_none():
-    """Motor genérico: os 11 ramos que sobraram (Batedor de Carteira saiu)
-    começam sem conteúdo -- só o Ladino ganha skill/passiva nesta leva."""
-    assert len(game_data.ASCENSOES) == 11
-    for chave, dados in game_data.ASCENSOES.items():
-        assert dados["skill"] is None, chave
-        assert dados["passivas"] == [], chave
+def test_ramos_sem_conteudo_de_verdade_continuam_neutros():
+    """Motor genérico: os 9 ramos que não são do Ladino (Batedor de
+    Carteira saiu, Assassino/Arqueiro ganharam conteúdo no commit 2)
+    continuam sem skill/passiva -- só o Ladino tem isso nesta leva."""
+    sem_conteudo = set(game_data.ASCENSOES) - {"assassino", "arqueiro"}
+    assert len(sem_conteudo) == 9
+    for chave in sem_conteudo:
+        assert game_data.ASCENSOES[chave]["skill"] is None, chave
+        assert game_data.ASCENSOES[chave]["passivas"] == [], chave

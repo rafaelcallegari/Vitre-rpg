@@ -250,7 +250,7 @@ def _botao_mortalha(painel):
 
 
 def test_mortalha_de_luz_cura_hp_cheio_sem_gastar_a_rodada_e_ainda_ataca(monkeypatch):
-    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit: (50, False))
+    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit, **kwargs: (50, False))
     c = _combatente(1, mortalha="mortalha_luz", hp=1)
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     painel = combate.PainelLuta(luta)
@@ -298,7 +298,7 @@ def test_mortalha_de_luz_nao_consome_pocao_nem_elixir():
 
 
 def test_mortalha_de_sombra_dobra_o_dano_do_golpe_uma_vez(monkeypatch):
-    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit: (100, False))
+    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit, **kwargs: (100, False))
     c = _combatente(1, mortalha="mortalha_sombra")
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     painel = combate.PainelLuta(luta)
@@ -315,7 +315,7 @@ def test_mortalha_de_sombra_dobra_o_dano_do_golpe_uma_vez(monkeypatch):
 
 
 def test_mortalha_de_sombra_nao_dobra_de_novo_na_rodada_seguinte(monkeypatch):
-    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit: (100, False))
+    monkeypatch.setitem(combate.H, "calcular_dano", lambda atk, defesa, crit, **kwargs: (100, False))
     c = _combatente(1, mortalha="mortalha_sombra")
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     painel = combate.PainelLuta(luta)

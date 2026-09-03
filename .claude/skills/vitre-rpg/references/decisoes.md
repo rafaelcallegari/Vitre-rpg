@@ -5155,3 +5155,84 @@ Validado revertendo: tirando a checagem de segurança de `passivas._ramo`
 cai — com `KeyError: 'batedor_de_carteira'`, exatamente o crash que a
 blindagem existe pra evitar. Suíte completa: 496 (489 de antes + 7 novos),
 495 passando + 1 xfail antigo.
+
+### Commit 2 — o Ladino: Golpe Fatal, Flecha Perfurante, Sangue Frio, Olho de Águia
+
+Puramente dados (`game_data.py`: `ASCENSOES["assassino"/"arqueiro"]` ganham
+`skill`/`passivas` de verdade, `PASSIVAS` ganha `sangue_frio`/
+`olho_de_aguia`, `HABILIDADES` ganha as duas skills) + código que CHAMA
+`passivas.py` — o módulo em si não foi tocado, exatamente como o commit 1
+previu.
+
+`golpe_fatal`/`flecha_perfurante` usam a chave nova `"ascensao"` em
+`HABILIDADES` em vez de `"requisito"` — `habilidades.conhecida()` passou a
+checar essa chave primeiro (antes do `requisito` de atributo): sem
+ascensão, nenhum ladino vê nem lança nenhuma das duas, não importa a
+destreza. `rpg classe ladino` (wiki) mostra as duas com "(requer ascensão:
+X)" no nome do field, mesmo padrão do "(requer N DES)" que já existia —
+sem isso, as skills apareceriam na wiki como se estivessem disponíveis
+desde o nível 1, o que seria mentira (ascensão "ainda não é jogável").
+
+Golpe Fatal aplica defesa normalmente e escala com o HP que o CHEFE já
+perdeu: `MULTIPLICADOR_GOLPE_FATAL_BASE` (1.2, alvo cheio) +
+`BONUS_GOLPE_FATAL_EXECUCAO` (1.3, escalando até o alvo chegar a 0 — teto
+2.5). Flecha Perfurante segue o molde exato do Dardo Arcano (ignora
+defesa, `_fator_elemento_arma` + `_aplicar_sombra`).
+
+**Sangue Frio precisou de estado por COMBATENTE, não só a consulta
+stateless de `passivas.critico_garantido(jogador, rodada)`.** A função do
+motor só sabe "rodada 1 + ascensão certa" — sozinha, isso garantiria
+crítico em TODOS os golpes da rodada 1, não só o primeiro (Corte Rápido dá
+dois hits numa única chamada de efeito; sem guarda, os dois sairiam
+garantidos). `Combatente` ganhou `sangue_frio_disparado` (reseta sozinho a
+cada luta nova, porque `Combatente.__init__` roda de novo — não vaza entre
+lutas nem entre membros da party, cada `Combatente` é um objeto separado).
+`combate._rolar_critico(luta, c)` é quem cruza a consulta stateless do
+motor com essa flag: consome (marca `True`) na hora que confirma o
+disparo, então mesmo dentro de uma skill de dois hits só o primeiro sai
+garantido.
+
+Isso também resolveu o duplo ponto de rolagem que o cartão avisou
+(`registrar_acao` e `on_timeout` tinham o MESMO bloco de ataque normal
+colado duas vezes): em vez de editar os dois blocos com a lógica de Sangue
+Frio/Olho de Águia separadamente (risco de esquecer um), extraí
+`_rolar_ataque_normal(luta, c, atk, defesa, critico)` como ponto único que
+os dois blocos chamam — editar um lugar já corrige os dois.
+
+Olho de Águia (`multiplicador_critico`, ver commit 1) precisou entrar nos
+DOIS lugares onde um crítico multiplica o dano: `bot.calcular_dano` ganhou
+`critico_forcado` (Sangue Frio) e `multiplicador_critico_extra` (Olho de
+Água) como parâmetros NOVOS com default que reproduz o comportamento de
+sempre (`False`/`1.0`) — `simular_combate` (caçada/exploração) e qualquer
+chamada antiga continuam idênticas sem passar nada. `_rolar_dano_habilidade`
+(dano de skill) ganhou o parâmetro `luta` (precisava de `luta.rodada` pro
+Sangue Frio) e a mesma lógica embutida direto — só 3 call sites
+(`_efeito_dardo_arcano`, `_efeito_golpe_aberto`, `_efeito_corte_rapido`)
+precisaram do `luta,` a mais.
+
+### Testes
+
+`tests/test_ladino.py` (novo): gate de ascensão nas duas skills (não
+ascendido não vê nenhuma, assassino só vê Golpe Fatal, arqueiro só vê
+Flecha Perfurante) + a wiki mostra o requisito; Golpe Fatal nos dois
+extremos de HP do alvo e aplicando defesa; Flecha Perfurante ignorando
+defesa; Sangue Frio via `combate._rolar_critico` direto (dispara uma vez
+por combatente, não vaza pro segundo assassino da party, só vale rodada 1)
+e via o efeito completo (dano realmente sai maior); Olho de Águia nas DUAS
+rolagens (`_rolar_ataque_normal` e `_efeito_flecha_perfurante`).
+`tests/test_passivas.py`: o teste dos "ramos sem conteúdo" atualizado pra
+excluir assassino/arqueiro (que ganharam skill/passiva neste commit) em
+vez de reafirmar que TODOS os 11 ramos continuam vazios.
+
+Efeito colateral descoberto rodando a suíte: três testes de
+`test_mortalha_luz_sombra.py` mockavam `H["calcular_dano"]` com uma lambda
+de assinatura fixa (`lambda atk, defesa, crit: ...`) — `_rolar_ataque_normal`
+passa `critico_forcado`/`multiplicador_critico_extra` agora, e a lambda não
+aceitava. `**kwargs` nas três resolveu sem mudar o que elas testam (Mortalha
+não tem relação com ascensão).
+
+Validado revertendo: tirando o `and not c.sangue_frio_disparado` de
+`_rolar_critico` (Sangue Frio garantindo TODO golpe da rodada 1, não só o
+primeiro), só `test_rolar_critico_sangue_frio_dispara_uma_vez_por_combatente`
+cai. Suíte completa: 510 (496 de antes + 14 novos), 509 passando + 1 xfail
+antigo.

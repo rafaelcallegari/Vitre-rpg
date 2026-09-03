@@ -10,6 +10,7 @@ import atributos as at
 import condicoes
 import database as db
 import habilidades as hab
+import passivas
 import pronomes
 import travas
 from andares_altos import ANDAR_ACIMA_DO_SELO, LIMITE_VIAJAR
@@ -91,6 +92,12 @@ REDUCAO_VOTO_DE_FERRO = 0.20
 MULTIPLICADOR_DARDO_ARCANO = 2.0     # dano puro (+ ignora defesa, bônus à parte)
 MULTIPLICADOR_GOLPE_ABERTO = 1.3     # dano + sangramento (o efeito)
 MULTIPLICADOR_CORTE_RAPIDO = 1.0     # dano puro, por golpe — 2 golpes = 2 ataques
+
+# skills de ascensão do Ladino (Step 2a) -- mesma base do ataque normal que
+# as acima, ver decisoes.md § Dano de skill abaixo do ataque básico.
+MULTIPLICADOR_GOLPE_FATAL_BASE = 1.2      # alvo com HP cheio
+BONUS_GOLPE_FATAL_EXECUCAO = 1.3          # + até isso, conforme o alvo perde HP -- teto 2.5 com o alvo a 0
+MULTIPLICADOR_FLECHA_PERFURANTE = 1.8     # dano puro, ignora defesa (igual Dardo Arcano)
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -213,6 +220,7 @@ class Combatente:
         self.elixires_usados = 0
         self.mortalha_usada = False   # uma vez por luta -- ver BotaoMortalha
         self.sombra_ativa = False     # Mortalha de Sombra: dobra o próximo golpe NESTA rodada
+        self.sangue_frio_disparado = False   # Sangue Frio (assassino): só uma vez por luta, por combatente
         self.caiu = False
         self.fugiu = False
         self.saiu = False
@@ -842,7 +850,33 @@ def _talvez_condicionar_chefe(luta, c):
     )
 
 
-def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
+def _rolar_critico(luta, c):
+    """True se o Sangue Frio (assassino) força este golpe a critar --
+    consome o "uma vez por luta" do combatente na hora, mesmo golpe de
+    skill com múltiplos hits (Corte Rápido) só deixa o PRIMEIRO sair
+    garantido. Ver passivas.critico_garantido -- essa função stateless não
+    sabe (nem pode saber) se o combatente já usou o dele nesta luta."""
+    forcado = passivas.critico_garantido(c.jogador, luta.rodada) and not c.sangue_frio_disparado
+    if forcado:
+        c.sangue_frio_disparado = True
+    return forcado
+
+
+def _rolar_ataque_normal(luta, c, atk, defesa, critico):
+    """Mesmo golpe normal de sempre (H["calcular_dano"]), só que passando
+    as duas passivas de crítico do Ladino -- Sangue Frio força o primeiro
+    golpe da rodada 1, Olho de Águia aumenta o multiplicador quando critica.
+    Duplicado como dois pontos de chamada em Luta (rodada normal e
+    on_timeout) -- ver decisoes.md § Step 2a pra não deixar só um mudado."""
+    forcado = _rolar_critico(luta, c)
+    return H["calcular_dano"](
+        atk, defesa, critico,
+        critico_forcado=forcado,
+        multiplicador_critico_extra=passivas.multiplicador_critico(c.jogador),
+    )
+
+
+def _rolar_dano_habilidade(luta, c, multiplicador, critico_extra=0.0):
     """Dano bruto de uma skill: mesma variação (±15%) e crítico de um golpe
     normal, sobre a MESMA base do ataque normal (atributo + atk da arma) —
     é isso que faz o multiplicador ser literalmente "quantos ataques
@@ -850,13 +884,14 @@ def _rolar_dano_habilidade(c, multiplicador, critico_extra=0.0):
     decisoes.md § Dano de skill abaixo do ataque básico."""
     base = hab.poder_base(c.jogador, _bonus_arma_de(c)) * multiplicador * _multiplicador_afinidade(c)
     bruto = base * random.uniform(0.85, 1.15)
-    if random.random() < (c.s["critico"] + critico_extra):
-        bruto *= at.MULTIPLICADOR_CRITICO
+    foi_critico = _rolar_critico(luta, c) or random.random() < (c.s["critico"] + critico_extra)
+    if foi_critico:
+        bruto *= at.MULTIPLICADOR_CRITICO * passivas.multiplicador_critico(c.jogador)
     return bruto
 
 
 def _efeito_dardo_arcano(luta, c, dados):
-    dano = max(1, int(_rolar_dano_habilidade(c, MULTIPLICADOR_DARDO_ARCANO) * _fator_elemento_arma(luta, c)))
+    dano = max(1, int(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_DARDO_ARCANO) * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
@@ -874,7 +909,7 @@ def _efeito_ruptura(luta, c, dados):
 
 
 def _efeito_golpe_aberto(luta, c, dados):
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -919,7 +954,7 @@ def _efeito_corte_rapido(luta, c, dados):
     total = 0
     for _ in range(2):
         dano = at.aplicar_defesa(
-            _rolar_dano_habilidade(c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
+            _rolar_dano_habilidade(luta, c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
             luta.chefe["def"],
         )
         dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
@@ -957,6 +992,34 @@ def _efeito_voto_de_ferro(luta, c, dados):
         )
 
 
+def _efeito_golpe_fatal(luta, c, dados):
+    """Assassino: escala com o quanto o CHEFE já perdeu de HP -- 1.2x com
+    o alvo cheio, até 2.5x (MULTIPLICADOR_GOLPE_FATAL_BASE +
+    BONUS_GOLPE_FATAL_EXECUCAO) com o alvo perto de 0. Aplica defesa
+    normalmente, ao contrário de Flecha Perfurante logo abaixo."""
+    fracao_perdida = 1 - max(0, luta.hp_chefe) / luta.hp_chefe_max
+    multiplicador = MULTIPLICADOR_GOLPE_FATAL_BASE + BONUS_GOLPE_FATAL_EXECUCAO * fracao_perdida
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano.")
+    _talvez_condicionar_chefe(luta, c)
+
+
+def _efeito_flecha_perfurante(luta, c, dados):
+    """Arqueiro: mesmo caminho do Dardo Arcano -- ignora a defesa do chefe."""
+    dano = max(1, int(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_FLECHA_PERFURANTE) * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(
+        f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano, ignorando a defesa."
+    )
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -966,6 +1029,8 @@ EFEITOS_HABILIDADE = {
     "ponto_cego": _efeito_ponto_cego,
     "palavra_de_alento": _efeito_palavra_de_alento,
     "voto_de_ferro": _efeito_voto_de_ferro,
+    "golpe_fatal": _efeito_golpe_fatal,
+    "flecha_perfurante": _efeito_flecha_perfurante,
 }
 
 
@@ -1211,8 +1276,8 @@ class PainelLuta(discord.ui.View):
                     luta.registrar(f"🌪️ {c.nome} erra o golpe — o vento desvia.")
                     continue
                 critico_extra = condicoes.bonus_critico(luta, c.id)
-                dano, critico = H["calcular_dano"](
-                    c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                dano, critico = _rolar_ataque_normal(
+                    luta, c, c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                 dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
@@ -1323,8 +1388,8 @@ class PainelLuta(discord.ui.View):
                             luta.registrar(f"🌪️ {c.nome} erra o golpe — o vento desvia.")
                             continue
                         critico_extra = condicoes.bonus_critico(luta, c.id)
-                        dano, critico = H["calcular_dano"](
-                            c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                        dano, critico = _rolar_ataque_normal(
+                            luta, c, c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
                         )
                         dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                         dano = max(1, int(dano * _fator_elemento_arma(luta, c)))

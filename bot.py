@@ -372,12 +372,17 @@ def barra_hp(atual, maximo, tamanho=12):
     return "█" * cheio + "░" * (tamanho - cheio)
 
 
-def calcular_dano(atk, defesa, critico=at.CRITICO_BASE):
-    """Devolve (dano, foi_critico) — o booleano importa pra Fúria do Guerreiro."""
+def calcular_dano(atk, defesa, critico=at.CRITICO_BASE, critico_forcado=False, multiplicador_critico_extra=1.0):
+    """Devolve (dano, foi_critico) — o booleano importa pra Fúria do
+    Guerreiro. critico_forcado ignora a rolagem (Sangue Frio, ver
+    passivas.py); multiplicador_critico_extra é um fator adicional sobre
+    at.MULTIPLICADOR_CRITICO quando o golpe critica (Olho de Águia) — 1.0
+    não muda nada, reproduzindo o comportamento de sempre pra caçada/
+    exploração e qualquer chamada que não passe os dois parâmetros novos."""
     bruto = atk * random.uniform(0.85, 1.15)
-    foi_critico = random.random() < critico
+    foi_critico = critico_forcado or random.random() < critico
     if foi_critico:
-        bruto *= at.MULTIPLICADOR_CRITICO
+        bruto *= at.MULTIPLICADOR_CRITICO * multiplicador_critico_extra
     return at.aplicar_defesa(bruto, defesa), foi_critico
 
 
@@ -1856,6 +1861,8 @@ def embed_info_classe(chave, pronome=None, nivel_jogador=None):
         if "requisito" in skill:
             atributo, minimo = skill["requisito"]
             requisito = f" (requer {minimo} {at.ATRIBUTOS[atributo]['sigla']})"
+        elif skill.get("ascensao"):
+            requisito = f" (requer ascensão: {ASCENSOES[skill['ascensao']]['nome']})"
         e.add_field(
             name=f"{skill['emoji']} {skill['nome']} — {skill['custo']} "
                  f"{hab.NOME_RECURSO[skill['recurso']]}{requisito}",
