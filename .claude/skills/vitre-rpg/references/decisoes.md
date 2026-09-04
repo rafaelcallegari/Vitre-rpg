@@ -5990,3 +5990,61 @@ defesa). Três ramos, uma passiva cada. Suíte verde nos três commits,
 cada um validado revertendo separadamente. A tabela de medição do
 Ladino e a correção de `balanceamento.md` ficam em commits próprios,
 abaixo.
+
+## Step 2d — o Orador (monge, clérigo, paladino)
+
+Última classe do pacote de ascensões (Step 2). Mesmo critério de
+calibragem do Mago/Guerreiro: 2.0 nominal + efeito, COM
+`at.aplicar_defesa`. Três ramos, uma passiva cada. O kit BASE do Orador
+já é cura e proteção (Palavra de Alento, Voto de Ferro), e os dois já
+travam em teto (`reducao_cura_recebida` 0.8, `reducao_dano_recebido`
+0.5) — nenhum dos três ramos deste step é "curar/proteger mais", porque
+esbarraria nesses tetos sem acrescentar nada de novo. Os três exploram
+mecânica que ainda não existia: alvo do próprio atributo trocado
+(Monge), ressuscitar (Clérigo), refletir/absorver dano (Paladino).
+
+### Commit 1 — o motor de solo vs party
+
+**Achado antes de escrever qualquer coisa**: o sistema já existia.
+`Luta.em_party` já era uma `@property` que devolvia `len(self.
+participantes) > 1` — e `self.participantes` nunca é mutado depois do
+`__init__` (nenhum `append`/`remove` em lugar nenhum do código, só
+`self.ativos`, uma property SEPARADA, filtra por `c.ativo` sem tocar na
+lista original). Ou seja, o VALOR já era fixo desde sempre, por
+`participantes` ser efetivamente imutável na prática — só não era fixo
+por CONSTRUÇÃO, era fixo por ninguém ainda ter escrito código que lesse
+a coisa errada.
+
+Isso já bastava pras três regras do cartão (decidido uma vez, party que
+cai pra 1 continua party, solo nunca vira party) — não tinha bug pra
+corrigir. O que mudou foi só a FORMA: `em_party` virou atributo comum,
+calculado uma vez em `__init__` (`self.em_party = len(combatentes) >
+1`) em vez de recalculado a cada leitura. Puramente defensivo — o
+Clérigo (commit 3) é o primeiro código do jogo que MEXE em quem está
+`ativo` no meio de uma luta (ressuscitar tira alguém de `caiu=True`,
+Represália e Juramento não, mas mudam MUITO o padrão de dano recebido);
+um `@property` calculado de `len(self.ativos)` por engano — em vez de
+`len(self.participantes)` — teria dado o resultado ERRADO (uma party
+que perde todo mundo menos o clérigo "viraria" solo no meio da luta) e
+ninguém notaria até acontecer numa mesa de verdade. Atributo congelado
+não deixa essa classe de bug existir, nem hoje nem se alguém mexer
+aqui de novo depois.
+
+### Testes
+
+`tests/test_solo_vs_party.py`, 4 testes: solo é `em_party=False`, dois
+ou mais é `True`; party de 3 que cai pra 1 sobrevivente continua
+`True` (o caso que o cartão pediu); e um teste que muta
+`luta.participantes` depois da criação pra provar que `em_party` NÃO
+reage — trava o "nunca mais reconsultado" explicitamente, não só por
+inferência dos outros testes.
+
+Validado revertendo: trocando o atributo congelado de volta por uma
+`@property` que calcula `len(self.ativos) > 1` (o bug que o cartão
+avisou pra não cometer), caem exatamente os dois testes que dependem
+do congelamento — o de "party cai pra 1" e o de "não reconsulta". Os
+dois testes de contagem simples (`solo` / `dois ou mais`) continuam
+passando porque, no momento em que são checados, `ativos` e
+`participantes` ainda coincidem — só divergem depois que alguém cai,
+exatamente o cenário que os dois testes que caem cobrem. Suíte
+completa: 596 (592 de antes + 4 novos), 595 passando + 1 xfail antigo.

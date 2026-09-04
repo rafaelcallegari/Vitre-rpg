@@ -375,6 +375,17 @@ class Luta:
         self.condicoes = []   # ver condicoes.py — sangramento, confusão, elementos etc.
         self.elementos_aplicados_rodada = set()  # teto de 1 aplicação por elemento, por rodada
         self.log = []
+        # solo vs party é decidido AQUI, uma vez, e nunca mais reconsultado --
+        # ver decisoes.md § Step 2d (motor de solo vs party). Antes era uma
+        # @property recalculada de `len(self.participantes)` a cada leitura;
+        # `self.participantes` nunca muda depois do __init__ (ninguém dá
+        # append/remove nele -- só `self.ativos`, abaixo, encolhe), então o
+        # VALOR já era fixo na prática -- virou atributo congelado pra ficar
+        # fixo por CONSTRUÇÃO, não por coincidência de ninguém ter mutado a
+        # lista errada ainda. Uma party que perde todo mundo menos um
+        # continua party (o combatente que sobrou vê `em_party` True o jogo
+        # inteiro); uma luta solo nunca vira party no meio.
+        self.em_party = len(combatentes) > 1
 
     @property
     def ativos(self):
@@ -384,10 +395,6 @@ class Luta:
     def desfalque(self):
         """Quantos companheiros a party perdeu — facilita a fuga de quem ficou."""
         return len(self.participantes) - len(self.ativos)
-
-    @property
-    def em_party(self):
-        return len(self.participantes) > 1
 
     def por_id(self, user_id):
         return next((c for c in self.participantes if c.id == user_id), None)
