@@ -97,8 +97,12 @@ MULTIPLICADOR_CORTE_RAPIDO = 1.35    # dano puro, por golpe — 2 golpes = 2.7 n
 # skills de ascensão do Ladino (Step 2a) -- mesma base do ataque normal que
 # as acima, ver decisoes.md § Dano de skill abaixo do ataque básico.
 MULTIPLICADOR_GOLPE_FATAL_BASE = 1.2      # alvo com HP cheio
-BONUS_GOLPE_FATAL_EXECUCAO = 1.3          # + até isso, conforme o alvo perde HP -- teto 2.5 com o alvo a 0
-MULTIPLICADOR_FLECHA_PERFURANTE = 1.8     # dano puro, ignora defesa (igual Dardo Arcano)
+BONUS_GOLPE_FATAL_EXECUCAO = 2.0          # + até isso, conforme o alvo perde HP -- teto 3.2 com o alvo a 0
+                                           # (era 1.3/teto 2.5 -- medido por Monte Carlo abaixo do Corte
+                                           # Rápido em qualquer andar, ver decisoes.md § Ajustes do Ladino)
+MULTIPLICADOR_FLECHA_PERFURANTE = 1.8     # dano puro, ignora defesa (igual Dardo Arcano) -- NÃO mudou:
+                                           # medido já competitivo com o Corte Rápido a partir do andar 9 e
+                                           # dominante no 15, subir mais viraria a skill mais forte do jogo
 
 # skills de ascensão do Mago (Step 2b) -- calibragem ACIMA da régua de
 # propósito: 2.0 (nominal igual ao Dardo Arcano) + o efeito, e as três
@@ -1099,7 +1103,7 @@ def _efeito_voto_de_ferro(luta, c, dados):
 
 def _efeito_golpe_fatal(luta, c, dados):
     """Assassino: escala com o quanto o CHEFE já perdeu de HP -- 1.2x com
-    o alvo cheio, até 2.5x (MULTIPLICADOR_GOLPE_FATAL_BASE +
+    o alvo cheio, até 3.2x (MULTIPLICADOR_GOLPE_FATAL_BASE +
     BONUS_GOLPE_FATAL_EXECUCAO) com o alvo perto de 0. Aplica defesa
     normalmente, ao contrário de Flecha Perfurante logo abaixo."""
     fracao_perdida = 1 - max(0, luta.hp_chefe) / luta.hp_chefe_max

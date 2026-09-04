@@ -511,8 +511,50 @@ def test_corte_rapido_assimetria_de_defesa_com_dardo_arcano_diminuiu_mas_nao_sum
     assert razao > 0.45   # bem acima da razão antiga (~0.40 com o multiplicador 1.0) -- diminuiu
 
 
-def test_golpe_fatal_e_flecha_perfurante_nao_mudaram():
-    """Regressão do Step 2a -- este ajuste mexe só no Corte Rápido."""
+def test_golpe_fatal_e_flecha_perfurante_nao_mudaram_neste_ajuste():
+    """Regressão do ajuste do Corte Rápido (Step 2c) -- aquele commit mexeu
+    só no Corte Rápido. BONUS_GOLPE_FATAL_EXECUCAO em 2.0 (não mais 1.3) é
+    o valor do ajuste SEGUINTE, medido por Monte Carlo -- ver
+    decisoes.md § Ajustes do Ladino (medição pós Step 2c)."""
     assert combate.MULTIPLICADOR_GOLPE_FATAL_BASE == 1.2
-    assert combate.BONUS_GOLPE_FATAL_EXECUCAO == 1.3
+    assert combate.BONUS_GOLPE_FATAL_EXECUCAO == 2.0
     assert combate.MULTIPLICADOR_FLECHA_PERFURANTE == 1.8
+
+
+# ==================================================================
+# Ajuste pós Step 2c -- medido por Monte Carlo (ver decisoes.md § Ajustes
+# do Ladino): Golpe Fatal ficava abaixo do Corte Rápido em QUALQUER andar,
+# mesmo no teto (alvo quase morto) -- BONUS_GOLPE_FATAL_EXECUCAO subiu de
+# 1.3 pra 2.0 (teto 2.5 -> 3.2). Flecha Perfurante NÃO mudou -- já media
+# competitiva a partir do andar 9 e dominante no 15; subir mais a
+# deixaria a skill mais forte do jogo, o que o cartão pediu pra evitar.
+# ==================================================================
+
+def test_golpe_fatal_no_teto_agora_supera_o_corte_rapido(monkeypatch):
+    """O motivo do ajuste: antes (BONUS=1.3, teto 2.5x) Golpe Fatal com o
+    alvo quase morto AINDA perdia pro Corte Rápido -- agora (teto 3.2x)
+    passa a ganhar. Mesmo personagem (mesma força de base, mesma classe)
+    pros dois, pra comparar maçã com maçã."""
+    _sem_variancia(monkeypatch)
+    c = _combatente(1, classe="ladino", destreza=20, ascensao="assassino")
+    dados_gf = game_data.HABILIDADES["golpe_fatal"]
+    dados_cr = game_data.HABILIDADES["corte_rapido"]
+    chefe_sem_def = {**CHEFE_TESTE, "def": 0}
+
+    luta_gf = combate.Luta([c], chefe_sem_def, andar_num=1)
+    luta_gf.rodada = 2   # fora da rodada 1 -- não entra o Sangue Frio, só o formato do golpe
+    luta_gf.hp_chefe = 1   # alvo quase morto -- teto do multiplicador
+    hp_antes = luta_gf.hp_chefe
+    combate._efeito_golpe_fatal(luta_gf, c, dados_gf)
+    dano_gf_teto = hp_antes - luta_gf.hp_chefe
+
+    luta_cr = combate.Luta([c], chefe_sem_def, andar_num=1)
+    luta_cr.rodada = 2   # mesmo motivo -- c já é assassino, sem isso o Sangue Frio contaminaria a comparação
+    combate._efeito_corte_rapido(luta_cr, c, dados_cr)
+    dano_cr = luta_cr.hp_chefe_max - luta_cr.hp_chefe
+
+    assert dano_gf_teto > dano_cr
+
+
+def test_golpe_fatal_teto_do_multiplicador_e_3_2():
+    assert combate.MULTIPLICADOR_GOLPE_FATAL_BASE + combate.BONUS_GOLPE_FATAL_EXECUCAO == pytest.approx(3.2)

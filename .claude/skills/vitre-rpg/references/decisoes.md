@@ -5409,6 +5409,98 @@ consistência entre os dois hits, propositalmente separado do teste que
 prende o número). Suíte completa: 528 (525 de antes + 3 novos), 527
 passando + 1 xfail antigo.
 
+### Medição pós Step 2c — Golpe Fatal e Flecha Perfurante contra o Corte Rápido
+
+Depois do ajuste do Corte Rápido (acima) e do Step 2c (Guerreiro), o
+Corte Rápido — que é a skill BASE do Ladino, não uma ascensão — ficou em
+~2,9 ataques básicos. As ascensões (Golpe Fatal 1,2–2,5x, Flecha
+Perfurante 1,8x nominal) nunca foram recalibradas depois desse buff.
+Como ascender é decisão IRREVERSÍVEL, uma ascensão que rende menos que a
+skill base que ela substitui é estritamente pior que não ascender —
+prioridade Alta.
+
+**Método**: mesma simulação Monte Carlo de decisoes.md § "Dano de skill
+abaixo do ataque básico" — personagem nível 14, destreza no máximo (44 =
+base 5 + 39 pontos livres), arma de cada tier de andar (adaga/andar 1,
+foice de bruma/andar 5, adaga do Selo/andar 9 — reusada no andar 15
+também, o Ladino não tem tier de loja novo depois do 9), 20.000
+repetições por linha, dano médio já passando por defesa onde a skill
+passa. Golpe Fatal medido nos dois extremos do multiplicador (alvo do
+CHEFE cheio e quase morto) porque o multiplicador dele varia dentro de
+uma luta — não dá pra resumir num número só. Script em
+`medir_ladino.py` (scratchpad, não versionado — resultado é o que
+importa, não o script em si).
+
+**Antes** (Corte Rápido 1.35/golpe já vigente; Golpe Fatal e Flecha
+Perfurante ainda nos valores do Step 2a):
+
+| Andar | DEF chefe | Básico | Corte Rápido (razão) | Golpe Fatal cheio (razão) | Golpe Fatal baixo (razão) | Flecha Perfurante (razão) |
+|---|---|---|---|---|---|---|
+| 1 | 2 | 108,6 | 313,8 (**2,89**) | 130,2 (1,20) | 270,9 (2,49) | 203,3 (1,87) |
+| 5 | 17 | 106,6 | 308,6 (**2,89**) | 128,4 (1,20) | 268,4 (2,52) | 246,5 (2,31) |
+| 9 | 29 | 115,5 | 333,6 (**2,89**) | 138,9 (1,20) | 288,4 (2,50) | 317,4 (2,75) |
+| 15 | 59 | 80,1 | 232,9 (**2,91**) | 96,5 (1,20) | 201,5 (2,51) | 317,5 (**3,96**) |
+
+**Leitura**: Golpe Fatal fica ABAIXO do Corte Rápido em TODO andar,
+mesmo no teto (alvo do chefe quase morto — o melhor caso possível pra
+essa skill). Confirma a hipótese: skill que passa por `aplicar_defesa`
+comparada com outra que também passa — o fator de defesa se cancela na
+razão, então o resultado depende quase só do multiplicador nominal
+(2,5x nominal do teto sempre perde pra ~2,7x nominal do Corte Rápido, e
+ainda mais quando o bônus de crítico próprio do Corte Rápido soma por
+cima). Flecha Perfurante, ao contrário, IGNORA defesa — a razão dela
+cresce com o DEF do alvo (mesmo padrão do Dardo Arcano) porque o
+denominador (ataque básico) continua pagando defesa e o numerador não.
+No andar 1 ela perde pro Corte Rápido (1,87 < 2,89); no andar 9 (onde a
+maioria das lutas de late-game acontece) já quase empata (2,75); no
+andar 15 já é a skill mais forte da tabela inteira (3,96), sem
+precisar de ajuste nenhum.
+
+**Decisão — só o Golpe Fatal sobe**: `BONUS_GOLPE_FATAL_EXECUCAO` de
+`1.3` pra `2.0` (teto do multiplicador de 2,5x pra 3,2x;
+`MULTIPLICADOR_GOLPE_FATAL_BASE` continua 1,2x — a skill continua fraca
+com o alvo cheio, de propósito, é uma skill de execução). Flecha
+Perfurante **não muda** — subir ela também empilharia em cima de um
+3,96 que já é o maior número da tabela, exatamente o "virar a nova
+skill mais forte do jogo" que o cartão pediu pra evitar. A hipótese "pode
+ser que só um precise subir" (do cartão) se confirmou pelo dado, não por
+suposição.
+
+**Depois** (`BONUS_GOLPE_FATAL_EXECUCAO = 2.0`, mesma simulação, coluna
+nova é o Golpe Fatal no teto):
+
+| Andar | Corte Rápido (razão) | Golpe Fatal baixo — antes (razão) | Golpe Fatal baixo — depois (razão) |
+|---|---|---|---|
+| 1 | 2,89 | 2,49 | **3,19** |
+| 5 | 2,89 | 2,52 | **3,22** |
+| 9 | 2,89 | 2,50 | **3,20** |
+| 15 | 2,91 | 2,51 | **3,22** |
+
+Golpe Fatal no teto passa a superar o Corte Rápido em TODO andar
+testado, com folga suficiente pra sobrar depois do ruído de amostra
+(±15% de variação, crítico) — sem chegar nem perto do 3,96 da Flecha
+Perfurante no andar 15, então a Flecha continua sendo a skill mais forte
+do kit do Ladino, não o Golpe Fatal. `3.2` é ponto de partida pra
+playtest, não número final.
+
+### Testes
+
+`tests/test_ladino.py`, 2 testes novos: Golpe Fatal no teto (alvo do
+chefe a 1 de HP) supera o Corte Rápido — mesmo personagem pros dois
+(mesma classe, mesma força/destreza), `rodada = 2` nas duas lutas pra
+não deixar o Sangue Frio (o combatente é assassino) inflar só a medição
+do Corte Rápido com um crítico garantido que o Golpe Fatal, chamado
+primeiro, não teve; e o teto do multiplicador é exatamente 3,2. O teste
+de regressão do commit do Corte Rápido (`test_golpe_fatal_e_flecha_
+perfurante_nao_mudaram...`) foi atualizado pro valor novo, com nota
+explicando que ele documentava o commit ANTERIOR, não este.
+
+Validado revertendo: com `BONUS_GOLPE_FATAL_EXECUCAO` de volta a `1.3`,
+caem os dois testes novos mais o de regressão (que agora prende o valor
+`2.0`) — três no total, exatamente os que dependem desse número. Suíte
+completa: 591 (589 de antes, já com o Step 2c inteiro no ar, + 2
+novos), 591 passando + 1 xfail antigo.
+
 ## Step 2b — o Mago (gelo, fogo, raio)
 
 Três commits, um por ramo (HEAD `bad4f89`, suíte em 528). Cada um mexe numa
