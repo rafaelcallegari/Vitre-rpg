@@ -1,10 +1,10 @@
 # tests/test_passivas.py
-# Step 2a, commit 1: o motor genérico de passivas de ascensão. Nenhuma
-# passiva de verdade existe ainda (game_data.PASSIVAS está vazio e todo
-# ramo em ASCENSOES tem "passivas": []) -- as quatro consultas têm que
-# devolver o valor neutro em qualquer cenário possível: sem ascensão, com
-# ascensão desconhecida (ramo removido do jogo) e com ascensão válida mas
-# sem essa passiva específica ainda. Ver decisoes.md § Step 2a.
+# Step 2a, commit 1: o motor genérico de passivas de ascensão. Cada
+# consulta nova de cartões seguintes (Step 2b, 2c...) entra em
+# `_assert_neutro` -- ela precisa devolver o valor neutro em qualquer
+# cenário possível: sem ascensão, com ascensão desconhecida (ramo removido
+# do jogo) e com ascensão válida mas sem essa passiva específica ainda.
+# Ver decisoes.md § Step 2a.
 import database as db
 import game_data
 import passivas
@@ -22,9 +22,13 @@ def _assert_neutro(j):
     assert passivas.multiplicador_critico(j) == 1.0
     assert passivas.bonus_moedas(j) == 0.0
     assert passivas.bonus_material(j) == 0.0
+    assert passivas.bonus_duracao_travamento(j) == 0
+    assert passivas.empilha_brasa(j) is False
+    assert passivas.chance_erro_carregado(j) == 0.0
+    assert passivas.bonus_reducao_dano(j) == 0.0
 
 
-def test_ascensao_null_devolve_neutro_nas_quatro_consultas():
+def test_ascensao_null_devolve_neutro_em_todas_as_consultas():
     _assert_neutro(_jogador())
 
 
@@ -37,18 +41,18 @@ def test_ascensao_desconhecida_nao_quebra_e_devolve_neutro():
 
 
 def test_ascensao_valida_sem_passiva_de_verdade_ainda_devolve_neutro():
-    """soldado é um ramo válido em ASCENSOES, mas não tem skill/passiva de
-    verdade até seu próprio cartão -- não pode falhar por isso."""
-    _assert_neutro(_jogador(ascensao="soldado"))
+    """mercenario é um ramo válido em ASCENSOES, mas não tem skill/passiva
+    de verdade até seu próprio cartão -- não pode falhar por isso."""
+    _assert_neutro(_jogador(ascensao="mercenario"))
 
 
 def test_ramos_sem_conteudo_de_verdade_continuam_neutros():
     """Motor genérico: os ramos que ainda não tiveram cartão próprio (Step
-    2a fez o Ladino; Step 2b fez os 3 ramos do Mago) continuam sem
-    skill/passiva -- Guerreiro e Orador seguem na fila."""
-    tem_conteudo = {"assassino", "arqueiro", "mago_gelo", "mago_fogo", "mago_raio"}
+    2a fez o Ladino; Step 2b fez os 3 ramos do Mago; Step 2c fez o Soldado
+    no commit 1) continuam sem skill/passiva."""
+    tem_conteudo = {"assassino", "arqueiro", "mago_gelo", "mago_fogo", "mago_raio", "soldado"}
     sem_conteudo = set(game_data.ASCENSOES) - tem_conteudo
-    assert len(sem_conteudo) == 6
+    assert len(sem_conteudo) == 5
     for chave in sem_conteudo:
         assert game_data.ASCENSOES[chave]["skill"] is None, chave
         assert game_data.ASCENSOES[chave]["passivas"] == [], chave

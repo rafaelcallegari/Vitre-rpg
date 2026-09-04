@@ -5706,3 +5706,73 @@ provar o miss acontecendo; os outros 4 do Reflexos testam fronteira
 morto continua morto) e continuam verdadeiros mesmo com a passiva
 zerada, então corretamente não caem. Suíte completa: 558 (556 de antes,
 -3 velhos +5 novos), 557 passando + 1 xfail antigo.
+
+## Step 2c — o Guerreiro + ajuste do Ladino
+
+Mesmo critério de calibragem do Mago (Step 2b): as três skills de ascensão
+valem 2.0 nominal + o efeito, COM `at.aplicar_defesa` — nenhuma ignora
+defesa. Três ramos, uma passiva cada (o Ladino continua sendo a exceção
+com duas, decisão do Step 2a).
+
+**Restrição de desenho que vale pro Guerreiro inteiro**: Fúria nasce em 0
+e só sobe com `ganhar_furia`/`ganhar_furia_defesa` (dano causado/
+recebido) — o Guerreiro nunca abre a luta com skill. Isso descartou de
+cara qualquer ideia de "primeiro golpe grátis" pro Guerreiro (o
+equivalente ao Sangue Frio do assassino não existe aqui, e não é
+esquecimento).
+
+### Commit 1 — Soldado: Muralha de Escudos + Disciplina
+
+**Muralha de Escudos** (`MULTIPLICADOR_MURALHA_DE_ESCUDOS = 2.0`, com
+defesa) usa o tipo `redireciona` de `condicoes.py` — que já existia,
+já era testado (`condicoes.alvo_forcado`), e não tinha NENHUM usuário no
+jogo até este commit. `alvo_forcado` já ignorava combatente inativo
+(proteção que já vinha de graça). Nenhum tipo novo precisou entrar em
+`condicoes.py`.
+
+`redireciona` é consultada (não tem tick próprio) → regra N+1 de novo:
+"2 rodadas" prometidas vira `duracao=3` guardada
+(`DURACAO_MURALHA_RODADAS = 2`, +1 da regra). A `reduz_dano` que a skill
+também aplica em si mesma usa a MESMA duração — "enquanto durar" no texto
+da skill significa literalmente a mesma variável, não dois números que
+podem divergir se alguém ajustar um e esquecer o outro.
+
+**Disciplina** é PERMANENTE — ao contrário de toda passiva anterior que
+mexe em `luta.condicoes`, Disciplina não é uma condição: é consultada
+direto em `passivas.bonus_reducao_dano(jogador)` e somada à redução das
+condições temporárias (Muralha, Voto de Ferro) num ponto novo,
+`combate._reducao_dano_total(luta, combatente)`, que aplica o teto de 0.5
+no TOTAL combinado — `condicoes.reducao_dano_recebido` sozinha só sabia
+somar as condições, nunca uma passiva permanente. Os dois pontos de
+`Luta.turno_do_chefe` que multiplicavam dano recebido por `(1 -
+condicoes.reducao_dano_recebido(...))` passaram a chamar
+`_reducao_dano_total` no lugar.
+
+Valores escolhidos pra Disciplina (0.15) e Muralha (0.20) não encostam no
+teto sozinhos nem somados (0.35) — Disciplina continua sendo sentida
+mesmo com Muralha ativa. Empilhados com Voto de Ferro do orador (0.20) a
+soma bruta é 0.55, ACIMA do teto — testado de propósito nesse ponto
+específico, pra provar que o `min(0.5, ...)` está realmente cortando
+algo, não só coincidindo com uma soma que já ficaria baixa sozinha.
+
+### Testes
+
+`tests/test_soldado.py`, 10 testes: gate de ascensão; dano aplica defesa;
+`redireciona` trava o chefe em cima do soldado por 2 rodadas (contado em
+ticks, filtrando por `tipo` porque a condição de redireciona e a de
+reduz_dano compartilham o mesmo `nome` — usar só o nome pra contar
+ambiguaria qual das duas está sendo medida, mesmo elas expirando juntas);
+`condicoes.alvo_forcado` aponta pro soldado de verdade durante a duração
+(prova o caminho real, não só que a condição existe); a redução some
+junto com o redirecionamento; Disciplina reduz sem precisar de condição
+nenhuma; sem Disciplina a redução total é só a das condições; os três
+juntos (Muralha + Voto de Ferro + Disciplina) somam 0.55 mas o total
+fica travado em 0.5.
+
+Validado revertendo: tirando `passivas.bonus_reducao_dano` de
+`_reducao_dano_total` (Disciplina parando de somar), caem exatamente os
+dois testes que dependem dela —
+`test_disciplina_reduz_dano_permanentemente_sem_precisar_de_condicao` e
+`test_muralha_mais_voto_de_ferro_mais_disciplina_nao_passa_de_50_por_cento`.
+Suíte completa: 568 (558 de antes + 10 novos), 567 passando + 1 xfail
+antigo.

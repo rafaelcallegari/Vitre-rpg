@@ -553,7 +553,7 @@ ASCENSOES = {
     "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "prisao_de_cristal", "passivas": ["inverno_constante"]},
     "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "conflagracao", "passivas": ["combustao"]},
     "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "interrupcao", "passivas": ["reflexos"]},
-    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "muralha_de_escudos", "passivas": ["disciplina"]},
     "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_fatal", "passivas": ["sangue_frio", "instinto_ladino"]},
@@ -605,6 +605,11 @@ PASSIVAS = {
         "nome": "Reflexos", "emoji": "⚡",
         "desc": "35% de chance de escapar ileso quando o chefe solta o golpe carregado.",
         "valor": 0.35,   # CHANCE_ERRO_REFLEXOS -- ponto de partida pra playtest
+    },
+    "disciplina": {
+        "nome": "Disciplina", "emoji": "🛡️",
+        "desc": "Reduz permanentemente o dano que você recebe -- soma com Muralha de Escudos e Voto de Ferro, teto de 50% pro total.",
+        "valor": 0.15,
     },
 }
 
@@ -728,6 +733,11 @@ HABILIDADES = {
         "nome": "Interrupção", "emoji": "🔌", "classe": "mago",
         "recurso": "mana", "custo": 18, "ascensao": "mago_raio",
         "desc": "Dano em INT que passa pela defesa do chefe -- se ele estiver carregando um golpe, cancela a carga.",
+    },
+    "muralha_de_escudos": {
+        "nome": "Muralha de Escudos", "emoji": "🛡️", "classe": "guerreiro",
+        "recurso": "furia", "custo": 50, "ascensao": "soldado",
+        "desc": "Dano em FOR que passa pela defesa do chefe -- força o chefe a te atacar por 2 rodadas e reduz o dano que você recebe enquanto isso.",
     },
 }
 

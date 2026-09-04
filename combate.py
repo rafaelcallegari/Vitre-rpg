@@ -114,9 +114,26 @@ MAX_STACKS_BRASA = 3                       # só empilha com Combustão (Step 2b
 MULTIPLICADOR_INTERRUPCAO = 2.0            # dano igual às outras duas -- cancelar a carga é bônus condicional,
                                             # não vale mais nominal por isso (ver decisoes.md § Step 2b)
 
+# skills de ascensão do Guerreiro (Step 2c) -- mesmo critério do Mago:
+# 2.0 nominal + o efeito, COM at.aplicar_defesa. Ver decisoes.md § Step 2c.
+MULTIPLICADOR_MURALHA_DE_ESCUDOS = 2.0
+REDUCAO_MURALHA_DE_ESCUDOS = 0.20          # temporária, enquanto o redirecionamento durar -- soma com
+                                            # Disciplina (permanente) e Voto de Ferro, teto 0.5 pro total
+DURACAO_MURALHA_RODADAS = 2                # N rodadas de redirecionamento -- regra N+1 (ver comentário
+                                            # "Duração de condições" logo acima de _multiplicador_afinidade)
+
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
 COR_SALA = 0xA8DADC
+
+
+def _reducao_dano_total(luta, combatente):
+    """Some a redução de dano das condições temporárias (Muralha de
+    Escudos, Voto de Ferro -- condicoes.reducao_dano_recebido) com a
+    passiva PERMANENTE do soldado (Disciplina, passivas.bonus_reducao_
+    dano) -- o teto de 0.5 vale pro TOTAL combinado, não só pras
+    condições sozinhas. Ver decisoes.md § Step 2c."""
+    return min(0.5, condicoes.reducao_dano_recebido(luta, combatente.id) + passivas.bonus_reducao_dano(combatente.jogador))
 
 
 def penetracao_do_andar(andar_num, carregado=False):
@@ -453,7 +470,7 @@ class Luta:
                         defendendo=c.defendendo, carregado=True,
                     )
                     dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
-                    dano = max(1, int(dano * (1 - condicoes.reducao_dano_recebido(self, c.id))))
+                    dano = max(1, int(dano * (1 - _reducao_dano_total(self, c))))
                     c.hp -= dano
                     aparou = " (aparou)" if c.defendendo else ""
                     self.registrar(f"· {c.nome} toma **{dano}**{aparou}")
@@ -474,7 +491,7 @@ class Luta:
                         self.chefe, alvo.s, self.andar_num, defendendo=alvo.defendendo
                     )
                     dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
-                    dano = max(1, int(dano * (1 - condicoes.reducao_dano_recebido(self, alvo.id))))
+                    dano = max(1, int(dano * (1 - _reducao_dano_total(self, alvo))))
                     alvo.hp -= dano
                     self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano} de dano")
                     if alvo.hp <= 0:
@@ -1165,6 +1182,30 @@ def _efeito_interrupcao(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_muralha_de_escudos(luta, c, dados):
+    """Soldado: dano em cima da MESMA base do ataque normal (com defesa,
+    ver decisoes.md § Step 2c) + `redireciona` (o chefe é obrigado a
+    atacar c -- condicoes.alvo_forcado já existe e não tinha usuário
+    nenhum no jogo) + `reduz_dano` em c, os dois por
+    DURACAO_MURALHA_RODADAS (2), regra N+1 (duracao=3)."""
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_MURALHA_DE_ESCUDOS), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} ergue **{dados['nome']}** — {dano} de dano.")
+    duracao = DURACAO_MURALHA_RODADAS + 1
+    condicoes.aplicar(
+        luta, "chefe", "redireciona", dados["nome"], dados["emoji"],
+        duracao=duracao, valor=c.id, origem=c.id,
+    )
+    condicoes.aplicar(
+        luta, c.id, "reduz_dano", dados["nome"], dados["emoji"],
+        duracao=duracao, valor=REDUCAO_MURALHA_DE_ESCUDOS, origem=c.id,
+    )
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1179,6 +1220,7 @@ EFEITOS_HABILIDADE = {
     "prisao_de_cristal": _efeito_prisao_de_cristal,
     "conflagracao": _efeito_conflagracao,
     "interrupcao": _efeito_interrupcao,
+    "muralha_de_escudos": _efeito_muralha_de_escudos,
 }
 
 

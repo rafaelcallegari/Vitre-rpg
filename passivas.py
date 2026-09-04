@@ -99,3 +99,13 @@ def chance_erro_carregado(jogador):
     if _tem_passiva(jogador, "reflexos"):
         return PASSIVAS["reflexos"]["valor"]
     return 0.0
+
+
+def bonus_reducao_dano(jogador):
+    """Disciplina (soldado): fração ADICIONAL e PERMANENTE de redução de
+    dano recebido -- soma com as condições temporárias (Muralha de
+    Escudos, Voto de Ferro), teto de 0.5 pro total combinado (ver
+    combate._reducao_dano_total). 0.0 = nenhuma passiva mexe nisso."""
+    if _tem_passiva(jogador, "disciplina"):
+        return PASSIVAS["disciplina"]["valor"]
+    return 0.0
