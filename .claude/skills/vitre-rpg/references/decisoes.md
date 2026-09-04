@@ -5378,6 +5378,15 @@ Corte Rápido, ou nas skills do Ladino em geral) — não mais um empurrão no
 multiplicador, que já fez sua parte razoável aqui sem virar `2.0`/golpe e
 apagar de vez a diferença de desenho com o Dardo Arcano.
 
+> **ATUALIZAÇÃO — Step 2c**: esse caminho foi tomado, só que pro
+> Espadachim, não pro Ladino — Fio da Lâmina (`passivas.
+> fracao_defesa_ignorada`, 25% de perfuração parcial) é exatamente essa
+> mecânica, ver § Step 2c abaixo. Se o Ladino ainda precisar de ajuste
+> depois da medição de Monte Carlo (mesma seção), a perfuração NÃO é
+> mais uma opção nova a "descobrir" — ela já está em uso em outro ramo, e
+> dar ela ao Ladino também exigiria decisão própria, não repetir o
+> raciocínio do zero achando que é ideia nova.
+
 ### Testes
 
 `tests/test_ladino.py`, 3 testes novos: o multiplicador vale nos DOIS
@@ -5823,3 +5832,69 @@ do_hp` e `test_desespero_acelera_ganhar_furia_defesa_abaixo_de_metade_
 do_hp` -- um por porta, confirmando que cada porta tem cobertura
 própria e nenhuma esconde a falta da outra. Suíte completa: 578 (568 de
 antes + 10 novos), 577 passando + 1 xfail antigo.
+
+### Commit 3 — Espadachim: Sequência + Fio da Lâmina
+
+**Sequência** é o `MULTIPLICADORES_SEQUENCIA = (0.5, 0.7, 0.8)` — uma
+tupla, não três constantes soltas, exatamente porque o cartão pediu "o
+número de golpes tem que sair da lista": o `for multiplicador in
+MULTIPLICADORES_SEQUENCIA:` dentro de `_efeito_sequencia` nem precisa
+saber que são 3 golpes, só itera o que a tupla tiver. Cada golpe chama
+`_rolar_dano_habilidade` a própria vez (mesmo padrão do Corte Rápido) —
+crítico separado por golpe, não um crítico só valendo pros três.
+
+**Fio da Lâmina** é a mudança de maior alcance do Step 2c: perfuração
+PARCIAL (nunca pula `at.aplicar_defesa`, só reduz a defesa ANTES dela) e
+precisa valer "no ataque normal E nas skills" — ou seja, em TODO ponto
+do motor que hoje passa `luta.chefe["def"]` pra `aplicar_defesa`. Isso
+é `_defesa_efetiva(luta, c) = luta.chefe["def"] * (1 -
+passivas.fracao_defesa_ignorada(c.jogador))`, uma função nova que
+substitui `luta.chefe["def"]` em **10 pontos** de `combate.py`: as 8
+skills de dano que já existiam (Golpe Aberto, Corte Rápido, Golpe
+Fatal, Prisão de Cristal, Conflagração, Interrupção, e as duas do
+próprio Step 2c — Muralha de Escudos, Golpe Oportunista) mais os 2
+pontos do ataque normal (`_rolar_ataque_normal`, chamado de
+`registrar_acao` e de `on_timeout`). `fracao_defesa_ignorada` devolvendo
+`0.0` pra quem não é espadachim reproduz `luta.chefe["def"]` sem
+NENHUMA mudança — é o que torna a retrofit inteira segura pra todo mundo
+que já existia antes desta skill.
+
+Essa é a mecânica que decisoes.md já tinha registrado como "o próximo
+passo se o Ladino seguir fraco" (ver § Ajustes do Ladino, Corte Rápido)
+— foi pro Espadachim aqui, não pro Ladino, e o parágrafo original ganhou
+uma nota apontando pra cá, pra ninguém propor a mesma coisa pro Ladino
+achando que é ideia nova.
+
+`0.25` (a fração ignorada) é ponto de partida pra playtest.
+
+### Testes
+
+`tests/test_espadachim.py`, 12 testes: gate de ascensão; dano aplica
+defesa; cada um dos 3 golpes usa o multiplicador certo da tupla (com
+defesa zero, isolando só o multiplicador); a soma da tupla é 2.0; os 3
+golpes rolam crítico separado (espiona quantas vezes `random.random` é
+chamado); `_defesa_efetiva` reduz 25% pra quem tem a passiva e devolve a
+defesa crua pra quem não tem; a passiva vale no ataque normal E numa
+skill que já existia ANTES do Espadachim (Golpe Aberto, prova a
+retrofit, não só a skill nova) — as duas comparações em `def=40`, de
+propósito ABAIXO do teto de redução (60%, alcançado a partir de 75 de
+defesa): em `def=100` os dois lados já bateriam no teto igual e a
+diferença de 25% desapareceria por coincidência, sem provar nada; e a
+perfuração é parcial, nunca zera a redução por completo (`def=1000`
+ainda reduz dano depois da perfuração).
+
+Validado revertendo: zerando `passivas.fracao_defesa_ignorada` (sempre
+`0.0`, até pra quem tem Fio da Lâmina), caem exatamente os 4 testes que
+dependem da passiva fazer alguma coisa -- os outros 8 (gate, dano básico,
+tupla, soma, crítico separado) continuam passando porque não dependem
+da perfuração. Suíte completa: 590 (578 de antes + 12 novos), 589
+passando + 1 xfail antigo.
+
+## DoD do Step 2c
+
+Calibragem: mesmo critério do Mago (2.0 nominal + efeito, COM
+`at.aplicar_defesa`, nenhuma skill de ascensão do Guerreiro ignora
+defesa). Três ramos, uma passiva cada. Suíte verde nos três commits,
+cada um validado revertendo separadamente. A tabela de medição do
+Ladino e a correção de `balanceamento.md` ficam em commits próprios,
+abaixo.

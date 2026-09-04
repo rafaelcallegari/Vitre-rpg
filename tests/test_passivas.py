@@ -27,6 +27,7 @@ def _assert_neutro(j):
     assert passivas.chance_erro_carregado(j) == 0.0
     assert passivas.bonus_reducao_dano(j) == 0.0
     assert passivas.multiplicador_furia_desespero(j, fracao_hp=0.1) == 1.0
+    assert passivas.fracao_defesa_ignorada(j) == 0.0
 
 
 def test_ascensao_null_devolve_neutro_em_todas_as_consultas():
@@ -42,18 +43,21 @@ def test_ascensao_desconhecida_nao_quebra_e_devolve_neutro():
 
 
 def test_ascensao_valida_sem_passiva_de_verdade_ainda_devolve_neutro():
-    """espadachim é um ramo válido em ASCENSOES, mas não tem skill/passiva
-    de verdade até seu próprio cartão -- não pode falhar por isso."""
-    _assert_neutro(_jogador(ascensao="espadachim"))
+    """monge é um ramo válido em ASCENSOES, mas não tem skill/passiva de
+    verdade até seu próprio cartão -- não pode falhar por isso."""
+    _assert_neutro(_jogador(ascensao="monge"))
 
 
 def test_ramos_sem_conteudo_de_verdade_continuam_neutros():
     """Motor genérico: os ramos que ainda não tiveram cartão próprio (Step
-    2a fez o Ladino; Step 2b fez os 3 ramos do Mago; Step 2c fez Soldado
-    e Mercenário) continuam sem skill/passiva."""
-    tem_conteudo = {"assassino", "arqueiro", "mago_gelo", "mago_fogo", "mago_raio", "soldado", "mercenario"}
+    2a fez o Ladino; Step 2b fez os 3 ramos do Mago; Step 2c fez os 3 do
+    Guerreiro) continuam sem skill/passiva -- só o Orador segue na fila."""
+    tem_conteudo = {
+        "assassino", "arqueiro", "mago_gelo", "mago_fogo", "mago_raio",
+        "soldado", "mercenario", "espadachim",
+    }
     sem_conteudo = set(game_data.ASCENSOES) - tem_conteudo
-    assert len(sem_conteudo) == 4
+    assert len(sem_conteudo) == 3
     for chave in sem_conteudo:
         assert game_data.ASCENSOES[chave]["skill"] is None, chave
         assert game_data.ASCENSOES[chave]["passivas"] == [], chave

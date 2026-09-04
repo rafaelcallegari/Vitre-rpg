@@ -121,3 +121,16 @@ def multiplicador_furia_desespero(jogador, fracao_hp):
     if _tem_passiva(jogador, "desespero") and fracao_hp <= 0.5:
         return PASSIVAS["desespero"]["valor"]
     return 1.0
+
+
+def fracao_defesa_ignorada(jogador):
+    """Fio da Lâmina (espadachim): fração da defesa do chefe que os
+    ataques do jogador ignoram -- 0.0 = nenhuma passiva mexe nisso. Vale
+    no ataque normal E em toda skill (ver combate._defesa_efetiva);
+    perfuração parcial, nunca pula `at.aplicar_defesa`, só reduz a defesa
+    ANTES dela. Ver decisoes.md § Ajustes do Ladino (Corte Rápido) pro
+    registro de que esse caminho foi reservado pro espadachim, não pro
+    ladino."""
+    if _tem_passiva(jogador, "fio_da_lamina"):
+        return PASSIVAS["fio_da_lamina"]["valor"]
+    return 0.0

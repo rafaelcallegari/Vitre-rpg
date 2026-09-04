@@ -125,6 +125,8 @@ MULTIPLICADOR_GOLPE_OPORTUNISTA = 2.0      # guerreiro com HP cheio
 BONUS_GOLPE_OPORTUNISTA = 1.0              # + até isso, conforme O PRÓPRIO GUERREIRO perde HP -- teto 3.0
                                             # com c em 1 de HP. Espelho do Golpe Fatal (Step 2a): aquele pune
                                             # o alvo ferido, este recompensa o guerreiro ferido.
+MULTIPLICADORES_SEQUENCIA = (0.5, 0.7, 0.8)   # 3 golpes, soma 2.0 -- cada um mais forte que o anterior,
+                                               # cada um rola crítico separado (mesmo padrão do Corte Rápido)
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -138,6 +140,17 @@ def _reducao_dano_total(luta, combatente):
     dano) -- o teto de 0.5 vale pro TOTAL combinado, não só pras
     condições sozinhas. Ver decisoes.md § Step 2c."""
     return min(0.5, condicoes.reducao_dano_recebido(luta, combatente.id) + passivas.bonus_reducao_dano(combatente.jogador))
+
+
+def _defesa_efetiva(luta, c):
+    """Fio da Lâmina (espadachim, Step 2c): reduz a defesa do chefe ANTES
+    de `at.aplicar_defesa` ver ela -- perfuração PARCIAL, nunca pula a
+    função (ao contrário de Dardo Arcano/Flecha Perfurante, que ignoram
+    defesa por inteiro e não chamam isto). 0.0 de passivas.fracao_defesa_
+    ignorada reproduz `luta.chefe["def"]` sem mudança nenhuma -- é por
+    isso que todo ponto de dano-com-defesa (ataque normal E toda skill)
+    pode chamar isto sem risco pra quem não é espadachim."""
+    return luta.chefe["def"] * (1 - passivas.fracao_defesa_ignorada(c.jogador))
 
 
 def penetracao_do_andar(andar_num, carregado=False):
@@ -1001,7 +1014,7 @@ def _efeito_ruptura(luta, c, dados):
 
 
 def _efeito_golpe_aberto(luta, c, dados):
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_GOLPE_ABERTO), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_GOLPE_ABERTO), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1047,7 +1060,7 @@ def _efeito_corte_rapido(luta, c, dados):
     for _ in range(2):
         dano = at.aplicar_defesa(
             _rolar_dano_habilidade(luta, c, MULTIPLICADOR_CORTE_RAPIDO, critico_extra=BONUS_CRITICO_CORTE_RAPIDO),
-            luta.chefe["def"],
+            _defesa_efetiva(luta, c),
         )
         dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
         dano = _aplicar_sombra(luta, c, dano)
@@ -1091,7 +1104,7 @@ def _efeito_golpe_fatal(luta, c, dados):
     normalmente, ao contrário de Flecha Perfurante logo abaixo."""
     fracao_perdida = 1 - max(0, luta.hp_chefe) / luta.hp_chefe_max
     multiplicador = MULTIPLICADOR_GOLPE_FATAL_BASE + BONUS_GOLPE_FATAL_EXECUCAO * fracao_perdida
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1117,7 +1130,7 @@ def _efeito_prisao_de_cristal(luta, c, dados):
     defesa, ao contrário do Dardo Arcano) + Travamento no chefe --
     TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS (1) rodada, regra N+1 (duracao=2)
     +passivas.bonus_duracao_travamento (Inverno Constante)."""
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_PRISAO_DE_CRISTAL), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_PRISAO_DE_CRISTAL), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1143,7 +1156,7 @@ def _efeito_conflagracao(luta, c, dados):
         if cond["tipo"] == "dano_por_rodada" and cond["nome"] == "Brasa" and cond["alvo"] == "chefe"
     ])
     multiplicador = MULTIPLICADOR_CONFLAGRACAO + BONUS_CONFLAGRACAO_POR_STACK * stacks_brasa
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1177,7 +1190,7 @@ def _efeito_interrupcao(luta, c, dados):
 
     Contra chefe que não está carregando, a skill é só dano -- reativa de
     propósito, sem efeito de consolação."""
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_INTERRUPCAO), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_INTERRUPCAO), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1198,7 +1211,7 @@ def _efeito_muralha_de_escudos(luta, c, dados):
     atacar c -- condicoes.alvo_forcado já existe e não tinha usuário
     nenhum no jogo) + `reduz_dano` em c, os dois por
     DURACAO_MURALHA_RODADAS (2), regra N+1 (duracao=3)."""
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_MURALHA_DE_ESCUDOS), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_MURALHA_DE_ESCUDOS), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
@@ -1224,13 +1237,36 @@ def _efeito_golpe_oportunista(luta, c, dados):
     BONUS_GOLPE_OPORTUNISTA) com c perto de 0. Aplica defesa normalmente."""
     fracao_perdida = 1 - max(0, c.hp) / c.s["hp_max"]
     multiplicador = MULTIPLICADOR_GOLPE_OPORTUNISTA + BONUS_GOLPE_OPORTUNISTA * fracao_perdida
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), _defesa_efetiva(luta, c))
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
     luta.hp_chefe -= dano
     luta.verificar_fase2()
     luta.registrar(f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano.")
     _talvez_condicionar_chefe(luta, c)
+
+
+def _efeito_sequencia(luta, c, dados):
+    """Espadachim: três golpes em cima da MESMA base do ataque normal (com
+    defesa), cada um mais forte que o anterior -- MULTIPLICADORES_
+    SEQUENCIA (0.5, 0.7, 0.8), soma 2.0. Cada golpe rola crítico separado,
+    mesmo padrão do Corte Rápido (_rolar_dano_habilidade chamada uma vez
+    por golpe, não uma vez só pra todos)."""
+    golpes = []
+    total = 0
+    for multiplicador in MULTIPLICADORES_SEQUENCIA:
+        dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), _defesa_efetiva(luta, c))
+        dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+        dano = _aplicar_sombra(luta, c, dano)
+        luta.hp_chefe -= dano
+        luta.verificar_fase2()
+        total += dano
+        golpes.append(str(dano))
+        _talvez_condicionar_chefe(luta, c)
+    luta.registrar(
+        f"{dados['emoji']} {c.nome} encadeia **{dados['nome']}** — "
+        f"{' + '.join(golpes)} = {total} de dano."
+    )
 
 
 EFEITOS_HABILIDADE = {
@@ -1249,6 +1285,7 @@ EFEITOS_HABILIDADE = {
     "interrupcao": _efeito_interrupcao,
     "muralha_de_escudos": _efeito_muralha_de_escudos,
     "golpe_oportunista": _efeito_golpe_oportunista,
+    "sequencia": _efeito_sequencia,
 }
 
 
@@ -1495,7 +1532,7 @@ class PainelLuta(discord.ui.View):
                     continue
                 critico_extra = condicoes.bonus_critico(luta, c.id)
                 dano, critico = _rolar_ataque_normal(
-                    luta, c, c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                    luta, c, c.s["atk"], _defesa_efetiva(luta, c), c.s["critico"] + critico_extra
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                 dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
@@ -1607,7 +1644,7 @@ class PainelLuta(discord.ui.View):
                             continue
                         critico_extra = condicoes.bonus_critico(luta, c.id)
                         dano, critico = _rolar_ataque_normal(
-                            luta, c, c.s["atk"], luta.chefe["def"], c.s["critico"] + critico_extra
+                            luta, c, c.s["atk"], _defesa_efetiva(luta, c), c.s["critico"] + critico_extra
                         )
                         dano = int(dano * condicoes.multiplicador_dano_causado(luta, "chefe"))
                         dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
