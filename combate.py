@@ -147,6 +147,14 @@ MULTIPLICADOR_CHAMA_DIVINA = 2.0           # versão solo de Graça Divina -- pu
 FRACAO_HP_REERGUER = 0.6                   # versão party de Graça Divina -- HP de quem é levantado
 LIMITE_REERGUER_POR_LUTA = 2               # total NA LUTA, não por aliado -- contador em Luta, não no jogador
 FRACAO_HP_AUTO_RESSURREICAO = 0.6          # auto-ressurreição do clérigo, só luta SOLO, uma vez por luta
+MULTIPLICADOR_REPRESALIA = 2.0             # skill do paladino -- dano puro + a condição abaixo
+FRACAO_REFLEXAO_REPRESALIA = 0.3           # fração do dano que o CHEFE toma de volta enquanto ativa
+DURACAO_REFLEXAO_REPRESALIA_RODADAS = 3    # N rodadas refletindo -- regra N+1 (ver comentário
+                                            # "Duração de condições" logo acima de _multiplicador_afinidade)
+FRACAO_ABSORCAO_JURAMENTO = 0.3            # passiva do paladino -- fração do dano de QUALQUER aliado
+                                            # (nunca do próprio paladino) transferida pra ele; TRANSFERÊNCIA,
+                                            # não redução -- não entra em _reducao_dano_total, não compete de
+                                            # teto com Disciplina/Voto de Ferro/Muralha de Escudos
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -220,6 +228,73 @@ def _pode_lancar_graca_divina(luta, combatente):
     if luta.reergueres_usados >= LIMITE_REERGUER_POR_LUTA:
         return False
     return any(outro.caiu for outro in luta.participantes)
+
+
+def _paladino_ativo(luta):
+    """Paladino ATIVO com Juramento -- None se não há paladino na luta ou
+    se o único já caiu (quem caiu não absorve nada). `passivas.
+    fracao_absorcao_aliado` só volta > 0 pra quem tem a passiva, então
+    isto nunca pega um combatente qualquer por engano."""
+    return next(
+        (c for c in luta.ativos if passivas.fracao_absorcao_aliado(c.jogador) > 0),
+        None,
+    )
+
+
+def _transferir_para_paladino(luta, alvo, dano):
+    """Juramento (paladino, passiva, Step 2d): fração FIXA do dano que
+    QUALQUER aliado -- nunca o próprio paladino -- vai tomar do chefe é
+    paga pelo paladino em vez da vítima original. TRANSFERÊNCIA, não
+    redução: não entra em `_reducao_dano_total`/`reducao_dano_recebida`,
+    não compete de teto com Disciplina/Voto de Ferro/Muralha de
+    Escudos. Também não é a Muralha (que redireciona o ALVO que o chefe
+    escolhe) -- aqui o chefe continua acertando quem quiser, só quem
+    PAGA parte da conta muda. Devolve (dano_que_o_alvo_toma,
+    dano_que_o_paladino_toma, paladino_ou_None)."""
+    paladino = _paladino_ativo(luta)
+    if paladino is None or paladino.id == alvo.id:
+        return dano, 0, None
+    fracao = passivas.fracao_absorcao_aliado(paladino.jogador)
+    absorvido = int(dano * fracao)
+    return dano - absorvido, absorvido, paladino
+
+
+def _refletir_se_paladino(luta, combatente, dano_recebido):
+    """Represália (paladino, skill, Step 2d): devolve ao CHEFE uma fração
+    do dano que `combatente` acabou de tomar, se ele estiver sob
+    `reflete_dano`. O dano refletido sai de `luta.hp_chefe` DIRETO -- não
+    volta a passar por `_aplicar_dano_do_chefe` nem por esta função --
+    então reflexão nunca dispara reflexão de novo, mesmo se o paladino
+    tomar dano transferido de Juramento (que também chama isto)."""
+    fracao = condicoes.fracao_reflexao(luta, combatente.id)
+    if fracao <= 0 or dano_recebido <= 0:
+        return
+    refletido = max(1, int(dano_recebido * fracao))
+    luta.hp_chefe -= refletido
+    luta.verificar_fase2()
+    luta.registrar(f"🔥 **Represália** devolve **{refletido}** de dano a {luta.chefe['nome']}.")
+
+
+def _aplicar_dano_do_chefe(luta, alvo, dano):
+    """Ponto único onde o dano que o CHEFE causa realmente toca o HP de
+    um combatente -- os dois lugares que causam esse dano (ataque
+    normal, golpe carregado, dentro de `turno_do_chefe`) chamam isto em
+    vez de mexer em `c.hp` direto. Devolve o dano que `alvo` de fato
+    tomou (depois de Juramento), pro chamador logar a mensagem certa.
+    Marca `caiu` normalmente pros dois lados (alvo original e paladino,
+    se ele absorveu parte)."""
+    dano_alvo, dano_paladino, paladino = _transferir_para_paladino(luta, alvo, dano)
+    alvo.hp -= dano_alvo
+    if alvo.hp <= 0:
+        alvo.caiu = True
+    _refletir_se_paladino(luta, alvo, dano_alvo)
+    if paladino is not None and dano_paladino > 0:
+        paladino.hp -= dano_paladino
+        luta.registrar(f"🛡️ {paladino.nome} absorve **{dano_paladino}** de dano por **Juramento**.")
+        if paladino.hp <= 0:
+            paladino.caiu = True
+        _refletir_se_paladino(luta, paladino, dano_paladino)
+    return dano_alvo
 
 
 def penetracao_do_andar(andar_num, carregado=False):
@@ -577,11 +652,9 @@ class Luta:
                     )
                     dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
                     dano = max(1, int(dano * (1 - _reducao_dano_total(self, c))))
-                    c.hp -= dano
+                    dano_no_alvo = _aplicar_dano_do_chefe(self, c, dano)
                     aparou = " (aparou)" if c.defendendo else ""
-                    self.registrar(f"· {c.nome} toma **{dano}**{aparou}")
-                    if c.hp <= 0:
-                        c.caiu = True
+                    self.registrar(f"· {c.nome} toma **{dano_no_alvo}**{aparou}")
             # Curto (bloqueia_skill) só impede COMEÇAR a carregar -- um golpe
             # já em preparo (ramo acima) resolve normal, ver decisoes.md
             elif condicoes.pode_lancar_habilidade(self, "chefe") and random.random() < CHANCE_CARREGAR:
@@ -598,10 +671,8 @@ class Luta:
                     )
                     dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
                     dano = max(1, int(dano * (1 - _reducao_dano_total(self, alvo))))
-                    alvo.hp -= dano
-                    self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano} de dano")
-                    if alvo.hp <= 0:
-                        alvo.caiu = True
+                    dano_no_alvo = _aplicar_dano_do_chefe(self, alvo, dano)
+                    self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano_no_alvo} de dano")
 
             self._talvez_telegrafar_condicao()
 
@@ -1428,6 +1499,28 @@ def _efeito_graca_divina(luta, c, dados):
         _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_represalia(luta, c, dados):
+    """Paladino: dano em cima da MESMA base do ataque normal (com
+    defesa) + aplica `reflete_dano` em SI MESMO (`c.id`, não no chefe) --
+    por DURACAO_REFLEXAO_REPRESALIA_RODADAS (3) rodadas, regra N+1
+    (duracao=4), qualquer dano que o paladino tomar do chefe nesse
+    período (direto ou absorvido de um aliado por Juramento) devolve
+    FRACAO_REFLEXAO_REPRESALIA de volta ao chefe -- ver `_refletir_se_
+    paladino`/`_aplicar_dano_do_chefe`, que é quem de fato consulta essa
+    condição."""
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_REPRESALIA), _defesa_efetiva(luta, c))
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano.")
+    condicoes.aplicar(
+        luta, c.id, "reflete_dano", dados["nome"], dados["emoji"],
+        duracao=DURACAO_REFLEXAO_REPRESALIA_RODADAS + 1, valor=FRACAO_REFLEXAO_REPRESALIA, origem=c.id,
+    )
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1447,6 +1540,7 @@ EFEITOS_HABILIDADE = {
     "sequencia": _efeito_sequencia,
     "punho_do_silencio": _efeito_punho_do_silencio,
     "graca_divina": _efeito_graca_divina,
+    "represalia": _efeito_represalia,
 }
 
 

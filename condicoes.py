@@ -14,7 +14,7 @@
 #   alvo: "chefe" ou o user_id do combatente que carrega a condição
 #   tipo: "dano_por_rodada" | "cura_por_rodada" | "pula_turno" | "redireciona"
 #       | "vulneravel" | "reduz_dano" | "bonus_critico" | "bloqueia_skill"
-#       | "chance_erro" | "reduz_cura"
+#       | "chance_erro" | "reduz_cura" | "reflete_dano"
 #   nome, emoji: pra aparecer no log da luta
 #   valor: dano/cura fixo (int) OU fração do HP máximo (float < 1) para os
 #          tipos de dano/cura; o user_id do alvo forçado para "redireciona";
@@ -22,7 +22,8 @@
 #          menos tomado para "reduz_dano"; bônus aditivo de chance de crítico
 #          para "bonus_critico"; ignorado em "bloqueia_skill"; chance de
 #          errar o próprio golpe em "chance_erro"; fração de cura a menos
-#          recebida em "reduz_cura"
+#          recebida em "reduz_cura"; fração do dano recebido devolvida ao
+#          CHEFE em "reflete_dano" (Represália, paladino, Step 2d)
 #   duracao: rodadas restantes
 #   origem: user_id de quem aplicou (opcional — usado pra drenar vida de volta)
 #   drena: fração do dano devolvida à origem como cura, só em dano_por_rodada
@@ -125,6 +126,19 @@ def reducao_cura_recebida(luta, alvo):
     return min(0.8, sum(
         c["valor"] for c in luta.condicoes
         if c["tipo"] == "reduz_cura" and c["alvo"] == alvo and c["duracao"] > 0
+    ))
+
+
+def fracao_reflexao(luta, alvo):
+    """Represália (paladino): soma das frações de dano que `alvo` devolve
+    ao CHEFE quando toma dano nesta rodada -- teto de 1.0 (nunca devolve
+    mais do que recebeu). Filtra por `duracao > 0` igual reducao_cura_
+    recebida -- consultada no MOMENTO em que o dano chega no combatente,
+    nunca dentro do próprio tick() (dano_por_rodada não reflete: só dano
+    direto do chefe, ver combate._aplicar_dano_do_chefe)."""
+    return min(1.0, sum(
+        c["valor"] for c in luta.condicoes
+        if c["tipo"] == "reflete_dano" and c["alvo"] == alvo and c["duracao"] > 0
     ))
 
 

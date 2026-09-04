@@ -164,3 +164,15 @@ def fracao_reducao_cura_ignorada(jogador):
     if _tem_passiva(jogador, "bencao"):
         return PASSIVAS["bencao"]["valor"]
     return 0.0
+
+
+def fracao_absorcao_aliado(jogador):
+    """Juramento (paladino): fração do dano que QUALQUER aliado (nunca o
+    próprio paladino) tomaria do chefe, transferida pro paladino em vez
+    disso -- 0.0 = nenhuma passiva mexe nisso. TRANSFERÊNCIA, não
+    redução: quem decide se o dano é transferido e debita o HP do
+    paladino é combate.py (_transferir_para_paladino) -- esta função só
+    devolve a fração, igual toda consulta deste motor."""
+    if _tem_passiva(jogador, "juramento"):
+        return PASSIVAS["juramento"]["valor"]
+    return 0.0

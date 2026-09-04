@@ -560,7 +560,7 @@ ASCENSOES = {
     "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "flecha_perfurante", "passivas": ["olho_de_aguia", "instinto_ladino"]},
     "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "punho_do_silencio", "passivas": ["corpo_desperto"]},
     "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "graca_divina", "passivas": ["bencao"]},
-    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "represalia", "passivas": ["juramento"]},
 }
 
 # Passivas de ascensão -- efeito permanente que um ramo carrega, sem custo
@@ -629,6 +629,11 @@ PASSIVAS = {
     "bencao": {
         "nome": "Bênção", "emoji": "🕊️",
         "desc": "Suas curas atravessam parte da redução de cura recebida do alvo -- não muda o teto de 80%, só o quanto dele se aplica às suas curas.",
+        "valor": 0.3,
+    },
+    "juramento": {
+        "nome": "Juramento", "emoji": "🛡️",
+        "desc": "Você absorve parte do dano que o chefe causaria em qualquer aliado -- transferência, não redução (não divide teto com Disciplina/Voto de Ferro).",
         "valor": 0.3,
     },
 }
@@ -778,6 +783,11 @@ HABILIDADES = {
         "nome": "Graça Divina", "emoji": "✨", "classe": "orador",
         "recurso": "mana", "custo": 20, "ascensao": "clerigo",
         "desc": "Em party com alguém caído: Reerguer, levanta um aliado com 60% do HP (2 por luta). Sozinho: Chama Divina, dano em INT que passa pela defesa do chefe.",
+    },
+    "represalia": {
+        "nome": "Represália", "emoji": "🔥", "classe": "orador",
+        "recurso": "mana", "custo": 20, "ascensao": "paladino",
+        "desc": "Dano em INT que passa pela defesa do chefe. Por 3 rodadas, o chefe toma de volta parte do dano que causar em você.",
     },
 }
 

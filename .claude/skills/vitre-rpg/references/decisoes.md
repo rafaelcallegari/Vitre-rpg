@@ -6233,3 +6233,162 @@ em `dungeon.py`, cai só o teste ponta a ponta da dungeon. Em todos os
 4 casos, exatamente 1 teste cai, os outros 22 continuam verdes. Suíte
 completa: 631 (608 de antes + 23 novos), 630 passando + 1 xfail
 antigo.
+
+### Commit 4 — Paladino: Represália (dano + reflexão) e Juramento (transferência)
+
+**Represália é a SKILL, Juramento é a PASSIVA** — ao contrário do que a
+leitura corrida do cartão sugere (os dois nomes lado a lado parecem
+duas skills), só um dos dois precisa ser lançado. Juramento sempre
+ativo, sem custo de mana, sem duração pra gerenciar — encaixa direto
+no padrão de `passivas.py` (consulta pura, estado permanente do
+jogador) igual Disciplina (soldado) ou Bênção (clérigo). Isso também
+resolve sozinho o "ele pode cair pelo próprio Juramento" do cartão: não
+tem "ativar"/"desativar", ele absorve sempre que estiver `ativo` na
+luta, então cair pelo próprio Juramento é só a consequência natural de
+"a passiva roda toda vez que o motor de dano do chefe é chamado",
+não um caso especial a codificar.
+
+**Represália**: dano em cima da MESMA base do ataque normal (com
+defesa, mesmo critério de todo skill deste step) + aplica `reflete_
+dano` em SI MESMO — `condicoes.py` ganhou o tipo novo (só isso, a
+assinatura de `aplicar()` não mudou nenhum parâmetro, igual toda
+condição nova desde Step 2a) com uma consulta nova,
+`fracao_reflexao(luta, alvo)`, mesmo formato de `reducao_cura_
+recebida` (soma aditiva, teto — aqui 1.0, nunca devolve mais dano do
+que recebeu). Duração DURACAO_REFLEXAO_REPRESALIA_RODADAS (3) rodadas,
+regra N+1 (duracao=4) igual toda condição aplicada por skill.
+
+**O ponto único de dano do chefe**: antes deste commit, o dano do
+chefe tocava `c.hp` direto em DOIS lugares (`turno_do_chefe`: ataque
+normal e golpe carregado) — Represália e Juramento precisam interceptar
+os dois, então em vez de duplicar a lógica, os dois pontos passaram a
+chamar `_aplicar_dano_do_chefe(luta, alvo, dano)`, que devolve o dano
+que o alvo de fato tomou (pro chamador logar a mensagem certa — o valor
+pode ser menor que o `dano` original se parte foi pra Juramento).
+
+**Juramento (transferência, não redução)**: `_transferir_para_
+paladino(luta, alvo, dano)` acha o paladino ATIVO da luta
+(`_paladino_ativo`, via `passivas.fracao_absorcao_aliado(c.jogador) >
+0` — não existe estado "Juramento ligado", é só "esse combatente É um
+paladino ativo") e, se `alvo` não for o próprio paladino, divide o
+dano em duas partes: o que o alvo paga e o que o paladino absorve.
+Mora em `combate.py`, não em `condicoes.py` — ao contrário de Represália,
+não é estado por rodada, é uma consulta a `passivas.py` + `luta.
+ativos`, e `condicoes.py` continua sem saber o que é um paladino.
+Guarda explícita `paladino.id != alvo.id`: sem ela, um paladino tomando
+dano DIRETO "se transferiria pra si mesmo", partindo o dano em duas
+chamadas de débito de HP em vez de uma só — mesmo total, mas quebra a
+mensagem de log e (mais grave) a reflexão de Represália, que consultaria
+só a PRIMEIRA metade do dano. Testado explicitamente: dano direto no
+paladino continua sendo 100% dele, sem "autotransferência".
+
+Explicitamente NÃO é `reducao_dano_recebido`: `_transferir_para_
+paladino` não toca `_reducao_dano_total`/`condicoes.reducao_dano_
+recebida`, então não compete de teto (0.5) com Disciplina, Voto de
+Ferro ou Muralha de Escudos — o aliado protegido continua com o teto
+de redução dele intacto, o paladino só paga uma fatia adicional por
+fora. Também não é a Muralha: `condicoes.alvo_forcado` (quem o CHEFE
+mira) nunca é tocado — o chefe continua escolhendo o alvo de sempre,
+só quem paga parte da conta muda. Os dois testados explicitamente
+(teto de redução intacto pro aliado; `alvo_forcado` continua `None`).
+
+**Dano previsível mesmo em HP baixo** (ponto de risco que o cartão
+marcou): a fração absorvida é sempre `int(dano * FRACAO_ABSORCAO_
+JURAMENTO)` do dano ORIGINAL do golpe — nunca do HP do paladino, nunca
+recalculada em cima de nada dinâmico. Um paladino em 1 HP absorvendo
+um golpe carregado grande simplesmente cai (`caiu = True`, mesmo
+tratamento de sempre) com uma perda exatamente igual à fração — nunca
+mais, nunca um valor surpresa. Testado com `_aplicar_dano_do_chefe`
+isolado (golpe artificialmente grande) e ponta a ponta via `Luta.
+turno_do_chefe` de verdade (ataque normal, chefe forçado a mirar no
+aliado via `condicoes.alvo_forcado`, pra isolar o dano transferido do
+dano que o próprio paladino tomaria se fosse alvo do golpe carregado
+"acerta todo mundo" na mesma rodada).
+
+**Sem loop infinito** (outro ponto que o cartão marcou): o dano que
+Represália devolve ao chefe sai de `luta.hp_chefe` DIRETO, dentro de
+`_refletir_se_paladino` — nunca volta a passar por `_aplicar_dano_do_
+chefe` nem por `_refletir_se_paladino` de novo, porque o chefe não é
+um `Combatente` e não tem HP consultado por essas funções. Testado com
+`valor=1.0` de propósito (reflexão maximizada, o cenário que mais
+provocaria um loop se existisse) — o chefe perde exatamente o dano
+original, nunca mais.
+
+**Juramento + Represália juntos**: dano que o paladino toma POR
+TRANSFERÊNCIA (Juramento) também reflete se Represália estiver ativa —
+`_refletir_se_paladino` é chamado nos dois branches de `_aplicar_dano_
+do_chefe` (alvo original E paladino, se ele absorveu algo), então não
+importa se o dano chegou nele direto ou via Juramento, a reflexão
+reage do mesmo jeito. Testado explicitamente combinando os dois.
+
+### Testes
+
+`tests/test_paladino.py`, 18 testes: gate de ascensão; Represália
+aplica defesa; aplica `reflete_dano` em si mesmo por 3 rodadas (N+1,
+mesma técnica `_sobrevive_n_ticks_e_expira_no_seguinte` de test_monge.py);
+ataque normal e golpe carregado no paladino refletem dano de volta;
+sem Represália ativa o chefe não perde nada; dano refletido nunca
+dispara reflexão de novo (valor=1.0 de propósito); Juramento transfere
+a fração certa; não se autotransfere; sem paladino na party ninguém
+absorve; paladino caído não absorve; não é `reducao_dano_recebido`
+(teto intacto); não é a Muralha (`alvo_forcado` continua None);
+paladino pode cair pelo próprio Juramento com dano previsível (chamada
+isolada e ponta a ponta via `turno_do_chefe`, chefe forçado a mirar o
+aliado); dano absorvido também reflete com Represália ativa.
+`tests/test_condicoes.py` ganhou 4 testes de `fracao_reflexao`: soma
+com teto de 1.0, zero sem condição, ignora condição expirada, não
+mistura alvos.
+
+Validado revertendo, três mecanismos: (1) tirando as duas chamadas de
+`_refletir_se_paladino` de `_aplicar_dano_do_chefe`, caem exatamente os
+4 testes de reflexão (ataque normal, golpe carregado, anti-loop,
+combinação com Juramento) — os 14 restantes continuam verdes; (2)
+zerando `_transferir_para_paladino` pra sempre devolver `(dano, 0,
+None)`, caem exatamente os 5 testes que dependem de transferência
+acontecer (inclusive o de "não é redução" e o de HP baixo previsível);
+(3) tirando a guarda `paladino.id == alvo.id`, caem exatamente os 2
+testes que provam que o paladino não se autotransfere dano (o de
+transferência direta e, efeito colateral esperado, o de reflexão no
+ataque normal — a autotransferência partia o dano refletido em duas
+chamadas menores). Suíte completa: 653 (631 de antes + 18 do Paladino
++ 4 de `fracao_reflexao`), 652 passando + 1 xfail antigo.
+
+## DoD do Step 2d
+
+Suíte verde: 653 no total, 652 passando + 1 xfail antigo (o mesmo de
+sempre, sem relação com este step). Todos os 4 commits validados
+revertendo cada mecanismo isoladamente, um por vez, confirmando que
+cai exatamente o teste esperado. Nenhum deploy — o pacote inteiro de
+ascensões (Step 2, todos os 11 ramos) só vai pra produção junto no
+fechamento da 0.4.
+
+Pontos fixados que qualquer trabalho futuro em cima do Orador precisa
+respeitar:
+- **Solo/party é decidido UMA VEZ**, na criação da `Luta`
+  (`self.em_party`, atributo congelado, não mais `@property`) — nunca
+  reconsultado depois. Uma party que cai pra 1 sobrevivente continua
+  `em_party=True`; uma luta solo nunca "vira" party. Ver Commit 1.
+- **60% de HP aparece em TRÊS lugares independentes** com o mesmo
+  valor por coincidência de calibragem, não por serem a mesma
+  constante: `FRACAO_HP_REERGUER` (Reerguer, party), `FRACAO_HP_AUTO_
+  RESSURREICAO` (clérigo solo) e nenhuma equivalente no Paladino —
+  cada uma pode mudar independente das outras num rebalanceamento.
+- **Limite de Reerguer é 2 por LUTA, não por aliado**, contado em
+  `luta.reergueres_usados`, checado em DOIS lugares (menu E efeito) —
+  ver Commit 3 pro motivo da checagem dupla (dois clérigos na mesma
+  party).
+- **Auto-ressurreição do clérigo é só SOLO, uma vez por luta**,
+  interceptada de forma centralizada em `Luta.fim_da_luta()` — nunca
+  patcheando os pontos individuais que marcam `caiu = True`. A
+  integração com a dungeon (Commit 3) é uma exceção pontual e
+  documentada ao "SEM skills de ascensão" da fatia 1, não uma reversão
+  dessa decisão.
+- **Punho do Silêncio (Monge) parece fraco hoje, de propósito**: o
+  `bloqueia_skill` que ele aplica no chefe já é consultado de verdade
+  (`condicoes.pode_lancar_habilidade`), só não muda nada ainda porque
+  NENHUM chefe tem skill própria pra bloquear (isso é conteúdo do
+  step 3, IA de combo). Diferença crucial do erro do Reflexos
+  (Step 2b, `e687f27`): lá o mecanismo consultado SEMPRE devolvia
+  neutro, sem exceção possível — aqui o mecanismo responde certo hoje,
+  só falta o consumidor. Não é código morto por acidente; ninguém deve
+  "consertar" isso achando que é um bug.

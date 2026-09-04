@@ -271,6 +271,43 @@ def test_reducao_cura_recebida_tem_teto_de_80_por_cento_nunca_zera_a_cura():
     assert condicoes.reducao_cura_recebida(luta, alvo.id) == 0.8   # 1.0 somado, capado em 0.8, não em 1.0
 
 
+def test_fracao_reflexao_soma_e_tem_teto_de_1_0():
+    """Represália (paladino, Step 2d): mesmo padrão de reducao_cura_
+    recebida -- soma aditiva, com teto (aqui em 1.0, nunca devolve mais
+    dano do que o paladino recebeu)."""
+    alvo = CombatenteFake(id=1, hp=100, hp_max=100)
+    luta = LutaFake(combatentes=[alvo])
+    condicoes.aplicar(luta, alvo.id, "reflete_dano", "Represália", "🔥", duracao=4, valor=0.6)
+    condicoes.aplicar(luta, alvo.id, "reflete_dano", "Represália", "🔥", duracao=4, valor=0.6)
+
+    assert condicoes.fracao_reflexao(luta, alvo.id) == 1.0   # 1.2 somado, capado em 1.0
+
+
+def test_fracao_reflexao_e_zero_sem_condicao_ativa():
+    alvo = CombatenteFake(id=1, hp=100, hp_max=100)
+    luta = LutaFake(combatentes=[alvo])
+
+    assert condicoes.fracao_reflexao(luta, alvo.id) == 0.0
+
+
+def test_fracao_reflexao_ignora_condicao_ja_expirada():
+    alvo = CombatenteFake(id=1, hp=100, hp_max=100)
+    luta = LutaFake(combatentes=[alvo])
+    condicoes.aplicar(luta, alvo.id, "reflete_dano", "Represália", "🔥", duracao=4, valor=0.3)
+    luta.condicoes[0]["duracao"] = 0
+
+    assert condicoes.fracao_reflexao(luta, alvo.id) == 0.0
+
+
+def test_fracao_reflexao_nao_conta_condicao_de_outro_alvo():
+    alvo = CombatenteFake(id=1, hp=100, hp_max=100)
+    outro = CombatenteFake(id=2, hp=100, hp_max=100)
+    luta = LutaFake(combatentes=[alvo, outro])
+    condicoes.aplicar(luta, outro.id, "reflete_dano", "Represália", "🔥", duracao=4, valor=0.3)
+
+    assert condicoes.fracao_reflexao(luta, alvo.id) == 0.0
+
+
 def test_bonus_critico_e_soma_aditiva_sem_teto():
     alvo = CombatenteFake(id=1, hp=100, hp_max=100)
     luta = LutaFake(combatentes=[alvo])
