@@ -231,12 +231,43 @@ ITENS = {
     # `vender`). NÃO É tesouro (esse já é o item de andar não-farmável do
     # Salão da guilda) -- por isso o tipo próprio, pra ninguém confundir os
     # dois nem em código nem em texto. `loja: False`: não tem graça comprar
-    # de volta o que a dungeon te deu. Ver decisoes.md § Dungeon -- pool e
-    # armadilha. Só um item aqui ainda (o mecanismo desarmado de uma
-    # armadilha) -- a tabela cheia é o cartão seguinte.
+    # de volta o que a dungeon te deu. Sem função nenhuma de propósito --
+    # o sabor é o que faz sentir que saqueou um lugar, não que abriu uma
+    # caixa. Faixas de valor (ponto de partida pra playtest, mede junto
+    # com o cooldown -- ver decisoes.md § Dungeon -- cooldown): baixa
+    # 60-120, média 150-300, alta 350-600. Ver decisoes.md § Dungeon --
+    # pool e armadilha.
     "mecanismo_retorcido": {
         "loja": False, "nome": "Mecanismo Retorcido", "emoji": "⚙️", "tipo": "espolio", "preco": 80,
         "descricao": "As engrenagens ainda tentam fechar, mesmo longe da parede que as escondia.",
+    },
+    "dente_de_gargula": {
+        "loja": False, "nome": "Dente de Gárgula", "emoji": "🦷", "tipo": "espolio", "preco": 70,
+        "descricao": "Maior que qualquer boca de pedra devia precisar. Ainda corta o dedo, se você não prestar atenção.",
+    },
+    "frasco_selado": {
+        "loja": False, "nome": "Frasco Selado", "emoji": "🧴", "tipo": "espolio", "preco": 110,
+        "descricao": "Alguém tampou isso com pressa. O conteúdo não chacoalha como líquido deveria.",
+    },
+    "broche_desbotado": {
+        "loja": False, "nome": "Broche Desbotado", "emoji": "🎗️", "tipo": "espolio", "preco": 180,
+        "descricao": "O brasão já não diz de qual casa -- só que era de uma que importava.",
+    },
+    "moeda_guilda_extinta": {
+        "loja": False, "nome": "Moeda de uma Guilda Extinta", "emoji": "🥇", "tipo": "espolio", "preco": 220,
+        "descricao": "O nome gravado não aparece em registro nenhum que ainda exista.",
+    },
+    "anel_sem_dono": {
+        "loja": False, "nome": "Anel Sem Dono", "emoji": "💍", "tipo": "espolio", "preco": 280,
+        "descricao": "Serve no dedo certo. Você não vai perguntar de quem era o dedo.",
+    },
+    "lente_de_astronomo": {
+        "loja": False, "nome": "Lente de Astrônomo", "emoji": "🔭", "tipo": "espolio", "preco": 420,
+        "descricao": "Focada num céu que não é o de cima da Torre. Continua focada nele, aqui embaixo.",
+    },
+    "mapa_rasgado": {
+        "loja": False, "nome": "Mapa Rasgado", "emoji": "🗺️", "tipo": "espolio", "preco": 520,
+        "descricao": "Falta o pedaço com o destino. Sobrou o pedaço com o aviso.",
     },
 }
 

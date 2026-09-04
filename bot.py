@@ -1509,7 +1509,15 @@ async def vender(ctx, *, argumento: str = ""):
             )
         return
 
-    unitario = dado["preco"] if dado["tipo"] == "material" else int(dado["preco"] * 0.5)
+    # espólio (dungeon, andar 9) vende a preço cheio igual material -- é
+    # loot puro, não craft, mas a "moeda de troca" que ele é já é o preço
+    # de tabela, sem desconto de revenda. Ver decisoes.md § Dungeon --
+    # pool e armadilha.
+    # espólio (dungeon, andar 9) vende a preço cheio igual material -- é
+    # loot puro, não craft, mas a "moeda de troca" que ele é já é o preço
+    # de tabela, sem desconto de revenda. Ver decisoes.md § Dungeon --
+    # pool e armadilha.
+    unitario = dado["preco"] if dado["tipo"] in ("material", "espolio") else int(dado["preco"] * 0.5)
     plain_qtd = inventario_qtd.get(item, 0)
     lista_instancias = mochila_instancias.get(item, [])
 

@@ -6665,3 +6665,75 @@ os 4 que provam que NADA reinicia o cooldown continuam passando
 verdadeiro — esses quatro testam uma invariante diferente da
 existência do mecanismo, e é por isso que a lista de testes cobre os
 dois ângulos separadamente).
+
+## Dungeon — espólio
+
+Cartão "Exploração de Dungeon", commit 2. Tabela de itens que só
+existem pra vender — não equipam, não craftam, não entram em receita
+nenhuma. `game_data.ITENS` ganhou o tipo `"espolio"`, deliberadamente
+DIFERENTE de dois tipos que já existiam e já tinham significado
+próprio:
+- **NÃO é `"material"`** — material entra em receita de craft (o
+  Encantador/Joalheiro e as forjas de arma/armadura consomem material
+  por chave específica); espólio nunca deveria aparecer numa receita.
+- **NÃO é `"tesouro"`** — tesouro é o item de andar NÃO-farmável do
+  Salão da guilda (drop único do chefe). Foi por isso que o tipo de
+  sala da dungeon já se chamava "achado" desde a fatia 1, não
+  "tesouro" — o mesmo cuidado de nome se aplica ao item.
+
+Oito itens (`mecanismo_retorcido`, `dente_de_gargula`, `frasco_
+selado`, `broche_desbotado`, `moeda_guilda_extinta`, `anel_sem_dono`,
+`lente_de_astronomo`, `mapa_rasgado`), em três faixas de valor (baixa
+60-120, média 150-300, alta 350-600) — ponto de partida pra playtest,
+mede junto com o cooldown (dinheiro/hora da dungeon não pode passar o
+de caçar/explorar, ver decisoes.md § Dungeon — cooldown). Todo sabor,
+zero função: nenhum tem `atk`/`def`/`atributo` — são objetos sem
+utilidade nenhuma além de contar uma história de saque (dente de
+gárgula, moeda de uma guilda que não existe mais, anel sem dono
+nenhum registrado) — é o sabor que faz sentir que saqueou um lugar, não
+que abriu uma caixa de loot genérica.
+
+`loja: False` em todos — não tem graça comprar de volta o que a
+dungeon deu de graça. `rpg vender` (`bot.py`) ganhou "espolio" na MESMA
+condição de preço cheio que "material" já tinha (`unitario = dado
+["preco"] if dado["tipo"] in ("material", "espolio") else ... * 0.5`)
+— é loot puro, mas o "preço de tabela" já É o valor de revenda, sem
+desconto de equipamento usado.
+
+`dungeon._ESPOLIOS` é uma lista DERIVADA de `game_data.ITENS` (filtro
+por `tipo == "espolio"`), nunca escrita à mão em `dungeon.py` — a
+tabela pode crescer num rebalanceamento futuro sem tocar no motor.
+
+**Instinto de Ladrão vale dentro da dungeon**: `_resolver_combate`
+agora passa `passivas.bonus_material(j)`/`passivas.bonus_moedas(j)`
+pros mesmos pontos que `rpg cacar`/`rpg explorar`/o chefe já
+consultavam — a dungeon tinha ficado de fora dessa consulta desde a
+fatia 1 (lacuna encontrada nesta carta, não introduzida por ela). A
+passiva NÃO entra na recompensa do "desarmar" da armadilha (commit 1):
+Instinto de Ladrão mexe em CHANCE/quantidade de um drop probabilístico
+— "desarmar" dá espólio GARANTIDO, sem rolagem nenhuma pra reforçar.
+Ela vai entrar de fato nos achados de verdade (rolagem probabilística
+de espólio), que ganham mecânica própria no cartão do pool final.
+
+### Testes
+
+`tests/test_dungeon_espolio.py`, 10 testes: a tabela tem pelo menos
+oito itens; nenhum é chamado de material nem de tesouro; todos são
+vendáveis e fora da loja; nenhum tem atk/def/atributo; as faixas de
+valor são de verdade (mais barato bem abaixo da metade do mais caro,
+pelo menos 5 preços distintos); `dungeon._ESPOLIOS` bate exatamente
+com a tabela; vender um espólio específico e TODOS os oito, um por um,
+confirmando o preço cheio de cada; Instinto de Ladrão aumenta as
+moedas de vitória na dungeon (ladino ascendido) e o valor cru continua
+sem ele (guerreiro comum) — os dois comparados contra o conjunto de
+valores POSSÍVEIS (o mob sorteado varia).
+
+Validado revertendo dois mecanismos: (1) voltando a condição de preço
+de `vender` pra só `"material"` (tirando "espolio"), caem exatamente
+os dois testes de preço cheio — os outros 8 continuam verdes; (2)
+tirando `passivas.bonus_material`/`bonus_moedas` das chamadas em
+`_resolver_combate`, cai só o teste que prova que o Instinto de Ladrão
+aumenta as moedas — o teste "sem a passiva" continua passando (ele já
+não tinha ascensão, então nunca dependeu da chamada existir). Suíte
+completa: 704 (694 de antes + 10 novos), 703 passando + 1 xfail
+antigo.
