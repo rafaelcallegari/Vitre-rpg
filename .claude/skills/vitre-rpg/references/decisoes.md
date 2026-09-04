@@ -6103,3 +6103,133 @@ incondicionalmente, caem exatamente os dois testes de Corpo Desperto
 (ataque normal e skill) — os outros 10 (gate, dano, atributo trocado,
 bloqueia_skill) continuam passando porque não dependem de mana. Suíte
 completa: 608 (596 de antes + 12 novos), 607 passando + 1 xfail antigo.
+
+### Commit 3 — Clérigo: Graça Divina (Reerguer/Chama Divina), auto-ressurreição, Bênção
+
+**Um slot de skill, dois efeitos.** `graca_divina` não tem duas entradas
+em `HABILIDADES` — o efeito único (`_efeito_graca_divina`) lê
+`luta.em_party` (Step 2d commit 1, congelado na criação) e ramifica:
+em party é **Reerguer** (levanta um caído), sozinho é **Chama Divina**
+(2.0 dano em INT, com `at.aplicar_defesa`, igual a toda skill deste
+step). Evita duplicar a entrada em `game_data.py` e a UI mostra sempre
+o mesmo botão — o jogador nunca vê as duas versões ao mesmo tempo,
+porque `em_party` não muda no meio da luta.
+
+**Reerguer** levanta o primeiro caído que encontrar (sem seletor de
+alvo — simplificação deliberada pra playtest, mesma categoria de
+decisão que outras skills sem `alvo: aliado_escolhido` neste pacote)
+com `FRACAO_HP_REERGUER` (60%) do HP máximo. Dois cuidados que o
+cartão marcou como ponto de risco:
+- **Não trava a rodada**: o revivido sai de `caiu=True` e some da
+  lista de quem `registrar_acao` espera — ele nunca teve chance de
+  escolher uma ação NESTA rodada. Resolvido igual à saída/entrada de
+  qualquer combatente durante a rodada: `acao="defender"` +
+  `defendendo=True` são setados na hora, então o "esperando todo mundo"
+  não trava nele. Efeito colateral aceitável (e até temático): ele
+  literalmente se defende no round em que acabou de ser puxado de
+  volta.
+- **`_estado_final_salvo`**: não precisou de nenhum tratamento especial
+  — o guard em `Combatente.salvar_estado()` só é consultado dentro do
+  `if not self.ativo`, e reviver já faz `caiu=False` (que volta a
+  tornar `ativo` True) ANTES de chamar `salvar_estado()`. O caminho de
+  salvar depois de reviver é o caminho normal de sempre, sem exceção.
+
+**Limite de 2 por LUTA, não por aliado** — contador em `luta.
+reergueres_usados` (junto de `auto_ressurreicao_usada`, os dois
+"somem quando a luta acaba" só porque a própria `Luta` não sobrevive
+além disso, não por lógica especial de reset). Checado em DOIS
+lugares, não só um: `_pode_lancar_graca_divina` filtra o botão do
+MENU no início da rodada (pra não gastar mana à toa quando já é óbvio
+que não serve pra nada), e `_efeito_graca_divina` confere o limite DE
+NOVO na hora de resolver. A segunda checagem não é redundância boba:
+com DOIS clérigos na mesma party, os dois podem abrir o menu na mesma
+rodada, ver o botão disponível (o limite ainda não bateu quando os
+menus foram montados) e escolher Reerguer ao mesmo tempo — sem a
+checagem no efeito, o segundo resolveria depois do primeiro já ter
+consumido a última vaga, furando o limite. Testado batendo o limite
+com uma chamada direta ao efeito (bypassando o menu de propósito).
+
+**Auto-ressurreição** (só luta SOLO, uma vez por luta): em vez de
+patchar os ~4 pontos do motor que podem marcar `c.caiu = True`
+(ataque normal do chefe, ataque carregado, tick de dano de condição em
+`condicoes.py`, abertura de round já morto), a checagem mora num único
+lugar: `Luta.fim_da_luta()`, sempre consultado depois de qualquer
+evento que reduz HP e antes do jogo poder declarar derrota. `_talvez_
+auto_ressuscitar(luta)` roda ali, ANTES da checagem de "ninguém ativo
+→ derrota", solo apenas (`luta.em_party` falso), clérigo apenas
+(`passivas.e_clerigo`), uma vez por luta (`luta.
+auto_ressurreicao_usada`). Reviver usa a mesma receita do Reerguer
+(`acao="defender"`, `defendendo=True`, `salvar_estado()`) pelos mesmos
+motivos.
+
+**`passivas.e_clerigo(jogador)`** é uma exceção deliberada ao padrão
+`_tem_passiva()`: Chama Divina/Reerguer/auto-ressurreição são
+inerentes à ASCENSÃO clérigo, não uma passiva separada da lista — o
+clérigo continua tendo só UMA passiva de verdade (Bênção), preservando
+"três ramos, uma passiva cada" do cabeçalho do step. `e_clerigo`
+consulta o ramo direto (`_ramo(jogador) == "clerigo"`), não a lista
+`ASCENSOES[ramo]["passivas"]`.
+
+**Bênção**: as curas do clérigo atravessam parte da
+`reducao_cura_recebida` do ALVO — sem mudar o teto de 0.8 de
+`condicoes.reducao_cura_recebida`, só o valor CONSULTADO na hora de
+aplicar uma cura específica. Resolvido do mesmo jeito que `drena`/
+`origem` já resolviam problema parecido: um campo opcional novo no
+dict da condição (`bonus_cura_ignorado`, default `0.0`), preenchido
+por quem CHAMA `condicoes.aplicar()` (`combate.py`, que sabe quem
+lançou a cura e pode consultar `passivas.fracao_reducao_cura_ignorada`)
+— `condicoes.py` continua sem saber nada de ascensão, só carrega um
+número puro igual sempre carregou `drena`. `_tick_cura` faz `max(0.0,
+reducao - bonus)` — nunca fica negativo, e o teto de 0.8 nunca é
+tocado, só o que sobra dele depois do bônus.
+
+**Dungeon (integração deliberada, fora do escopo original da fatia
+1)**: `dungeon.py` documenta desde a fatia 1 que roda "SEM as skills
+de ascensão" — mas o cartão foi explícito que o clérigo não pode
+perder a run inteira na primeira queda. `_resolver_combate` checa
+`passivas.e_clerigo(j)` ANTES de chamar `H["a_processar_morte"](j, s,
+na_dungeon=True)`: se for clérigo, cura pra 60% do HP máximo, manda um
+embed próprio e RETORNA sem tocar a run (nem `atualizar_dungeon_run_
+indice`, nem `apagar_dungeon_run`) — a run continua exatamente na
+mesma sala, pronta pra tentar de novo. A ordem importa: `a_processar_
+morte(na_dungeon=True)` já apaga a run e cobra a penalidade dentro da
+mesma transação (`database.atualizar_jogador_e_apagar_dungeon_run`) —
+chamar isso primeiro e "desfazer" depois não é opção.
+
+Diferença assumida em relação à luta de chefe: a dungeon usa `bot.
+simular_combate` (instantâneo, sem `Luta`), então o contador "uma vez
+por LUTA" de `combate.py` não existe aqui — cada SALA de combate é sua
+própria mini-luta autocontida, e a auto-ressurreição vale uma vez POR
+SALA, não uma vez por run inteira (5 salas). Mais generoso que numa
+luta de chefe de verdade. Aceitável porque a dungeon inteira ainda não
+vai pra produção (deploy só na fatia 4) — é o tipo de aperto que cabe
+revisar quando a dungeon ganhar seu próprio motor de luta, não agora.
+
+### Testes
+
+`tests/test_clerigo.py`, 23 testes: gate de ascensão; Chama Divina
+aplica defesa; Reerguer levanta com 60% do HP, desmarca `caiu`, some
+da lista de ativos corretamente, não trava a rodada (acao/defendendo
+setados); limite de 2 por luta não por aliado (3 quedas, só as 2
+primeiras levantam); `_pode_lancar_graca_divina` cobrindo os 4 casos
+(solo sempre true, party sem caído false, party com caído true, limite
+esgotado false) e o filtro real no `MenuHabilidades`; auto-
+ressurreição solo revive uma vez com 60% e não de novo na mesma luta;
+não dispara em party; não dispara pra não-clérigo; prova via
+`Luta.fim_da_luta()` de verdade (não só a função interna) que a luta
+NÃO termina; Bênção reduz a cura consultada sem mexer no teto de 0.8
+(com e sem a passiva, valores comparados); fiação de `_efeito_palavra_
+de_alento` carregando o bônus certo; e os dois testes ponta a ponta da
+dungeon (clérigo revive e a run sobrevive vs. não-clérigo perde a run
+normalmente — regressão do comportamento de sempre).
+
+Validado revertendo, um mecanismo por vez: (1) tirando a chamada de
+`_talvez_auto_ressuscitar` de `fim_da_luta`, cai só o teste que prova
+o caminho via `fim_da_luta`; (2) tirando a segunda checagem do limite
+dentro de `_efeito_graca_divina`, cai só o teste do limite de 2; (3)
+zerando `reducao` em `_tick_cura` pra ignorar `bonus_cura_ignorado`,
+cai só o teste de Bênção; (4) desligando o `if passivas.e_clerigo(j)`
+em `dungeon.py`, cai só o teste ponta a ponta da dungeon. Em todos os
+4 casos, exatamente 1 teste cai, os outros 22 continuam verdes. Suíte
+completa: 631 (608 de antes + 23 novos), 630 passando + 1 xfail
+antigo.

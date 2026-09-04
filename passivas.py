@@ -144,3 +144,23 @@ def mana_recuperada_por_golpe(jogador):
     if _tem_passiva(jogador, "corpo_desperto"):
         return PASSIVAS["corpo_desperto"]["valor"]
     return 0
+
+
+def e_clerigo(jogador):
+    """Chama Divina/Reerguer e a auto-ressurreição (Step 2d) são
+    inerentes à ascensão clérigo, não uma passiva separada -- o clérigo
+    só tem UMA passiva de verdade (Bênção, "três ramos, uma passiva
+    cada"). Consulta direta ao ramo, não à lista de passivas -- por isso
+    mora aqui e não usa _tem_passiva."""
+    return _ramo(jogador) == "clerigo"
+
+
+def fracao_reducao_cura_ignorada(jogador):
+    """Bênção (clérigo): fração da `reducao_cura_recebida` do ALVO que as
+    curas DESTE jogador ignoram -- 0.0 = nenhuma passiva mexe nisso. NÃO
+    muda o teto de 0.8 de `condicoes.reducao_cura_recebida` -- só reduz o
+    valor CONSULTADO na hora de aplicar uma cura vinda deste clérigo (ver
+    condicoes._tick_cura, campo "bonus_cura_ignorado")."""
+    if _tem_passiva(jogador, "bencao"):
+        return PASSIVAS["bencao"]["valor"]
+    return 0.0

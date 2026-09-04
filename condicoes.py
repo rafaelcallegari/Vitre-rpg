@@ -37,11 +37,19 @@
 # (Choque, Vendaval, Ferida Sombria — ver decisoes.md).
 
 
-def aplicar(luta, alvo, tipo, nome, emoji, duracao, valor, origem=None, drena=None):
-    """Registra uma condição nova e já loga a aplicação no texto da luta."""
+def aplicar(luta, alvo, tipo, nome, emoji, duracao, valor, origem=None, drena=None, bonus_cura_ignorado=0.0):
+    """Registra uma condição nova e já loga a aplicação no texto da luta.
+
+    `bonus_cura_ignorado` é metadado puro (igual `drena`) -- não sabe nada
+    sobre passivas nem ascensão, só carrega um número que `_tick_cura`
+    consulta na hora de curar (ver Bênção, Step 2d). Fica em 0.0 (nenhum
+    efeito) pra toda condição que não seja cura_por_rodada de um clérigo
+    com essa passiva -- condicoes.py continua sem saber o que é um
+    clérigo, quem chama que decide o valor."""
     luta.condicoes.append({
         "alvo": alvo, "tipo": tipo, "nome": nome, "emoji": emoji,
         "valor": valor, "duracao": duracao, "origem": origem, "drena": drena,
+        "bonus_cura_ignorado": bonus_cura_ignorado,
     })
     luta.registrar(f"{emoji} **{nome}** aplicado em {_nome_alvo(luta, alvo)} — {duracao} rodada(s).")
 
@@ -187,7 +195,12 @@ def _tick_cura(luta, cond):
     if not c or not c.ativo:
         return
     cura = _valor_absoluto(cond["valor"], c.s["hp_max"])
-    cura = int(cura * (1 - reducao_cura_recebida(luta, cond["alvo"])))
+    # Bênção (clérigo, Step 2d): reducao_cura_recebida continua com o
+    # mesmo teto de 0.8 -- só o valor CONSULTADO aqui, pra esta cura
+    # específica, sai reduzido pelo bônus que a condição carrega (0.0 pra
+    # toda cura que não veio de um clérigo com a passiva). Nunca negativo.
+    reducao = max(0.0, reducao_cura_recebida(luta, cond["alvo"]) - cond.get("bonus_cura_ignorado", 0.0))
+    cura = int(cura * (1 - reducao))
     antes = c.hp
     c.hp = min(c.s["hp_max"], c.hp + cura)
     luta.registrar(f"{cond['emoji']} {c.nome} recupera **{c.hp - antes}** de {cond['nome']}.")

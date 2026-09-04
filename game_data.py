@@ -559,7 +559,7 @@ ASCENSOES = {
     "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_fatal", "passivas": ["sangue_frio", "instinto_ladino"]},
     "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "flecha_perfurante", "passivas": ["olho_de_aguia", "instinto_ladino"]},
     "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "punho_do_silencio", "passivas": ["corpo_desperto"]},
-    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "graca_divina", "passivas": ["bencao"]},
     "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
 }
 
@@ -625,6 +625,11 @@ PASSIVAS = {
         "nome": "Corpo Desperto", "emoji": "🧘",
         "desc": "Recupera um pouco de mana a cada golpe que acerta -- ataque normal ou skill.",
         "valor": 5,
+    },
+    "bencao": {
+        "nome": "Bênção", "emoji": "🕊️",
+        "desc": "Suas curas atravessam parte da redução de cura recebida do alvo -- não muda o teto de 80%, só o quanto dele se aplica às suas curas.",
+        "valor": 0.3,
     },
 }
 
@@ -768,6 +773,11 @@ HABILIDADES = {
         "nome": "Punho do Silêncio", "emoji": "👊", "classe": "orador",
         "recurso": "mana", "custo": 18, "ascensao": "monge",
         "desc": "Dano em DES (não em INT) que passa pela defesa do chefe e silencia a próxima ação dele.",
+    },
+    "graca_divina": {
+        "nome": "Graça Divina", "emoji": "✨", "classe": "orador",
+        "recurso": "mana", "custo": 20, "ascensao": "clerigo",
+        "desc": "Em party com alguém caído: Reerguer, levanta um aliado com 60% do HP (2 por luta). Sozinho: Chama Divina, dano em INT que passa pela defesa do chefe.",
     },
 }
 

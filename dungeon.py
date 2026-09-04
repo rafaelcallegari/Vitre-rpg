@@ -17,8 +17,10 @@ import random
 
 import discord
 
+import combate
 import database as db
 import game_data
+import passivas
 
 H = {}
 
@@ -76,6 +78,30 @@ async def _resolver_combate(ctx, j, s, run, sala):
     e.description = sala["texto"] + "\n\n" + "\n".join(log)
 
     if not venceu:
+        # Auto-ressurreição (clérigo, Step 2d) tem que rodar ANTES de
+        # processar_morte(na_dungeon=True) -- senão a run já foi apagada e
+        # a penalidade já foi cobrada de alguém que, na verdade, não
+        # morreu. Sem Luta aqui (a dungeon usa simular_combate, instantâneo
+        # -- ver cabeçalho do arquivo, "SEM as skills de ascensão"): o
+        # contador "uma vez por luta" de combate.py não se aplica, então
+        # isto vale uma vez POR SALA (cada sala é sua própria mini-luta
+        # autocontida) -- mais generoso que uma luta de chefe de verdade,
+        # aceitável porque a dungeon inteira ainda não vai pro ar. Ver
+        # decisoes.md § Step 2d.
+        if passivas.e_clerigo(j):
+            hp_revivido = int(combate.FRACAO_HP_AUTO_RESSURREICAO * s["hp_max"])
+            db.atualizar_jogador(j["user_id"], hp=hp_revivido)
+            e.color = 0x8B0000
+            e.add_field(
+                name="✨ Você se recusa a cair",
+                value=(
+                    f"A auto-ressurreição do clérigo te traz de volta com **{hp_revivido}** HP. "
+                    f"A run continua -- chame `rpg dungeon` de novo pra tentar esta sala outra vez."
+                ),
+                inline=False,
+            )
+            await ctx.send(embed=e)
+            return
         perda = await H["a_processar_morte"](j, s, na_dungeon=True)
         e.color = 0x8B0000
         e.add_field(

@@ -143,6 +143,10 @@ DURACAO_BLOQUEIA_SKILL_PUNHO_RODADAS = 2   # N rodadas silenciado -- regra N+1 (
                                             # (bloqueia_skill) já existe e É consultado hoje
                                             # (condicoes.pode_lancar_habilidade), só o chefe ainda não tem
                                             # skill própria pra bloquear.
+MULTIPLICADOR_CHAMA_DIVINA = 2.0           # versão solo de Graça Divina -- puro dano
+FRACAO_HP_REERGUER = 0.6                   # versão party de Graça Divina -- HP de quem é levantado
+LIMITE_REERGUER_POR_LUTA = 2               # total NA LUTA, não por aliado -- contador em Luta, não no jogador
+FRACAO_HP_AUTO_RESSURREICAO = 0.6          # auto-ressurreição do clérigo, só luta SOLO, uma vez por luta
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -175,6 +179,47 @@ def _recuperar_mana_por_golpe(c):
     golpe reproduz o comportamento de sempre (nada muda) pra quem não é
     monge, então todo ponto de dano pode chamar isto sem risco."""
     c.mana = min(c.s["mana_max"], c.mana + passivas.mana_recuperada_por_golpe(c.jogador))
+
+
+def _talvez_auto_ressuscitar(luta):
+    """Auto-ressurreição (clérigo, SOLO, Step 2d): quando o único
+    combatente cai e ainda não usou a auto-ressurreição desta luta, ele
+    volta sozinho com FRACAO_HP_AUTO_RESSURREICAO do HP máximo --
+    automático, não custa mana, dispara mesmo com mana vazia (ele está
+    caído, não pode lançar nada).
+
+    Chamado de Luta.fim_da_luta, ANTES de qualquer decisão de derrota --
+    de propósito: é o único jeito de funcionar não importa qual dano
+    derrubou o clérigo (golpe do chefe, golpe carregado, uma condição
+    tickando dano), sem precisar patchar cada ponto do jogo que pode
+    marcar `caiu = True`. `fim_da_luta` é sempre consultado logo depois
+    de qualquer um desses, então interceptar ali cobre todos eles de
+    uma vez."""
+    if luta.em_party:
+        return
+    c = luta.participantes[0]
+    if not c.caiu or luta.auto_ressurreicao_usada or not passivas.e_clerigo(c.jogador):
+        return
+    luta.auto_ressurreicao_usada = True
+    c.caiu = False
+    c.hp = int(FRACAO_HP_AUTO_RESSURREICAO * c.s["hp_max"])
+    c.acao = "defender"
+    c.defendendo = True
+    c.salvar_estado()
+    luta.registrar(f"✨ {c.nome} se recusa a cair -- volta à luta com {c.hp} HP!")
+
+
+def _pode_lancar_graca_divina(luta, combatente):
+    """Reerguer (versão party de Graça Divina) só pode ser lançada se
+    existir alguém caído E o limite de LIMITE_REERGUER_POR_LUTA ainda não
+    foi usado -- sem isso, não gasta mana à toa (ver decisoes.md § Step
+    2d). Chama Divina (versão solo) não tem essa restrição -- é dano
+    puro, sempre disponível."""
+    if not luta.em_party:
+        return True
+    if luta.reergueres_usados >= LIMITE_REERGUER_POR_LUTA:
+        return False
+    return any(outro.caiu for outro in luta.participantes)
 
 
 def penetracao_do_andar(andar_num, carregado=False):
@@ -406,6 +451,13 @@ class Luta:
         # continua party (o combatente que sobrou vê `em_party` True o jogo
         # inteiro); uma luta solo nunca vira party no meio.
         self.em_party = len(combatentes) > 1
+        # Step 2d, clérigo: contadores presos à LUTA, não ao jogador --
+        # "somem quando a luta acaba" só porque a Luta em si não sobrevive
+        # além disso (não é persistido em banco). Reerguer: total NA
+        # LUTA, não por aliado. Auto-ressurreição: só luta solo, ver
+        # _talvez_auto_ressuscitar.
+        self.reergueres_usados = 0
+        self.auto_ressurreicao_usada = False
 
     @property
     def ativos(self):
@@ -1120,6 +1172,7 @@ def _efeito_palavra_de_alento(luta, c, dados, alvo_id):
     condicoes.aplicar(
         luta, alvo_id, "cura_por_rodada", dados["nome"], dados["emoji"],
         duracao=2, valor=CURA_POR_RODADA_ALENTO, origem=c.id,
+        bonus_cura_ignorado=passivas.fracao_reducao_cura_ignorada(c.jogador),   # Bênção, Step 2d
     )
 
 
@@ -1329,6 +1382,52 @@ def _efeito_punho_do_silencio(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_graca_divina(luta, c, dados):
+    """Clérigo: duas versões no MESMO slot de skill, decidido por
+    `luta.em_party` (congelado na criação da luta, Step 2d commit 1).
+
+    PARTY (Reerguer): levanta o primeiro aliado caído que encontrar (não
+    há seletor de alvo -- ponto de partida pra playtest, escolha
+    simplificada) com FRACAO_HP_REERGUER do HP máximo. Marca `acao` e
+    `defendendo` pra ele não travar o "esperando todo mundo escolher" e
+    ganhar a proteção de Defender nesta rodada -- ele acabou de ser
+    puxado de volta, não vai atacar no mesmo golpe. Limite de 2 por LUTA
+    é checado DE NOVO aqui (não só em `_pode_lancar_graca_divina`, que só
+    filtra o menu no INÍCIO da rodada): com dois clérigos na mesma party,
+    os dois podem ver o botão disponível e escolher Reerguer na mesma
+    rodada -- sem essa segunda checagem, os dois resolveriam e o limite
+    seria furado.
+
+    SOLO (Chama Divina): dano puro em cima da MESMA base do ataque normal
+    (com defesa)."""
+    if luta.em_party:
+        if luta.reergueres_usados >= LIMITE_REERGUER_POR_LUTA:
+            luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}**, mas o limite da luta já foi atingido.")
+            return
+        caido = next((outro for outro in luta.participantes if outro.caiu), None)
+        if caido is None:
+            luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}**, mas ninguém precisava.")
+            return
+        caido.caiu = False
+        caido.hp = int(FRACAO_HP_REERGUER * caido.s["hp_max"])
+        caido.acao = "defender"
+        caido.defendendo = True
+        caido.salvar_estado()
+        luta.reergueres_usados += 1
+        luta.registrar(
+            f"{dados['emoji']} {c.nome} ergue **{caido.nome}** de volta à luta com "
+            f"{caido.hp} HP! ({luta.reergueres_usados}/{LIMITE_REERGUER_POR_LUTA})"
+        )
+    else:
+        dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_CHAMA_DIVINA), _defesa_efetiva(luta, c))
+        dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+        dano = _aplicar_sombra(luta, c, dano)
+        luta.hp_chefe -= dano
+        luta.verificar_fase2()
+        luta.registrar(f"{dados['emoji']} {c.nome} conjura **Chama Divina** — {dano} de dano.")
+        _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1347,6 +1446,7 @@ EFEITOS_HABILIDADE = {
     "golpe_oportunista": _efeito_golpe_oportunista,
     "sequencia": _efeito_sequencia,
     "punho_do_silencio": _efeito_punho_do_silencio,
+    "graca_divina": _efeito_graca_divina,
 }
 
 
@@ -1370,6 +1470,15 @@ class MenuHabilidades(discord.ui.View):
         self.painel = painel
         self.combatente = combatente
         for chave, dados in hab.lancaveis(combatente.jogador, combatente.recurso_atual()).items():
+            # Graça Divina (clérigo, Step 2d): em party, Reerguer só some
+            # do menu se não tiver caído pra levantar ou já tiver usado os
+            # 2 da luta -- ver _pode_lancar_graca_divina. Único caso hoje
+            # em que uma skill lançável (custo cabe) ainda assim pode
+            # ficar indisponível por causa de estado da LUTA, não do
+            # jogador -- por isso é um `if` aqui, não algo em hab.py
+            # (que não sabe nada sobre `luta`).
+            if chave == "graca_divina" and not _pode_lancar_graca_divina(painel.luta, combatente):
+                continue
             self.add_item(BotaoHabilidade(chave, dados))
         self.add_item(BotaoVoltar())
 
@@ -1557,11 +1666,13 @@ class PainelLuta(discord.ui.View):
         if luta.hp_chefe <= 0:
             return await finalizar_vitoria(luta)
         if not luta.ativos:
-            if any(c.caiu for c in luta.participantes) and not any(
-                c.fugiu or c.saiu for c in luta.participantes
-            ):
-                return await finalizar_derrota(luta)
-            return await encerrar_por_abandono(luta)
+            _talvez_auto_ressuscitar(luta)   # clérigo solo, Step 2d -- ANTES de decidir derrota
+            if not luta.ativos:
+                if any(c.caiu for c in luta.participantes) and not any(
+                    c.fugiu or c.saiu for c in luta.participantes
+                ):
+                    return await finalizar_derrota(luta)
+                return await encerrar_por_abandono(luta)
         return None
 
     # -------- fluxo da rodada
