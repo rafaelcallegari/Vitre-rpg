@@ -223,6 +223,21 @@ ITENS = {
     "mortalha_sombra": {"vendavel": False, "loja": False, "nome": "Mortalha de Sombra", "emoji": "🌑", "tipo": "mortalha",
                          "def": 20, "andar_min": 14, "elemento": "sombra",
                          "descricao": "Escura mesmo à luz. Ela não esconde você — só o que você está prestes a fazer."},
+
+    # ---------------- espólio da dungeon (andar 9) ----------------
+    # tipo próprio, NÃO "material": não equipa, não crafta, não entra em
+    # receita nenhuma -- só vira moeda em `rpg vender` (mesma tratativa de
+    # preço cheio que "material" já tem, ver a condição de preço em
+    # `vender`). NÃO É tesouro (esse já é o item de andar não-farmável do
+    # Salão da guilda) -- por isso o tipo próprio, pra ninguém confundir os
+    # dois nem em código nem em texto. `loja: False`: não tem graça comprar
+    # de volta o que a dungeon te deu. Ver decisoes.md § Dungeon -- pool e
+    # armadilha. Só um item aqui ainda (o mecanismo desarmado de uma
+    # armadilha) -- a tabela cheia é o cartão seguinte.
+    "mecanismo_retorcido": {
+        "loja": False, "nome": "Mecanismo Retorcido", "emoji": "⚙️", "tipo": "espolio", "preco": 80,
+        "descricao": "As engrenagens ainda tentam fechar, mesmo longe da parede que as escondia.",
+    },
 }
 
 
@@ -638,30 +653,72 @@ PASSIVAS = {
     },
 }
 
-# ---------------- dungeon (andar 9, fatia 1 -- ver decisoes.md) ----------------
+# ---------------- dungeon (andar 9 -- ver decisoes.md § Dungeon) ----------------
 # O portão da ascensão: só abre no andar 9, nível >= NIVEL_ASCENSAO_PADRAO.
-# Nesta fatia o pool é só o suficiente pro sorteio ter o que sortear -- 2
-# salas por tipo, conteúdo de verdade (espelhos, Orbe) entra depois. "achado"
-# nunca "tesouro": tesouro já é o item de andar do Salão da Guilda.
+# "achado" nunca "tesouro": tesouro já é o item de andar do Salão da Guilda.
+#
+# Só TRÊS tipos -- "armadilha" NÃO é mais um tipo de sala, é uma CAMADA
+# (`"armadilha": True/False`) por cima de combate/evento/achado. As duas
+# salas que eram tipo "armadilha" (Piso Instável, Corrente Solta) se
+# dissolveram: viraram salas de verdade com a camada ligada, o material
+# delas emprestado pro visual (baú, nicho...) até o cartão seguinte
+# reescrever o pool inteiro com as dez salas finais. A sala NUNCA anuncia
+# a armadilha no nome nem no texto -- ela dispara na interação, não na
+# etiqueta (ver decisoes.md § Dungeon -- pool e armadilha, "narrativa é
+# requisito").
 DUNGEON_SALAS_POR_RUN = 5
 
 DUNGEON_POOL = [
     {"chave": "camara_dos_ecos", "tipo": "combate", "nome": "Câmara dos Ecos",
-     "texto": "Vozes repetem seus próprios passos -- algo se aproxima na escuridão."},
+     "texto": "Vozes repetem seus próprios passos -- algo se aproxima na escuridão.",
+     "armadilha": False},
     {"chave": "corredor_sussurrante", "tipo": "combate", "nome": "Corredor Sussurrante",
-     "texto": "As paredes sussurram um aviso tarde demais."},
+     "texto": "As paredes sussurram um aviso tarde demais.",
+     "armadilha": False},
     {"chave": "salao_do_espelho_rachado", "tipo": "evento", "nome": "Salão do Espelho Rachado",
-     "texto": "Um espelho trincado reflete um você que nunca foi."},
+     "texto": "Um espelho trincado reflete um você que nunca foi.",
+     "armadilha": False},
     {"chave": "jardim_suspenso", "tipo": "evento", "nome": "Jardim Suspenso",
-     "texto": "Flores que não deveriam crescer aqui embaixo -- crescem."},
-    {"chave": "piso_instavel", "tipo": "armadilha", "nome": "Piso Instável",
-     "texto": "O chão cede um pouco a cada passo."},
-    {"chave": "corrente_solta", "tipo": "armadilha", "nome": "Corrente Solta",
-     "texto": "Alguma coisa presa aqui não devia estar tão perto."},
+     "texto": "Flores que não deveriam crescer aqui embaixo -- crescem.",
+     "armadilha": False},
     {"chave": "bau_esquecido", "tipo": "achado", "nome": "Baú Esquecido",
-     "texto": "Poeira de anos cobre uma tampa que ainda destranca."},
+     "texto": "Poeira de anos cobre uma tampa que ainda destranca.",
+     "armadilha": False},
     {"chave": "nicho_da_torre", "tipo": "achado", "nome": "Nicho da Torre",
-     "texto": "Um vão na pedra guarda o que a Torre não quis levar embora."},
+     "texto": "Um vão na pedra guarda o que a Torre não quis levar embora.",
+     "armadilha": False},
+    {"chave": "piso_instavel", "tipo": "achado", "nome": "Piso Instável",
+     "texto": "O chão cede um pouco a cada passo.",
+     "armadilha": True},
+    {"chave": "corrente_solta", "tipo": "achado", "nome": "Corrente Solta",
+     "texto": "Alguma coisa presa aqui não devia estar tão perto.",
+     "armadilha": True},
+]
+
+# As três portas da armadilha, sempre nesta ordem, pra todo personagem:
+# Percepção (INT, não dispara, vira escolha), Esquiva (DES, sai de cima
+# sem dano nem condição), Força (FOR, toma o dano mas escapa da
+# condição). Falhar as três: dano cheio + a condição sorteada aqui
+# segue pra próxima sala. Alvo sobe com o nível (3 por nível, mesma
+# velocidade de `at.PONTOS_POR_NIVEL`) -- de propósito, pra não virar
+# letra morta numa dungeon repetível bem além do nível 15. Ver
+# decisoes.md § Dungeon -- pool e armadilha, tabela medida por Monte
+# Carlo antes de fixar estes valores.
+DUNGEON_ARMADILHA_DIFICULDADE_BASE = 7
+DUNGEON_ARMADILHA_DIFICULDADE_POR_NIVEL = 3
+DUNGEON_ARMADILHA_FRACAO_DANO = 0.15
+
+# Sorteada quando as três portas falham. Cada entrada reaproveita um TIPO
+# de condicoes.py (o motor "que já tem"), mas fora de combate.Luta (a
+# dungeon usa simular_combate, instantâneo -- sem rodada de verdade pra
+# ela tickar) o alcance é reinterpretado: dano_por_rodada acontece uma
+# vez, na abertura da PRÓXIMA sala (qualquer tipo); vulneravel/
+# chance_erro só têm efeito se a próxima sala for combate (viram um
+# modificador no confronto daquela sala só). Ver decisoes.md.
+DUNGEON_CONDICOES_ARMADILHA = [
+    {"tipo": "vulneravel", "nome": "Ferimento Aberto", "emoji": "🩸", "valor": 0.20},
+    {"tipo": "chance_erro", "nome": "Tontura", "emoji": "💫", "valor": 0.20},
+    {"tipo": "dano_por_rodada", "nome": "Sangramento", "emoji": "🩹", "valor": 0.05},
 ]
 
 # classe -> chave do espelho -- acesso sempre por .get(), nunca subscript,

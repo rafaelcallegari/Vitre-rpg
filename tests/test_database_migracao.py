@@ -198,3 +198,28 @@ def test_migracao_18_banco_antigo_sem_a_coluna_ganha_default_zero_sem_perder_a_r
     run = db.get_dungeon_run(1)
     assert run is not None   # a run existente sobrevive à migração
     assert run["auto_ressurreicao_usada"] is False
+
+
+# ---- migração 19: condição da armadilha atravessa pra próxima sala (pool da dungeon) ----
+def test_migracao_19_cria_coluna_de_condicao_armadilha_em_dungeon_run():
+    assert "condicao_armadilha" in _colunas_dungeon_run()
+
+
+def test_migracao_19_e_idempotente():
+    antes = _colunas_dungeon_run()
+    db.init_db()
+    assert _colunas_dungeon_run() == antes
+
+
+def test_migracao_19_banco_antigo_sem_a_coluna_ganha_null_sem_perder_a_run_existente():
+    db.criar_jogador(1, "Alice")
+    db.criar_dungeon_run(1, ["camara_dos_ecos"])
+    with db.conectar() as conn:
+        conn.execute("ALTER TABLE dungeon_run DROP COLUMN condicao_armadilha")
+
+    db.init_db()
+
+    assert "condicao_armadilha" in _colunas_dungeon_run()
+    run = db.get_dungeon_run(1)
+    assert run is not None
+    assert run["condicao_armadilha"] is None

@@ -6448,3 +6448,220 @@ respeitar:
   neutro, sem exceção possível — aqui o mecanismo responde certo hoje,
   só falta o consumidor. Não é código morto por acidente; ninguém deve
   "consertar" isso achando que é um bug.
+
+## Dungeon — pool e armadilha
+
+Cartão "Exploração de Dungeon". Fecha uma lacuna da fatia 1: "armadilha"
+deixa de ser um TIPO de sala e vira uma CAMADA por cima de
+combate/evento/achado — `game_data.DUNGEON_POOL` ganhou `"armadilha":
+True/False` em toda entrada, e as duas salas que eram tipo "armadilha"
+(Piso Instável, Corrente Solta) se dissolveram: continuam existindo
+como chaves, agora tipo "achado" com a camada ligada, até o cartão do
+pool final (dez salas) redistribuir tudo. Só três tipos de sala agora:
+`combate`, `evento`, `achado`.
+
+### O motor de armadilha (três portas)
+
+Nesta ordem, pra todo personagem, usando os atributos BRUTOS do
+jogador (`at.extrair(j)`, não `s["atribs"]`) — de propósito: anel e
+colar podem somar atributo (`bonus_atributo_equipamento`), e a
+armadilha não pode virar algo que se compra com equipamento, só com
+nível. Cada porta é `atributo + d20 >= alvo`, `alvo = 3×nível + 7`
+(`DUNGEON_ARMADILHA_DIFICULDADE_POR_NIVEL`/`_BASE`) — sobe na mesma
+velocidade de `at.PONTOS_POR_NIVEL` de propósito, pra não virar letra
+morta numa dungeon repetível bem além do nível 15.
+
+1. **Percepção (INT)** — não dispara nada; só decide se dá pra
+   escolher (vira a tela de desarmar/contornar).
+2. **Esquiva (DES)** — só rola se Percepção falhar. Passa: sai de cima,
+   sem dano, sem condição.
+3. **Força (FOR)** — só rola se Esquiva falhar. Passa: toma o dano,
+   mas escapa da condição.
+4. **Falhou as três** — dano cheio + uma condição sorteada segue pra
+   próxima sala.
+
+`_resolver_portas_armadilha` devolve uma string (`"percepcao"` |
+`"esquiva"` | `"forca"` | `"falhou"`), testável isolando cada porta com
+`random.randint` determinizado — não precisa de Discord nem de banco.
+
+### A condição que atravessa: "2 rodadas" fora de uma Luta
+
+A dungeon resolve combate com `bot.simular_combate` (instantâneo, sem
+`combate.Luta`) — não existe "rodada" de verdade pra uma condição de
+`condicoes.py` tickar aqui (mesmo problema que a auto-ressurreição do
+clérigo já resolveu, Step 2d fechamento). Em vez de inventar rodadas
+falsas, "2 rodadas" foi reinterpretado como **"a resolução da PRÓXIMA
+sala inteira"** — uma sala de dungeon já é uma unidade narrativa grande
+o bastante pra carregar o peso de uma condição de 2 rodadas de combate
+de verdade.
+
+A condição sorteada (`DUNGEON_CONDICOES_ARMADILHA`, três entradas) usa
+os TIPOS de `condicoes.py` — "o motor que já tem", como o cartão pediu
+— mas reaproveitados fora de Luta:
+- **`vulneravel`** e **`chance_erro`** só têm efeito se a PRÓXIMA sala
+  for combate: `_aplicar_condicao_no_combate` faz cópias de `s`/`mob`
+  (o jogador de verdade nunca é tocado) e infla o atk do monstro ou
+  reduz o atk do jogador pra aquela luta inteira. Se a próxima sala não
+  for combate, a condição simplesmente expira sem efeito — simplificação
+  deliberada, documentada aqui (não em silêncio), porque não existe
+  tradução sensata pra "vulnerável" numa sala sem luta.
+- **`dano_por_rodada`** é o único tipo com efeito garantido fora de
+  combate: bate uma vez, na ABERTURA da próxima sala, não importa o
+  tipo — mesma fórmula de dano da armadilha (piso em 1 HP, nunca mata).
+
+Persistência: coluna nova `dungeon_run.condicao_armadilha` (JSON
+pequeno: tipo/nome/emoji/valor; migração 19, mesmo padrão de
+`colunas_instancias`/migração 14 — `PRAGMA table_info(dungeon_run)`,
+não de `jogadores`). `db.consumir_condicao_armadilha` lê E limpa numa
+tacada só, chamada uma vez no topo de `resolver_sala_atual` — a
+condição nunca sobrevive a duas salas.
+
+**Achado de implementação**: o `CREATE TABLE dungeon_run` não pode ter
+comentário em linha (`-- ...`) na ÚLTIMA coluna declarada — `ALTER
+TABLE ... DROP COLUMN` (usado pelos testes de migração pra simular
+banco antigo) reconstrói o texto do `CREATE TABLE` e tromba num
+comentário com vírgula dentro, `sqlite3.OperationalError: incomplete
+input`. Descoberto pelos próprios testes de migração 19 (que passaram
+a falhar até a causa ficar clara) — resolvido tirando os comentários em
+linha da declaração da tabela, com a explicação movida pra cima dela.
+Ver `tests/test_database_migracao.py`.
+
+**Bug pego pelos próprios testes, corrigido antes de qualquer commit**:
+`_resolver_combate` computava `hp = _hp_atual(j, s)` a partir do dict
+`j` capturado no INÍCIO da resolução da sala — se a condição
+`dano_por_rodada` já tinha reduzido o HP no banco (dentro de
+`_prosseguir_sala`, um passo antes), essa leitura ainda via o valor
+ANTIGO, e a vitória subsequente regravava `hp_final` de volta por cima,
+apagando silenciosamente o dano da condição. `_aplicar_dano_armadilha`
+agora muta `j["hp"]` em memória (além de gravar no banco) bem na hora
+— qualquer leitura de `j["hp"]` depois disso, na mesma resolução de
+sala, já vê o valor reduzido. Achado pelo teste `test_condicao_
+dano_por_rodada_bate_na_abertura_da_proxima_sala`, que teria passado
+por acidente (mock de vitória sempre devolve o HP recebido, então o
+apagamento silencioso não gerava erro nenhum, só um resultado errado
+sem barulho) se o assert fosse mais frouxo.
+
+### Espólio -- primeira peça, tabela cheia num cartão próprio
+
+"Desarmar" (Percepção passou) dá espólio GARANTIDO, sem rolagem --
+Instinto de Ladrão (`passivas.bonus_material`) mexe em CHANCE/
+quantidade, então não tem o que reforçar numa recompensa fixa; a
+passiva entra quando os achados de verdade (rolagem probabilística)
+ganharem mecânica própria. `game_data.ITENS` ganhou um tipo novo,
+`"espolio"` -- NÃO "material" (materiais entram em receita de craft;
+espólio nunca) e NÃO "tesouro" (tesouro é o item de andar não-farmável
+do Salão da guilda -- foi por isso que o tipo de sala já se chamava
+"achado", não "tesouro", desde a fatia 1). `loja: False`: não tem
+graça comprar de volta o que a dungeon te deu. Preço cheio em `rpg
+vender` (mesma tratativa que "material" já tem — ver a condição de
+preço em `bot.vender`). Só uma entrada por enquanto (`mecanismo_
+retorcido` — o próprio mecanismo da armadilha desarmada, literal com o
+texto do cartão "leva o mecanismo como espólio") — a tabela de ~8 itens
+em faixas de valor é o cartão seguinte; `dungeon._ESPOLIOS` é
+recalculada a partir de `ITENS` (filtro por `tipo == "espolio"`), então
+crescer a tabela depois não pede mudança nenhuma em `dungeon.py`.
+
+### Testes
+
+`tests/test_dungeon_armadilha.py`, 23 testes: a fórmula do alvo; as
+três portas isoladas com d20 determinizado; a ordem fixa (percepção
+sempre vence se todas passariam); dano nunca deixa HP abaixo de 1;
+salas limpas nunca chamam a resolução de portas (monkeypatch que
+LEVANTA se for chamado); falhar as três grava a condição; esquivar ou
+resistir não deixa nada pendente; `dano_por_rodada` bate na abertura
+da sala seguinte e NÃO sobrevive a uma segunda; `vulneravel`/
+`chance_erro` isolados E ponta a ponta (espiando os argumentos reais
+que chegam em `simular_combate` — a unidade sozinha não prova que
+`_resolver_combate` de fato chama a função de tradução); percepção
+mostra os dois botões certos sem avançar a sala; desarmar dá espólio;
+contornar não dá nada.
+
+Validado revertendo, um mecanismo por vez: (1) desligando o `if
+sala["armadilha"]` em `resolver_sala_atual`, caem os dois testes que
+dependem da armadilha disparar (falha-as-três, percepção); (2)
+desligando o `if condicao and tipo == "dano_por_rodada"`, cai só esse
+teste; (3) pulando a chamada de `_aplicar_condicao_no_combate` dentro
+de `_resolver_combate`, cai só o teste ponta a ponta que espiona
+`simular_combate` — os testes unitários da função de tradução sozinha
+continuam passando, prova de que a fiação real precisava do teste de
+integração pra ser coberta; (4) pulando o `db.add_item` de desarmar,
+cai só o teste de espólio. Em todos os casos, exatamente os testes
+esperados caem.
+
+## Dungeon — cooldown
+
+Cartão "Exploração de Dungeon", commit 3. **Revoga parte de uma decisão
+anterior do projeto**: a dungeon nasceu com entrada gratuita, repetição
+infinita e SEM cooldown algum. Isso fazia sentido enquanto a dungeon
+não pagava nada de verdade — ganhou risco com espólio (cartão acima) e
+está prestes a virar a principal fonte de dinheiro do jogo (espólio +
+XP + drops normais, tudo numa sequência instantânea de `simular_
+combate` sem o tempo morto de `rpg cacar`/`rpg explorar`). Sem cooldown,
+o ganho por hora ficaria limitado só pela velocidade de digitar —
+inconsistente com todo o resto do jogo (caçar 60s, explorar 180s, chefe
+900s).
+
+**Entrada gratuita e repetição infinita continuam de pé.** Só o "sem
+cooldown" caiu.
+
+`COOLDOWN_DUNGEON = 900` (mesma faixa do chefe — a dungeon é, por
+enquanto, o conteúdo de maior risco/recompensa do jogo depois dele),
+usando a tabela `cooldowns` que já existe (`db.checar_cooldown`/`db.
+set_cooldown`, mesmo `(user_id, comando)` de `cacar`/`explorar`/`boss`)
+— **nenhuma migração nova**, só um `comando="dungeon"` a mais na tabela
+genérica.
+
+**Por RUN, contado na ENTRADA — não por sala.** Contar por sala faria
+cada `rpg dungeon` esperar o relógio, matando o ritmo de livro-jogo que
+é o ponto da dungeon; contar na entrada também fecha de graça o abuso
+de sair e reentrar pra "resetar" alguma coisa (não existe nada pra
+resetar — `rpg dungeon sair` explicitamente NÃO devolve o cooldown, ver
+mensagem do comando).
+
+**Morrer NÃO reinicia o cooldown — escolha deste commit, não do
+Rafael, registrada aqui como tal.** Morrer já custa a run inteira mais
+a penalidade normal de morte (moedas + volta ao ponto de retorno);
+somar mais espera seria punir demais o único conteúdo do jogo cujo
+risco declarado é justamente morrer. Como o cooldown é gravado na
+ENTRADA (não em nenhum evento de dano/morte), isso é automático — não
+existe nenhum código que precise "não resetar" nada, é a ausência de
+qualquer gatilho de reset que garante a regra.
+
+O valor de `COOLDOWN_DUNGEON` (900s) é ponto de partida pra playtest —
+o cartão pediu que o valor saísse JUNTO com o do espólio, por medição
+(dinheiro/hora da dungeon não pode passar o de caçar/explorar), então
+os dois números fecham juntos quando a tabela de espólio (cartão
+seguinte) tiver faixa de valor completa pra calcular a taxa de verdade.
+
+### Testes
+
+`tests/test_dungeon_cooldown.py`, 8 testes: entrar liga o cooldown;
+segunda entrada com cooldown ativo é bloqueada e não cria run; a
+mensagem segue o padrão `⏳ \`rpg dungeon\` volta em **...**` do resto
+do jogo; continuar a MESMA run (retomada) não mexe no cooldown --
+prova que é por run, contado só na entrada, não por sala; morrer não
+reinicia (run com sala de combate garantida na primeira posição, pra
+não depender de qual sala o sorteio real escolheria); sair não
+reinicia; expirado o cooldown, entrar de novo funciona; nenhum limite
+de quantas runs (repetição infinita + entrada sem custo em moedas
+continuam de pé).
+
+Achado de estabilidade nos próprios testes: `sortear_salas()` é
+aleatório, e a suíte inicial descobriu por flakiness real (rodando
+várias vezes) que alguns testes assumiam vitória/sobrevivência na
+sala sorteada na entrada sem mockar `simular_combate` — a RNG de
+combate de verdade eventualmente derrubava o personagem e confundia
+"custo de entrada"/"cooldown expirado funciona" com "perdeu uma luta
+por azar". Corrigido mockando vitória (`_sempre_vitoria`) nos testes
+que não precisam que o combate seja de verdade, e fixando a lista de
+salas nos que precisam de uma sala de combate garantida numa posição
+específica (não deixar pro sorteio).
+
+Validado revertendo: tirando o bloco de `checar_cooldown`/`set_
+cooldown` de `_executar_entrar_ou_continuar`, caem exatamente os 4
+testes que provam que o cooldown liga/bloqueia/tem a mensagem certa —
+os 4 que provam que NADA reinicia o cooldown continuam passando
+(esperado: sem cooldown nenhum, "nada mexe nele" é vacuamente
+verdadeiro — esses quatro testam uma invariante diferente da
+existência do mecanismo, e é por isso que a lista de testes cobre os
+dois ângulos separadamente).

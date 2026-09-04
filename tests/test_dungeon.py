@@ -51,12 +51,18 @@ def _sempre_vitoria(monkeypatch):
 
 
 # ==================================================================
-# Dados: pool tem os 4 tipos, "achado" nunca "tesouro"
+# Dados: pool tem os 3 tipos ("armadilha" é camada, não tipo, ver
+# decisoes.md § Dungeon -- pool e armadilha), "achado" nunca "tesouro"
 # ==================================================================
 
-def test_pool_tem_os_quatro_tipos_de_sala():
+def test_pool_tem_os_tres_tipos_de_sala():
     tipos = {s["tipo"] for s in game_data.DUNGEON_POOL}
-    assert tipos == {"combate", "evento", "armadilha", "achado"}
+    assert tipos == {"combate", "evento", "achado"}
+
+
+def test_toda_sala_do_pool_declara_a_camada_de_armadilha():
+    for s in game_data.DUNGEON_POOL:
+        assert isinstance(s["armadilha"], bool), s["chave"]
 
 
 def test_achado_nunca_e_chamado_de_tesouro():

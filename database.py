@@ -136,12 +136,19 @@ CREATE TABLE IF NOT EXISTS estado_temporada (
     id     INTEGER PRIMARY KEY CHECK (id = 1),
     numero INTEGER NOT NULL DEFAULT 1
 );
+-- dungeon_run: salas/indice nasceram na fatia 1; auto_ressurreicao_usada
+-- (migração 18) e condicao_armadilha (migração 19) vieram depois -- ver
+-- COLUNAS_DUNGEON_RUN e decisoes.md. Sem comentário em linha nas colunas:
+-- DROP COLUMN reconstrói o texto do CREATE TABLE e tromba num comentário
+-- com vírgula dentro (SQLite, "incomplete input") -- ver
+-- tests/test_database_migracao.py.
 CREATE TABLE IF NOT EXISTS dungeon_run (
     user_id                  INTEGER PRIMARY KEY,
-    salas                    TEXT,     -- json: lista das chaves sorteadas, na ordem
+    salas                    TEXT,
     indice                   INTEGER NOT NULL DEFAULT 0,
     iniciada_em              REAL,
-    auto_ressurreicao_usada  INTEGER NOT NULL DEFAULT 0   -- ver COLUNAS_DUNGEON_RUN, migração 18
+    auto_ressurreicao_usada  INTEGER NOT NULL DEFAULT 0,
+    condicao_armadilha       TEXT
 );
 """
 
@@ -280,6 +287,16 @@ COLUNAS_DUNGEON_RUN = {
     # PRAGMA table_info de `dungeon_run`, não de `jogadores`. Ver
     # decisoes.md § Step 2d.
     "auto_ressurreicao_usada": "INTEGER NOT NULL DEFAULT 0",
+    # migração 19 -- pool da dungeon, camada de armadilha. Falhar as três
+    # portas (percepção/esquiva/força) faz a condição "seguir com você pra
+    # próxima sala" -- sem `combate.Luta` aqui (mesmo motivo da migração
+    # 18: a dungeon usa `simular_combate`, instantâneo, sem rodadas de
+    # verdade pra uma condição de `condicoes.py` tickar), então "2 rodadas"
+    # é reinterpretado como "a resolução da PRÓXIMA sala inteira" -- um
+    # JSON pequeno ({"tipo", "nome", "emoji", "valor"}) guardado até a
+    # próxima `resolver_sala_atual` consumir e limpar. NULL = nenhuma
+    # condição pendente. Ver decisoes.md § Dungeon -- pool e armadilha.
+    "condicao_armadilha": "TEXT",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -578,10 +595,13 @@ def init_db():
                 )
             print("Banco migrado: coluna ascensao criada -- ninguém ascendeu ainda.")
 
-        # migração 18: auto-ressurreição do clérigo na dungeon passa a ser
-        # UMA POR RUN, não uma por sala -- coluna nova em `dungeon_run`, não
-        # em `jogadores`, mesmo padrão de `colunas_instancias`/migração 14
-        # acima. Ver COLUNAS_DUNGEON_RUN e decisoes.md § Step 2d.
+        # migrações 18 e 19: colunas em `dungeon_run`, não em `jogadores` --
+        # mesmo padrão de `colunas_instancias`/migração 14 acima. Um só
+        # laço cobre as duas (e qualquer coluna futura de `dungeon_run`)
+        # porque `COLUNAS_DUNGEON_RUN` acumula todas -- migração 18 é
+        # `auto_ressurreicao_usada` (Step 2d, fechamento), migração 19 é
+        # `condicao_armadilha` (pool da dungeon, camada de armadilha). Ver
+        # COLUNAS_DUNGEON_RUN e decisoes.md.
         colunas_dungeon_run = [r["name"] for r in conn.execute("PRAGMA table_info(dungeon_run)")]
         novas_dungeon_run = [c for c in COLUNAS_DUNGEON_RUN if c not in colunas_dungeon_run]
         if novas_dungeon_run:
@@ -589,7 +609,7 @@ def init_db():
                 conn.execute(
                     f"ALTER TABLE dungeon_run ADD COLUMN {coluna} {COLUNAS_DUNGEON_RUN[coluna]}"
                 )
-            print("Banco migrado: coluna de auto-ressurreição criada em dungeon_run -- ninguém gastou ainda.")
+            print(f"Banco migrado: coluna(s) {', '.join(novas_dungeon_run)} criada(s) em dungeon_run.")
 
 
 def _migrar_upgrades_para_instancias(conn):
@@ -1303,6 +1323,7 @@ def get_dungeon_run(user_id):
         "indice": row["indice"],
         "iniciada_em": row["iniciada_em"],
         "auto_ressurreicao_usada": bool(row["auto_ressurreicao_usada"]),
+        "condicao_armadilha": json.loads(row["condicao_armadilha"]) if row["condicao_armadilha"] else None,
     }
 
 
@@ -1317,6 +1338,32 @@ def marcar_dungeon_run_ressuscitou(user_id):
     clérigo cairia; nenhuma sala depois desta na mesma run revive de novo."""
     with conectar() as conn:
         conn.execute("UPDATE dungeon_run SET auto_ressurreicao_usada = 1 WHERE user_id = ?", (user_id,))
+
+
+def definir_condicao_armadilha(user_id, condicao):
+    """Armadilha da dungeon: `falhou as três portas` grava a condição
+    (dict pequeno: tipo/nome/emoji/valor) que atravessa pra próxima sala --
+    ver COLUNAS_DUNGEON_RUN, migração 19."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE dungeon_run SET condicao_armadilha = ? WHERE user_id = ?",
+            (json.dumps(condicao), user_id),
+        )
+
+
+def consumir_condicao_armadilha(user_id):
+    """Lê a condição pendente (ou None) e já limpa a coluna -- consumida
+    UMA vez, na resolução da sala seguinte, não importa o tipo dela."""
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT condicao_armadilha FROM dungeon_run WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if row and row["condicao_armadilha"]:
+            conn.execute(
+                "UPDATE dungeon_run SET condicao_armadilha = NULL WHERE user_id = ?", (user_id,)
+            )
+            return json.loads(row["condicao_armadilha"])
+    return None
 
 
 def apagar_dungeon_run(user_id):
