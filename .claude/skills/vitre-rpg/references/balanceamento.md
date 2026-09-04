@@ -22,7 +22,12 @@ Se este arquivo discordar do código, o código venceu — corrija aqui.
  (`HP_BASE=60`, `HP_POR_CON=10`, `HP_POR_NIVEL=10`).
 - `mana_maxima(nível, INT) = 20 + 5*INT` (`MANA_BASE=20`, `MANA_POR_INT=5`).
  Confirma o valor citado em `decisoes.md` (INT 6 → 50 de mana).
-- Mana não tem consumidor ainda — habilidades não existem no código.
+- Mana é gasta pelas habilidades do Mago e do Orador (`game_data.HABILIDADES`,
+ campo `"custo"`) — 12 a 20 por skill, ver decisoes.md § Primeira leva de
+ skills e § Step 2a/2b/2c pro catálogo completo. Fúria (Guerreiro) e Energia
+ (Ladino) são os outros dois recursos, cada um com o próprio mecanismo
+ (`ganhar_furia`/`ganhar_furia_defesa`, `regenerar_energia` em `combate.py`)
+ — nenhum dos dois usa mana.
 
 ## Ataque, defesa e crítico
 
