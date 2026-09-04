@@ -134,3 +134,13 @@ def fracao_defesa_ignorada(jogador):
     if _tem_passiva(jogador, "fio_da_lamina"):
         return PASSIVAS["fio_da_lamina"]["valor"]
     return 0.0
+
+
+def mana_recuperada_por_golpe(jogador):
+    """Corpo Desperto (monge): mana ADICIONAL recuperada a cada golpe que
+    acerta -- ataque normal ou skill (mana não regenera em combate por
+    conta própria, então isto é o que sustenta o monge numa luta longa).
+    0 = nenhuma passiva mexe nisso."""
+    if _tem_passiva(jogador, "corpo_desperto"):
+        return PASSIVAS["corpo_desperto"]["valor"]
+    return 0

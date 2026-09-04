@@ -6048,3 +6048,58 @@ passando porque, no momento em que são checados, `ativos` e
 `participantes` ainda coincidem — só divergem depois que alguém cai,
 exatamente o cenário que os dois testes que caem cobrem. Suíte
 completa: 596 (592 de antes + 4 novos), 595 passando + 1 xfail antigo.
+
+### Commit 2 — Monge: Punho do Silêncio + Corpo Desperto
+
+**Punho do Silêncio** é a única skill do jogo que troca o atributo de
+escala da própria classe: Orador tem `atributo_habilidade = "inteligencia"`
+mas essa skill escala em DESTREZA. `hab.poder_base` ganhou um terceiro
+parâmetro opcional, `atributo=None` — quando `None` (todo mundo, sempre,
+até hoje), continua lendo `CLASSES[classe]["atributo_habilidade"]` igual
+sempre fez; só quando alguém passa um valor (só esta skill passa)
+`poder_base` usa ele em vez do da classe. `_rolar_dano_habilidade` ganhou
+o mesmo parâmetro, só repassando adiante. Nenhum `if` sobre o NOME da
+skill em lugar nenhum — o mecanismo é genérico, só um chamador específico
+usa.
+
+Aplica `bloqueia_skill` no chefe (mesmo tipo de condição de Choque,
+CONDICOES_ELEMENTO/raio) — duração N (2 rodadas) + 1 da regra de sempre.
+**Isso quase não muda nada hoje, e é intencional**: o chefe não tem
+NENHUMA skill própria pra bloquear ainda — a IA de combo entra no step 3.
+Diferença crucial pro erro do Reflexos (Step 2b correção, `e687f27`):
+Reflexos tentava consultar um mecanismo que SEMPRE devolvia o resultado
+neutro (`RODADA_1_SEM_CHEFE` já garantia iniciativa pra todo mundo, sem
+exceção possível). Aqui o mecanismo (`condicoes.pode_lancar_habilidade`)
+já é consultado DE VERDADE hoje, e responde corretamente (`True` antes,
+`False` depois de aplicar) — só não muda o jogo ainda porque não existe
+NENHUMA habilidade de chefe pra essa consulta impedir. Não é código
+morto por acidente; é código correto esperando o consumidor certo
+chegar. Testado direto: a consulta muda de valor de verdade.
+
+**Corpo Desperto** recupera mana a cada golpe que acerta — ataque normal
+OU skill, porque mana não regenera em combate sozinha (ao contrário da
+Energia do Ladino, que regenera todo turno). Ponto novo,
+`_recuperar_mana_por_golpe(c)`, chamado nos dois pontos do ataque normal
+(mesmos 2 pontos que `_defesa_efetiva`/Fio da Lâmina já tocam) e dentro
+de `_efeito_punho_do_silencio`. Diferente de Fio da Lâmina, NÃO precisou
+retrofitar as outras 11 skills de dano do jogo: um monge só alcança
+`punho_do_silencio` como skill própria (as duas skills BASE do Orador,
+Palavra de Alento e Voto de Ferro, não causam dano — não têm "golpe" pra
+Corpo Desperto reagir), então tocar só o ataque normal + a própria skill
+já cobre 100% do que um monge pode fazer. `5` de mana por golpe é ponto
+de partida pra playtest — pouco de propósito, pra não virar mana infinita.
+
+### Testes
+
+`tests/test_monge.py`, 12 testes: gate de ascensão; dano aplica defesa;
+escala em DES não em INT (INT alta não muda nada, DES alta muda tudo —
+os dois lados testados separadamente); `bloqueia_skill` dura 2 rodadas
+(contado em ticks); a consulta responde `True`→`False` de verdade,
+provando que não é no-op por acidente; Corpo Desperto recupera mana no
+ataque normal e na skill, não estoura o teto, e sem a passiva nada muda.
+
+Validado revertendo: zerando `passivas.mana_recuperada_por_golpe`
+incondicionalmente, caem exatamente os dois testes de Corpo Desperto
+(ataque normal e skill) — os outros 10 (gate, dano, atributo trocado,
+bloqueia_skill) continuam passando porque não dependem de mana. Suíte
+completa: 608 (596 de antes + 12 novos), 607 passando + 1 xfail antigo.

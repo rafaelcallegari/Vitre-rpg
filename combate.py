@@ -132,6 +132,18 @@ BONUS_GOLPE_OPORTUNISTA = 1.0              # + até isso, conforme O PRÓPRIO GU
 MULTIPLICADORES_SEQUENCIA = (0.5, 0.7, 0.8)   # 3 golpes, soma 2.0 -- cada um mais forte que o anterior,
                                                # cada um rola crítico separado (mesmo padrão do Corte Rápido)
 
+# skills de ascensão do Orador (Step 2d) -- mesmo critério: 2.0 nominal +
+# efeito, COM at.aplicar_defesa. Ver decisoes.md § Step 2d.
+MULTIPLICADOR_PUNHO_DO_SILENCIO = 2.0
+DURACAO_BLOQUEIA_SKILL_PUNHO_RODADAS = 2   # N rodadas silenciado -- regra N+1 (ver comentário
+                                            # "Duração de condições" logo acima de _multiplicador_afinidade).
+                                            # Hoje quase não faz nada (chefe não tem habilidade própria) --
+                                            # intencional, ganha valor no step 3 (IA de combo). NÃO é no-op
+                                            # por engano como Reflexos era (Step 2b correção): aqui o efeito
+                                            # (bloqueia_skill) já existe e É consultado hoje
+                                            # (condicoes.pode_lancar_habilidade), só o chefe ainda não tem
+                                            # skill própria pra bloquear.
+
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
 COR_SALA = 0xA8DADC
@@ -155,6 +167,14 @@ def _defesa_efetiva(luta, c):
     isso que todo ponto de dano-com-defesa (ataque normal E toda skill)
     pode chamar isto sem risco pra quem não é espadachim."""
     return luta.chefe["def"] * (1 - passivas.fracao_defesa_ignorada(c.jogador))
+
+
+def _recuperar_mana_por_golpe(c):
+    """Corpo Desperto (monge, Step 2d): chamada quando um golpe de c
+    ACERTA -- ataque normal ou skill. 0 de passivas.mana_recuperada_por_
+    golpe reproduz o comportamento de sempre (nada muda) pra quem não é
+    monge, então todo ponto de dano pode chamar isto sem risco."""
+    c.mana = min(c.s["mana_max"], c.mana + passivas.mana_recuperada_por_golpe(c.jogador))
 
 
 def penetracao_do_andar(andar_num, carregado=False):
@@ -992,13 +1012,16 @@ def _rolar_ataque_normal(luta, c, atk, defesa, critico):
     )
 
 
-def _rolar_dano_habilidade(luta, c, multiplicador, critico_extra=0.0):
+def _rolar_dano_habilidade(luta, c, multiplicador, critico_extra=0.0, atributo=None):
     """Dano bruto de uma skill: mesma variação (±15%) e crítico de um golpe
     normal, sobre a MESMA base do ataque normal (atributo + atk da arma) —
     é isso que faz o multiplicador ser literalmente "quantos ataques
     básicos essa skill vale", em qualquer nível e com qualquer arma. Ver
-    decisoes.md § Dano de skill abaixo do ataque básico."""
-    base = hab.poder_base(c.jogador, _bonus_arma_de(c)) * multiplicador * _multiplicador_afinidade(c)
+    decisoes.md § Dano de skill abaixo do ataque básico.
+
+    `atributo`: só Punho do Silêncio (Step 2d) passa isso -- escala em DES
+    em vez do atributo_habilidade normal do Orador (INT). Ver hab.poder_base."""
+    base = hab.poder_base(c.jogador, _bonus_arma_de(c), atributo) * multiplicador * _multiplicador_afinidade(c)
     bruto = base * random.uniform(0.85, 1.15)
     foi_critico = _rolar_critico(luta, c) or random.random() < (c.s["critico"] + critico_extra)
     if foi_critico:
@@ -1280,6 +1303,32 @@ def _efeito_sequencia(luta, c, dados):
     )
 
 
+def _efeito_punho_do_silencio(luta, c, dados):
+    """Monge: única skill do jogo que escala em DES em vez do
+    atributo_habilidade normal da classe (INT pro Orador) --
+    `_rolar_dano_habilidade(..., atributo="destreza")`. Aplica defesa
+    normalmente + `bloqueia_skill` no chefe (mesma condição de Choque,
+    andares 11+) por DURACAO_BLOQUEIA_SKILL_PUNHO_RODADAS (2), regra N+1
+    (duracao=3). Recupera mana por Corpo Desperto -- o único jeito do
+    monge sustentar mais de um golpe numa luta longa."""
+    dano = at.aplicar_defesa(
+        _rolar_dano_habilidade(luta, c, MULTIPLICADOR_PUNHO_DO_SILENCIO, atributo="destreza"),
+        _defesa_efetiva(luta, c),
+    )
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano.")
+    duracao = DURACAO_BLOQUEIA_SKILL_PUNHO_RODADAS + 1
+    condicoes.aplicar(
+        luta, "chefe", "bloqueia_skill", dados["nome"], dados["emoji"],
+        duracao=duracao, valor=0, origem=c.id,
+    )
+    _recuperar_mana_por_golpe(c)
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1297,6 +1346,7 @@ EFEITOS_HABILIDADE = {
     "muralha_de_escudos": _efeito_muralha_de_escudos,
     "golpe_oportunista": _efeito_golpe_oportunista,
     "sequencia": _efeito_sequencia,
+    "punho_do_silencio": _efeito_punho_do_silencio,
 }
 
 
@@ -1552,6 +1602,7 @@ class PainelLuta(discord.ui.View):
                 luta.verificar_fase2()
                 luta.registrar(f"{c.nome} acerta **{dano}**")
                 ganhar_furia(c, critico)
+                _recuperar_mana_por_golpe(c)
                 _talvez_condicionar_chefe(luta, c)
         fim = await self.fim_da_luta()
         if fim:
@@ -1664,6 +1715,7 @@ class PainelLuta(discord.ui.View):
                         luta.verificar_fase2()
                         luta.registrar(f"{c.nome} acerta **{dano}**")
                         ganhar_furia(c, critico)
+                        _recuperar_mana_por_golpe(c)
                         _talvez_condicionar_chefe(luta, c)
             if luta.hp_chefe > 0:
                 luta.turno_do_chefe()

@@ -558,7 +558,7 @@ ASCENSOES = {
     "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "sequencia", "passivas": ["fio_da_lamina"]},
     "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_fatal", "passivas": ["sangue_frio", "instinto_ladino"]},
     "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "flecha_perfurante", "passivas": ["olho_de_aguia", "instinto_ladino"]},
-    "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "monge": {"nome": "Monge", "base": "orador", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "punho_do_silencio", "passivas": ["corpo_desperto"]},
     "clerigo": {"nome": "Clérigo", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "paladino": {"nome": "Paladino", "base": "orador", "elemento": "divino", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
 }
@@ -620,6 +620,11 @@ PASSIVAS = {
         "nome": "Fio da Lâmina", "emoji": "🗡️",
         "desc": "Seus ataques ignoram 25% da defesa do chefe -- vale no ataque normal e em toda skill.",
         "valor": 0.25,
+    },
+    "corpo_desperto": {
+        "nome": "Corpo Desperto", "emoji": "🧘",
+        "desc": "Recupera um pouco de mana a cada golpe que acerta -- ataque normal ou skill.",
+        "valor": 5,
     },
 }
 
@@ -758,6 +763,11 @@ HABILIDADES = {
         "nome": "Sequência", "emoji": "⚔️", "classe": "guerreiro",
         "recurso": "furia", "custo": 60, "ascensao": "espadachim",
         "desc": "Três golpes em FOR, cada um mais forte que o anterior, todos passando pela defesa do chefe.",
+    },
+    "punho_do_silencio": {
+        "nome": "Punho do Silêncio", "emoji": "👊", "classe": "orador",
+        "recurso": "mana", "custo": 18, "ascensao": "monge",
+        "desc": "Dano em DES (não em INT) que passa pela defesa do chefe e silencia a próxima ação dele.",
     },
 }
 

@@ -65,17 +65,21 @@ def lancaveis(jogador, recurso_atual):
     return {k: v for k, v in conhecidas(jogador).items() if v["custo"] <= recurso_atual}
 
 
-def poder_base(jogador, bonus_arma=0):
+def poder_base(jogador, bonus_arma=0, atributo=None):
     """Base de dano/efeito de habilidade — mesma forma de at.ataque, COM o
     bônus de atk da arma equipada (bonus_arma), escalando no
-    atributo_habilidade da classe do jogador.
+    atributo_habilidade da classe do jogador -- ou em `atributo`, se
+    passado, pra skill que troca o próprio atributo de escala (Punho do
+    Silêncio, Step 2d, é a única do jogo que faz isso: monge escala em
+    DES, não em INT, mesmo INT sendo o atributo_habilidade do Orador).
 
     Até a correção de decisoes.md § Dano de skill abaixo do ataque básico,
     essa função não recebia bonus_arma — skill de dano crescia só com o
     atributo, enquanto o ataque normal também cresce com o atk da arma
     (+8 no andar 1 a +82 no andar 9). Skill ficava pra trás sozinha, cada
     vez mais, conforme o jogador progredia na torre."""
-    atributo = CLASSES[jogador["classe"]]["atributo_habilidade"]
+    if atributo is None:
+        atributo = CLASSES[jogador["classe"]]["atributo_habilidade"]
     return at.ataque(int(jogador[atributo] or 0), bonus_arma)
 
 
