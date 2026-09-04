@@ -109,3 +109,15 @@ def bonus_reducao_dano(jogador):
     if _tem_passiva(jogador, "disciplina"):
         return PASSIVAS["disciplina"]["valor"]
     return 0.0
+
+
+def multiplicador_furia_desespero(jogador, fracao_hp):
+    """Desespero (mercenário): multiplicador sobre o ganho de Fúria
+    (`combate.ganhar_furia`/`ganhar_furia_defesa`) quando o guerreiro está
+    com `fracao_hp` (hp atual / hp máximo) abaixo de METADE -- 1.0 = acima
+    da metade, ou nenhuma passiva mexe nisso. `fracao_hp` é estado de
+    combate (não mora no jogador persistido), por isso entra como
+    parâmetro -- mesmo padrão de `critico_garantido(jogador, rodada)`."""
+    if _tem_passiva(jogador, "desespero") and fracao_hp <= 0.5:
+        return PASSIVAS["desespero"]["valor"]
+    return 1.0

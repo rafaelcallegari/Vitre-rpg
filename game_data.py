@@ -554,7 +554,7 @@ ASCENSOES = {
     "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "conflagracao", "passivas": ["combustao"]},
     "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "interrupcao", "passivas": ["reflexos"]},
     "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "muralha_de_escudos", "passivas": ["disciplina"]},
-    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_oportunista", "passivas": ["desespero"]},
     "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "assassino": {"nome": "Assassino", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "golpe_fatal", "passivas": ["sangue_frio", "instinto_ladino"]},
     "arqueiro": {"nome": "Arqueiro", "base": "ladino", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "flecha_perfurante", "passivas": ["olho_de_aguia", "instinto_ladino"]},
@@ -610,6 +610,11 @@ PASSIVAS = {
         "nome": "Disciplina", "emoji": "🛡️",
         "desc": "Reduz permanentemente o dano que você recebe -- soma com Muralha de Escudos e Voto de Ferro, teto de 50% pro total.",
         "valor": 0.15,
+    },
+    "desespero": {
+        "nome": "Desespero", "emoji": "😤",
+        "desc": "Abaixo de metade do HP, você ganha Fúria 50% mais rápido -- atacando ou apanhando.",
+        "valor": 1.5,
     },
 }
 
@@ -738,6 +743,11 @@ HABILIDADES = {
         "nome": "Muralha de Escudos", "emoji": "🛡️", "classe": "guerreiro",
         "recurso": "furia", "custo": 50, "ascensao": "soldado",
         "desc": "Dano em FOR que passa pela defesa do chefe -- força o chefe a te atacar por 2 rodadas e reduz o dano que você recebe enquanto isso.",
+    },
+    "golpe_oportunista": {
+        "nome": "Golpe Oportunista", "emoji": "🩹", "classe": "guerreiro",
+        "recurso": "furia", "custo": 55, "ascensao": "mercenario",
+        "desc": "Dano em FOR que passa pela defesa do chefe e cresce quanto mais HP VOCÊ já perdeu -- mortal com o guerreiro no fio da navalha.",
     },
 }
 

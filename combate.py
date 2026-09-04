@@ -121,6 +121,10 @@ REDUCAO_MURALHA_DE_ESCUDOS = 0.20          # temporária, enquanto o redireciona
                                             # Disciplina (permanente) e Voto de Ferro, teto 0.5 pro total
 DURACAO_MURALHA_RODADAS = 2                # N rodadas de redirecionamento -- regra N+1 (ver comentário
                                             # "Duração de condições" logo acima de _multiplicador_afinidade)
+MULTIPLICADOR_GOLPE_OPORTUNISTA = 2.0      # guerreiro com HP cheio
+BONUS_GOLPE_OPORTUNISTA = 1.0              # + até isso, conforme O PRÓPRIO GUERREIRO perde HP -- teto 3.0
+                                            # com c em 1 de HP. Espelho do Golpe Fatal (Step 2a): aquele pune
+                                            # o alvo ferido, este recompensa o guerreiro ferido.
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -208,20 +212,26 @@ def pode_usar(combatente, chave):
 
 
 def ganhar_furia(c, critico=False):
-    """Só o Guerreiro acumula Fúria, e só atacando — golpe crítico dá +50%."""
+    """Só o Guerreiro acumula Fúria, e só atacando — golpe crítico dá +50%.
+    Desespero (mercenário, Step 2c): mais rápido abaixo de metade do HP --
+    ver passivas.multiplicador_furia_desespero."""
     if c.jogador["classe"] != "guerreiro":
         return
     ganho = FURIA_POR_GOLPE + int(c.jogador["forca"] or 0) / 5
     if critico:
         ganho *= 1.5
+    ganho *= passivas.multiplicador_furia_desespero(c.jogador, c.hp / c.s["hp_max"])
     c.furia = min(FURIA_MAX, c.furia + ganho)
 
 
 def ganhar_furia_defesa(c):
-    """Defender também gera Fúria pro Guerreiro, metade do golpe normal."""
+    """Defender também gera Fúria pro Guerreiro, metade do golpe normal.
+    Desespero também vale aqui -- é o caso que a passiva mais precisa
+    valer: o guerreiro apanhando é quem está abaixo de metade do HP."""
     if c.jogador["classe"] != "guerreiro":
         return
     ganho = 0.5 * (FURIA_POR_GOLPE + int(c.jogador["forca"] or 0) / 5)
+    ganho *= passivas.multiplicador_furia_desespero(c.jogador, c.hp / c.s["hp_max"])
     c.furia = min(FURIA_MAX, c.furia + ganho)
 
 
@@ -1206,6 +1216,23 @@ def _efeito_muralha_de_escudos(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_golpe_oportunista(luta, c, dados):
+    """Mercenário: espelho do Golpe Fatal (Step 2a) -- em vez de escalar
+    com o quanto o CHEFE já perdeu de HP, escala com o quanto O PRÓPRIO
+    GUERREIRO (c.hp / c.s["hp_max"], nunca o HP do chefe) já perdeu --
+    2.0x com HP cheio, até 3.0x (MULTIPLICADOR_GOLPE_OPORTUNISTA +
+    BONUS_GOLPE_OPORTUNISTA) com c perto de 0. Aplica defesa normalmente."""
+    fracao_perdida = 1 - max(0, c.hp) / c.s["hp_max"]
+    multiplicador = MULTIPLICADOR_GOLPE_OPORTUNISTA + BONUS_GOLPE_OPORTUNISTA * fracao_perdida
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} crava **{dados['nome']}** — {dano} de dano.")
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1221,6 +1248,7 @@ EFEITOS_HABILIDADE = {
     "conflagracao": _efeito_conflagracao,
     "interrupcao": _efeito_interrupcao,
     "muralha_de_escudos": _efeito_muralha_de_escudos,
+    "golpe_oportunista": _efeito_golpe_oportunista,
 }
 
 

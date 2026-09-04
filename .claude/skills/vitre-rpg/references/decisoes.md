@@ -5776,3 +5776,50 @@ dois testes que dependem dela —
 `test_muralha_mais_voto_de_ferro_mais_disciplina_nao_passa_de_50_por_cento`.
 Suíte completa: 568 (558 de antes + 10 novos), 567 passando + 1 xfail
 antigo.
+
+### Commit 2 — Mercenário: Golpe Oportunista + Desespero
+
+**Golpe Oportunista** (`MULTIPLICADOR_GOLPE_OPORTUNISTA = 2.0`, com
+defesa) é o espelho literal do Golpe Fatal do assassino (Step 2a): aquele
+escala com `luta.hp_chefe`/`hp_chefe_max` (pune o ALVO ferido), este
+escala com `c.hp`/`c.s["hp_max"]` (recompensa o PRÓPRIO GUERREIRO
+ferido) — `BONUS_GOLPE_OPORTUNISTA = 1.0` é o mesmo teto formato, 2.0x
+com HP cheio até 3.0x com o guerreiro a 1 de HP. Testado explicitamente
+que a skill lê `c.hp`, não `luta.hp_chefe` — um chefe agonizando ao lado
+de um guerreiro com HP cheio não pode inflar o multiplicador por engano
+(erro fácil de cometer copiando o Golpe Fatal sem trocar a variável).
+
+**Desespero** precisou entrar em DOIS pontos, não um: `ganhar_furia`
+(dano causado) E `ganhar_furia_defesa` (dano recebido, o botão Defender).
+A restrição do cartão — "Fúria nasce em 0, só sobe atacando ou
+defendendo, o Guerreiro nunca abre com skill" — significa que o cenário
+em que Desespero mais importa é justamente o guerreiro APANHANDO abaixo
+de metade do HP, tentando construir Fúria rápido o bastante pra usar uma
+skill antes de cair. Se a passiva só entrasse em `ganhar_furia`, o
+guerreiro que está SE DEFENDENDO (o jeito mais óbvio de aguentar
+enquanto está baixo) não sentiria nada dela.
+
+`passivas.multiplicador_furia_desespero(jogador, fracao_hp)` segue o
+mesmo padrão de `critico_garantido(jogador, rodada)`: a passiva depende
+de ESTADO DE COMBATE (fração de HP atual), que não mora no jogador
+persistido, então entra como parâmetro em vez de a função tentar
+descobrir sozinha. `combate.py` calcula `c.hp / c.s["hp_max"]` nos dois
+pontos de chamada.
+
+### Testes
+
+`tests/test_mercenario.py`, 10 testes: gate de ascensão; dano aplica
+defesa; dano cresce quanto mais baixo o HP do PRÓPRIO guerreiro; valor
+exato com HP cheio (2.0x) confirmando que a skill lê `c.hp`, não
+`luta.hp_chefe`, mesmo com o chefe agonizando ao lado; Desespero acelera
+as DUAS portas (`ganhar_furia` e `ganhar_furia_defesa`) abaixo de
+metade do HP; não acelera acima da metade; sem a passiva, nada muda
+mesmo com HP baixo.
+
+Validado revertendo: desligando a chamada a `passivas.multiplicador_
+furia_desespero` nas DUAS portas, caem exatamente os dois testes que
+dependem dela -- `test_desespero_acelera_ganhar_furia_abaixo_de_metade_
+do_hp` e `test_desespero_acelera_ganhar_furia_defesa_abaixo_de_metade_
+do_hp` -- um por porta, confirmando que cada porta tem cobertura
+própria e nenhuma esconde a falta da outra. Suíte completa: 578 (568 de
+antes + 10 novos), 577 passando + 1 xfail antigo.
