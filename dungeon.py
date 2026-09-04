@@ -83,20 +83,23 @@ async def _resolver_combate(ctx, j, s, run, sala):
         # a penalidade já foi cobrada de alguém que, na verdade, não
         # morreu. Sem Luta aqui (a dungeon usa simular_combate, instantâneo
         # -- ver cabeçalho do arquivo, "SEM as skills de ascensão"): o
-        # contador "uma vez por luta" de combate.py não se aplica, então
-        # isto vale uma vez POR SALA (cada sala é sua própria mini-luta
-        # autocontida) -- mais generoso que uma luta de chefe de verdade,
-        # aceitável porque a dungeon inteira ainda não vai pro ar. Ver
-        # decisoes.md § Step 2d.
-        if passivas.e_clerigo(j):
+        # contador `auto_ressurreicao_usada` de combate.Luta (uma vez por
+        # LUTA) não alcança aqui, então o gasto mora na PRÓPRIA dungeon_run
+        # (coluna `auto_ressurreicao_usada`, migração 18) -- uma vez por
+        # RUN inteira (as 5 salas), não uma vez por sala. `rpg dungeon
+        # sair` + recomeçar apaga a run e cria outra, zerando o gasto de
+        # propósito. Ver decisoes.md § Step 2d.
+        if passivas.e_clerigo(j) and not run["auto_ressurreicao_usada"]:
             hp_revivido = int(combate.FRACAO_HP_AUTO_RESSURREICAO * s["hp_max"])
             db.atualizar_jogador(j["user_id"], hp=hp_revivido)
+            db.marcar_dungeon_run_ressuscitou(j["user_id"])
             e.color = 0x8B0000
             e.add_field(
                 name="✨ Você se recusa a cair",
                 value=(
                     f"A auto-ressurreição do clérigo te traz de volta com **{hp_revivido}** HP. "
-                    f"A run continua -- chame `rpg dungeon` de novo pra tentar esta sala outra vez."
+                    f"Foi a única vez que vale nesta run -- chame `rpg dungeon` de novo pra tentar "
+                    f"esta sala outra vez."
                 ),
                 inline=False,
             )

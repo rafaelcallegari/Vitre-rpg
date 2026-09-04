@@ -164,3 +164,37 @@ def test_migracao_14_nao_reprocessa_upgrades_quando_falta_so_a_coluna_de_joia():
 def test_migracao_17_ascensao_comeca_null():
     db.criar_jogador(1, "Alice")
     assert db.get_jogador(1)["ascensao"] is None
+
+
+# ---- migração 18: auto-ressurreição da dungeon é UMA POR RUN (Step 2, fechamento) ----
+def _colunas_dungeon_run():
+    with db.conectar() as conn:
+        return {r["name"] for r in conn.execute("PRAGMA table_info(dungeon_run)")}
+
+
+def test_migracao_18_cria_coluna_de_auto_ressurreicao_em_dungeon_run():
+    assert "auto_ressurreicao_usada" in _colunas_dungeon_run()
+
+
+def test_migracao_18_e_idempotente():
+    antes = _colunas_dungeon_run()
+    db.init_db()
+    assert _colunas_dungeon_run() == antes
+
+
+def test_migracao_18_banco_antigo_sem_a_coluna_ganha_default_zero_sem_perder_a_run_existente():
+    """Simula um banco de antes desta carta: `dungeon_run` existe, tem uma
+    run em andamento, mas não tem a coluna nova ainda -- init_db() precisa
+    adicionar a coluna SEM apagar a run existente, com o gasto começando
+    zerado (a coluna nem existia, ninguém "gastou" nada)."""
+    db.criar_jogador(1, "Alice")
+    db.criar_dungeon_run(1, ["camara_dos_ecos"])
+    with db.conectar() as conn:
+        conn.execute("ALTER TABLE dungeon_run DROP COLUMN auto_ressurreicao_usada")
+
+    db.init_db()
+
+    assert "auto_ressurreicao_usada" in _colunas_dungeon_run()
+    run = db.get_dungeon_run(1)
+    assert run is not None   # a run existente sobrevive à migração
+    assert run["auto_ressurreicao_usada"] is False

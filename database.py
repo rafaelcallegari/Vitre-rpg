@@ -137,10 +137,11 @@ CREATE TABLE IF NOT EXISTS estado_temporada (
     numero INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS dungeon_run (
-    user_id     INTEGER PRIMARY KEY,
-    salas       TEXT,     -- json: lista das chaves sorteadas, na ordem
-    indice      INTEGER NOT NULL DEFAULT 0,
-    iniciada_em REAL
+    user_id                  INTEGER PRIMARY KEY,
+    salas                    TEXT,     -- json: lista das chaves sorteadas, na ordem
+    indice                   INTEGER NOT NULL DEFAULT 0,
+    iniciada_em              REAL,
+    auto_ressurreicao_usada  INTEGER NOT NULL DEFAULT 0   -- ver COLUNAS_DUNGEON_RUN, migração 18
 );
 """
 
@@ -263,6 +264,22 @@ COLUNAS_INSTANCIA_JOIA = {
     # encantamento_* na mesma linha). Ver decisoes.md § Encantador e Joalheiro.
     "joia_atributo": "TEXT",
     "joia_valor": "INTEGER",
+}
+
+COLUNAS_DUNGEON_RUN = {
+    # migração 18 -- Step 2, fechamento. A auto-ressurreição do clérigo na
+    # dungeon precisa valer UMA POR RUN, não uma por sala: a dungeon resolve
+    # combate com `simular_combate` (instantâneo), não com `combate.Luta`,
+    # então o contador `auto_ressurreicao_usada` de Luta (uma vez por LUTA)
+    # nunca alcança aqui -- cada sala era, sem isso, sua própria mini-luta
+    # com o próprio gasto, e um clérigo atravessava as 5 salas sem risco
+    # real de perder a run. A `dungeon_run` já persiste e sobrevive a
+    # restart, então o contador mora nela, não no jogador (uma run nova via
+    # `rpg dungeon sair` + recomeçar zera o gasto de propósito). Coluna nova
+    # numa tabela que não é `jogadores`, então a migração abaixo confere
+    # PRAGMA table_info de `dungeon_run`, não de `jogadores`. Ver
+    # decisoes.md § Step 2d.
+    "auto_ressurreicao_usada": "INTEGER NOT NULL DEFAULT 0",
 }
 
 # grant histórico e único — não é reconcedido em migrações futuras
@@ -560,6 +577,19 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ASCENSAO[coluna]}"
                 )
             print("Banco migrado: coluna ascensao criada -- ninguém ascendeu ainda.")
+
+        # migração 18: auto-ressurreição do clérigo na dungeon passa a ser
+        # UMA POR RUN, não uma por sala -- coluna nova em `dungeon_run`, não
+        # em `jogadores`, mesmo padrão de `colunas_instancias`/migração 14
+        # acima. Ver COLUNAS_DUNGEON_RUN e decisoes.md § Step 2d.
+        colunas_dungeon_run = [r["name"] for r in conn.execute("PRAGMA table_info(dungeon_run)")]
+        novas_dungeon_run = [c for c in COLUNAS_DUNGEON_RUN if c not in colunas_dungeon_run]
+        if novas_dungeon_run:
+            for coluna in novas_dungeon_run:
+                conn.execute(
+                    f"ALTER TABLE dungeon_run ADD COLUMN {coluna} {COLUNAS_DUNGEON_RUN[coluna]}"
+                )
+            print("Banco migrado: coluna de auto-ressurreição criada em dungeon_run -- ninguém gastou ainda.")
 
 
 def _migrar_upgrades_para_instancias(conn):
@@ -1272,12 +1302,21 @@ def get_dungeon_run(user_id):
         "salas": json.loads(row["salas"]),
         "indice": row["indice"],
         "iniciada_em": row["iniciada_em"],
+        "auto_ressurreicao_usada": bool(row["auto_ressurreicao_usada"]),
     }
 
 
 def atualizar_dungeon_run_indice(user_id, indice):
     with conectar() as conn:
         conn.execute("UPDATE dungeon_run SET indice = ? WHERE user_id = ?", (indice, user_id))
+
+
+def marcar_dungeon_run_ressuscitou(user_id):
+    """Auto-ressurreição do clérigo (Step 2d, fechamento): UMA por RUN, não
+    por sala -- ver COLUNAS_DUNGEON_RUN. Chamada uma vez, na sala em que o
+    clérigo cairia; nenhuma sala depois desta na mesma run revive de novo."""
+    with conectar() as conn:
+        conn.execute("UPDATE dungeon_run SET auto_ressurreicao_usada = 1 WHERE user_id = ?", (user_id,))
 
 
 def apagar_dungeon_run(user_id):

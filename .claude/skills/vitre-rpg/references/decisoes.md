@@ -6196,14 +6196,62 @@ morte(na_dungeon=True)` já apaga a run e cobra a penalidade dentro da
 mesma transação (`database.atualizar_jogador_e_apagar_dungeon_run`) —
 chamar isso primeiro e "desfazer" depois não é opção.
 
-Diferença assumida em relação à luta de chefe: a dungeon usa `bot.
-simular_combate` (instantâneo, sem `Luta`), então o contador "uma vez
-por LUTA" de `combate.py` não existe aqui — cada SALA de combate é sua
-própria mini-luta autocontida, e a auto-ressurreição vale uma vez POR
-SALA, não uma vez por run inteira (5 salas). Mais generoso que numa
-luta de chefe de verdade. Aceitável porque a dungeon inteira ainda não
-vai pra produção (deploy só na fatia 4) — é o tipo de aperto que cabe
-revisar quando a dungeon ganhar seu próprio motor de luta, não agora.
+**Correção, fechamento do Step 2**: a versão original deste commit
+dizia aqui que a auto-ressurreição valia uma vez POR SALA, porque a
+dungeon usa `bot.simular_combate` (instantâneo, sem `Luta`) e o
+contador "uma vez por LUTA" de `combate.py` (`Luta.
+auto_ressurreicao_usada`) não alcança lá — cada sala de combate ficava
+sendo sua própria mini-luta autocontida, com o próprio gasto. Isso
+NÃO era bug de implementação — era a única coisa possível sem um lugar
+pra guardar estado que atravessasse salas — mas era a regra errada:
+numa run de 5 salas isso dava até cinco ressurreições, e o clérigo
+atravessava a dungeon inteira sem o único risco real que ela tem
+(perder a run). Os DOIS motores de combate contam coisas diferentes
+por natureza — `Luta` conta por LUTA porque cada luta de chefe É a
+unidade inteira da partida; a dungeon precisa contar por RUN porque a
+run inteira (5 salas) É a unidade, e cada sala isolada não é.
+
+**A regra corrigida**: uma auto-ressurreição por RUN. Como `dungeon_
+run` já persiste em banco e já sobrevive a restart (fatia 1), o gasto
+ganhou uma coluna lá — `auto_ressurreicao_usada` (migração 18, tabela
+`dungeon_run`, não `jogadores` — mesmo padrão de `colunas_instancias`/
+migração 14 pra `instancias`). `_resolver_combate` agora checa `not
+run["auto_ressurreicao_usada"]` além de `passivas.e_clerigo(j)`, e
+`db.marcar_dungeon_run_ressuscitou(user_id)` marca o gasto no momento
+em que a ressurreição acontece. `rpg dungeon sair` apaga a `dungeon_
+run` inteira — uma run nova (`criar_dungeon_run`) nasce com a coluna
+no DEFAULT 0, então sair e recomeçar zera o gasto de propósito (é uma
+run diferente, com seu próprio orçamento). Fora da dungeon nada muda:
+luta solo comum continua uma auto-ressurreição por LUTA, via
+`_talvez_auto_ressuscitar`/`Luta.auto_ressurreicao_usada` — os dois
+mecanismos continuam separados, cada um no motor que faz sentido pra
+ele.
+
+### Testes
+
+`tests/test_clerigo.py` ganhou 3 testes: cai na sala 1 (revive, gasta
+a única ressurreição da run) e mais adiante NA MESMA run cai de novo
+(morre de verdade — `a_processar_morte(na_dungeon=True)` roda com
+`na_dungeon=True` de verdade, a run é apagada, a penalidade é cobrada);
+`rpg dungeon sair` + recomeçar zera o gasto (run nova, coluna no
+DEFAULT); o gasto sobrevive a reler do banco depois de "apagar" o
+objeto em memória (mesma garantia que o resto de `dungeon_run` já
+tinha desde a fatia 1). `tests/test_database_migracao.py` ganhou 3
+testes da migração 18, mesmo padrão da migração 14 (`instancias`):
+coluna criada, idempotente rodando `init_db()` de novo, e um banco
+"antigo" (coluna dropada à mão) migra sem perder a run existente, com
+o gasto começando em 0.
+
+Validado revertendo: (1) tirando o `and not run["auto_ressurreicao_
+usada"]` da condição em `dungeon.py` (volta pro "sempre revive"
+antigo), cai só o teste de "cai na sala 1, revive; cai de novo, morre
+de verdade" — os outros 25 de `test_clerigo.py` continuam verdes; (2)
+removendo o bloco da migração 18 em `database.py`, cai só o teste que
+simula banco antigo sem a coluna — os outros 12 de `test_database_
+migracao.py` continuam verdes (a coluna já nasce na `CREATE TABLE` do
+`SCHEMA` pra banco novo, então só o caminho de ALTER TABLE em banco
+existente depende do bloco de migração). Suíte completa: 659 (653 de
+antes + 6 novos), 658 passando + 1 xfail antigo.
 
 ### Testes
 
@@ -6355,12 +6403,15 @@ chamadas menores). Suíte completa: 653 (631 de antes + 18 do Paladino
 
 ## DoD do Step 2d
 
-Suíte verde: 653 no total, 652 passando + 1 xfail antigo (o mesmo de
-sempre, sem relação com este step). Todos os 4 commits validados
-revertendo cada mecanismo isoladamente, um por vez, confirmando que
-cai exatamente o teste esperado. Nenhum deploy — o pacote inteiro de
-ascensões (Step 2, todos os 11 ramos) só vai pra produção junto no
-fechamento da 0.4.
+Suíte verde: 659 no total, 658 passando + 1 xfail antigo (o mesmo de
+sempre, sem relação com este step). Todos os 4 commits do step (Monge,
+Clérigo, Paladino, mais o motor de solo/party) validados revertendo
+cada mecanismo isoladamente, um por vez, confirmando que cai
+exatamente o teste esperado — mais a correção final da auto-
+ressurreição na dungeon (uma por RUN, não por sala), também validada
+por reversão. Nenhum deploy — o pacote inteiro de ascensões (Step 2,
+todos os 11 ramos) só vai pra produção junto no fechamento da 0.4.
+Isto fecha o Step 2.
 
 Pontos fixados que qualquer trabalho futuro em cima do Orador precisa
 respeitar:
@@ -6380,9 +6431,14 @@ respeitar:
 - **Auto-ressurreição do clérigo é só SOLO, uma vez por luta**,
   interceptada de forma centralizada em `Luta.fim_da_luta()` — nunca
   patcheando os pontos individuais que marcam `caiu = True`. A
-  integração com a dungeon (Commit 3) é uma exceção pontual e
-  documentada ao "SEM skills de ascensão" da fatia 1, não uma reversão
-  dessa decisão.
+  integração com a dungeon (Commit 3, corrigida no fechamento do Step
+  2) é uma exceção pontual e documentada ao "SEM skills de ascensão"
+  da fatia 1, não uma reversão dessa decisão — mas conta uma vez por
+  RUN (coluna `dungeon_run.auto_ressurreicao_usada`, migração 18), não
+  uma vez por luta: os dois motores de combate (`Luta` vs `simular_
+  combate`) contam unidades diferentes de propósito (luta de chefe vs
+  run inteira de 5 salas), então "uma vez por" significa algo diferente
+  em cada um.
 - **Punho do Silêncio (Monge) parece fraco hoje, de propósito**: o
   `bloqueia_skill` que ele aplica no chefe já é consultado de verdade
   (`condicoes.pode_lancar_habilidade`), só não muda nada ainda porque

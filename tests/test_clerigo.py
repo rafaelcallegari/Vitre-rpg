@@ -395,3 +395,79 @@ def test_nao_clerigo_na_dungeon_continua_perdendo_a_run_normalmente(monkeypatch)
 
     assert dungeon.obter_run(1) is None   # a run foi apagada -- comportamento de sempre
     assert db.get_jogador(1)["moedas"] < 1000   # penalidade cobrada normalmente
+
+
+# ------------------------------------------------------------------
+# Fechamento do Step 2: a auto-ressurreição da dungeon é UMA POR RUN,
+# não uma por sala -- o gasto mora na própria dungeon_run (coluna
+# auto_ressurreicao_usada, migração 18), não no jogador nem em memória.
+# ------------------------------------------------------------------
+
+def test_clerigo_reviva_na_primeira_queda_mas_morre_de_verdade_mais_adiante_na_mesma_run(monkeypatch):
+    """Cai na sala 1 (índice 0): revive, gasta a única ressurreição da
+    run. A run avança até a sala 3 (índice 2 -- vitórias simuladas
+    direto no banco, já cobertas por test_dungeon.py, aqui só posiciona
+    o cenário do cartão). Cai de novo NA MESMA RUN: dessa vez morre de
+    verdade, `a_processar_morte(na_dungeon=True)` roda normalmente e a
+    run é apagada."""
+    # índices 0 E 2 combate -- pra "cair na sala 1" e "cair na sala 3" serem
+    # os dois de verdade uma sala de luta (só "camara_dos_ecos" é tipo
+    # "combate" em SALAS_DE_TESTE; as outras são evento/armadilha/achado,
+    # ver game_data.DUNGEON_POOL -- não servem pro cenário deste teste).
+    salas_com_combate_em_1_e_3 = (
+        "camara_dos_ecos", "salao_do_espelho_rachado", "camara_dos_ecos",
+        "bau_esquecido", "jardim_suspenso",
+    )
+    j = _jogador_dungeon(1, ascensao="clerigo", moedas=1000)
+    db.criar_dungeon_run(1, list(salas_com_combate_em_1_e_3))
+    monkeypatch.setitem(
+        dungeon.H, "simular_combate",
+        lambda s, hp, mob, andar_num: (0, False, ["derrota"]),
+    )
+    spy = AsyncMock(wraps=bot.a_processar_morte)
+    monkeypatch.setitem(dungeon.H, "a_processar_morte", spy)
+
+    run = dungeon.obter_run(1)
+    asyncio.run(dungeon.resolver_sala_atual(_ctx_dungeon(1), j, run))
+
+    spy.assert_not_awaited()
+    assert dungeon.obter_run(1) is not None
+    assert dungeon.obter_run(1)["auto_ressurreicao_usada"] is True
+
+    db.atualizar_dungeon_run_indice(1, 2)   # "chegou" na sala 3 -- vitórias já testadas em test_dungeon.py
+
+    j2 = db.get_jogador(1)
+    run2 = dungeon.obter_run(1)
+    asyncio.run(dungeon.resolver_sala_atual(_ctx_dungeon(1), j2, run2))
+
+    spy.assert_awaited_once()
+    assert spy.call_args.kwargs["na_dungeon"] is True
+    assert dungeon.obter_run(1) is None          # a run foi apagada de verdade desta vez
+    assert db.get_jogador(1)["moedas"] < 1000    # penalidade cobrada de verdade
+
+
+def test_sair_e_recomecar_a_dungeon_zera_o_gasto_de_auto_ressurreicao():
+    """`rpg dungeon sair` apaga a run; uma nova run é sempre uma run
+    NOVA, sem nenhum gasto herdado da anterior."""
+    db.criar_jogador(1, "Jogador1")
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+    db.marcar_dungeon_run_ressuscitou(1)
+    assert dungeon.obter_run(1)["auto_ressurreicao_usada"] is True
+
+    dungeon.sair(1)
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+
+    assert dungeon.obter_run(1)["auto_ressurreicao_usada"] is False
+
+
+def test_gasto_de_auto_ressurreicao_sobrevive_a_reler_do_banco():
+    """Mesma garantia que o resto da dungeon_run já tinha (fatia 1,
+    sobrevive a restart) -- o gasto é lido do banco, não de um objeto
+    Python que só existe enquanto o processo roda."""
+    db.criar_jogador(1, "Jogador1")
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+    db.marcar_dungeon_run_ressuscitou(1)
+    run1 = dungeon.obter_run(1)
+    del run1   # nada em memória sobrevive -- simula o restart
+
+    assert dungeon.obter_run(1)["auto_ressurreicao_usada"] is True
