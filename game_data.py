@@ -551,7 +551,7 @@ NIVEL_ASCENSAO_PADRAO = 15
 # própria e foi cortado do design. Ver decisoes.md § Step 2a / Step 2b.
 ASCENSOES = {
     "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "prisao_de_cristal", "passivas": ["inverno_constante"]},
-    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "conflagracao", "passivas": ["combustao"]},
     "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
@@ -596,6 +596,10 @@ PASSIVAS = {
         "nome": "Inverno Constante", "emoji": "❄️",
         "desc": "Todo Travamento que você aplica no chefe dura 1 rodada a mais.",
         "valor": 1,
+    },
+    "combustao": {
+        "nome": "Combustão", "emoji": "🔥",
+        "desc": "A Brasa que você aplica no chefe empilha (até 3), em vez de só renovar a duração.",
     },
 }
 
@@ -709,6 +713,11 @@ HABILIDADES = {
         "nome": "Prisão de Cristal", "emoji": "🧊", "classe": "mago",
         "recurso": "mana", "custo": 20, "ascensao": "mago_gelo",
         "desc": "Dano em INT que passa pela defesa do chefe + Travamento (perde a próxima ação).",
+    },
+    "conflagracao": {
+        "nome": "Conflagração", "emoji": "🔥", "classe": "mago",
+        "recurso": "mana", "custo": 20, "ascensao": "mago_fogo",
+        "desc": "Dano em INT que passa pela defesa do chefe e cresce com a Brasa já acumulada nele, e aplica Brasa.",
     },
 }
 

@@ -79,3 +79,11 @@ def bonus_duracao_travamento(jogador):
     if _tem_passiva(jogador, "inverno_constante"):
         return PASSIVAS["inverno_constante"]["valor"]
     return 0
+
+
+def empilha_brasa(jogador):
+    """Combustão (mago de fogo): True se a Brasa que o JOGADOR aplica no
+    chefe deve empilhar (até MAX_STACKS_BRASA, ver combate.py) em vez de
+    só renovar a duração. False = nenhuma passiva mexe nisso -- Brasa
+    continua se comportando como sempre (refresh)."""
+    return _tem_passiva(jogador, "combustao")

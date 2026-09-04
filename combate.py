@@ -108,6 +108,9 @@ MULTIPLICADOR_FLECHA_PERFURANTE = 1.8     # dano puro, ignora defesa (igual Dard
 MULTIPLICADOR_PRISAO_DE_CRISTAL = 2.0
 TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS = 1   # N rodadas travado -- regra N+1 (ver comentário
                                             # "Duração de condições" logo acima de _multiplicador_afinidade)
+MULTIPLICADOR_CONFLAGRACAO = 2.0
+BONUS_CONFLAGRACAO_POR_STACK = 0.25        # por stack de Brasa já no alvo -- 3 stacks = 2.75
+MAX_STACKS_BRASA = 3                       # só empilha com Combustão (Step 2b) -- sem a passiva, refresca
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -833,33 +836,15 @@ def _fator_elemento_arma(luta, c):
     return multiplicador_elemento(_elemento_arma_de(c), luta.chefe.get("elemento"))
 
 
-def _talvez_condicionar_chefe(luta, c):
-    """25% de chance por golpe que acerta o chefe de amarrar a condição da
-    arma elemental de c nele (CONDICOES_ARMA_ELEMENTAL) -- teto de uma
-    aplicação por elemento por rodada (senão uma party de 4 elementais do
-    mesmo elemento chega perto de 100% de uptime, ver decisoes.md § Dano
-    elemental). Condição já ativa no chefe refresca a duração em vez de
-    empilhar. origem=c.id é o que faz `drena` (Sanguessuga) devolver cura
-    pra c em condicoes._tick_dano.
-
-    Travamento (gelo) consulta passivas.bonus_duracao_travamento (Inverno
-    Constante, Step 2b) -- é bônus de quem APLICA (c), não de quem sofre.
-    O refresh nunca ENCOLHE uma duração já ativa (max, não overwrite): isso
-    importa quando Prisão de Cristal (skill do mago de gelo) já setou um
-    Travamento mais longo (regra N+1 + Inverno Constante) e o MESMO golpe
-    também rola a arma elemental por cima -- sem o max(), a rolagem da arma
+def _aplicar_ou_renovar_condicao_arma(luta, c, dados, duracao):
+    """Condição já ativa no chefe refresca a duração em vez de duplicar --
+    nunca ENCOLHE uma duração já ativa (max, não overwrite). Isso importa
+    pro Travamento (gelo): quando Prisão de Cristal (skill) já setou uma
+    duração mais longa (regra N+1 + Inverno Constante) e o MESMO golpe
+    também rola a arma elemental por cima, sem o max() a rolagem da arma
     sobrescreveria com o valor cru, mais curto, desfazendo o bônus da
-    skill."""
-    elemento = _elemento_arma_de(c)
-    dados = CONDICOES_ARMA_ELEMENTAL.get(elemento)
-    if not dados or elemento in luta.elementos_aplicados_rodada:
-        return
-    if random.random() >= CHANCE_CONDICAO_ELEMENTO_ARMA:
-        return
-    luta.elementos_aplicados_rodada.add(elemento)
-    duracao = dados["duracao"]
-    if dados["tipo"] == "pula_turno":
-        duracao += passivas.bonus_duracao_travamento(c.jogador)
+    skill. origem=c.id é o que faz `drena` (Sanguessuga) devolver cura pra
+    c em condicoes._tick_dano."""
     existente = next(
         (cond for cond in luta.condicoes if cond["alvo"] == "chefe" and cond["nome"] == dados["nome"]),
         None,
@@ -872,6 +857,53 @@ def _talvez_condicionar_chefe(luta, c):
         luta, "chefe", dados["tipo"], dados["nome"], dados["emoji"],
         duracao, dados["valor"], origem=c.id, drena=dados.get("drena"),
     )
+
+
+def _empilhar_condicao_arma(luta, c, dados, max_stacks):
+    """Combustão (mago de fogo, Step 2b): a Brasa que o jogador aplica
+    empilha até max_stacks em vez de refrescar -- mesma lógica de
+    Sangramento em _efeito_golpe_aberto (já testada em
+    tests/test_condicoes.py), generalizada aqui pra qualquer condição
+    dano_por_rodada da arma elemental que precise empilhar."""
+    stacks = [
+        cond for cond in luta.condicoes
+        if cond["tipo"] == "dano_por_rodada" and cond["nome"] == dados["nome"] and cond["alvo"] == "chefe"
+    ]
+    if len(stacks) >= max_stacks:
+        stacks[0]["duracao"] = dados["duracao"]
+        luta.registrar(f"{dados['emoji']} **{dados['nome']}** renovado ({len(stacks)}/{max_stacks} pilhas).")
+        return
+    condicoes.aplicar(
+        luta, "chefe", dados["tipo"], dados["nome"], dados["emoji"],
+        dados["duracao"], dados["valor"], origem=c.id, drena=dados.get("drena"),
+    )
+
+
+def _talvez_condicionar_chefe(luta, c):
+    """25% de chance por golpe que acerta o chefe de amarrar a condição da
+    arma elemental de c nele (CONDICOES_ARMA_ELEMENTAL) -- teto de uma
+    aplicação por elemento por rodada (senão uma party de 4 elementais do
+    mesmo elemento chega perto de 100% de uptime, ver decisoes.md § Dano
+    elemental).
+
+    Brasa (fogo) com Combustão (Step 2b) empilha em vez de refrescar --
+    passivas.empilha_brasa(c.jogador) decide. Travamento (gelo) consulta
+    passivas.bonus_duracao_travamento (Inverno Constante) -- é bônus de
+    quem APLICA (c), não de quem sofre."""
+    elemento = _elemento_arma_de(c)
+    dados = CONDICOES_ARMA_ELEMENTAL.get(elemento)
+    if not dados or elemento in luta.elementos_aplicados_rodada:
+        return
+    if random.random() >= CHANCE_CONDICAO_ELEMENTO_ARMA:
+        return
+    luta.elementos_aplicados_rodada.add(elemento)
+    if elemento == "fogo" and passivas.empilha_brasa(c.jogador):
+        _empilhar_condicao_arma(luta, c, dados, MAX_STACKS_BRASA)
+        return
+    duracao = dados["duracao"]
+    if dados["tipo"] == "pula_turno":
+        duracao += passivas.bonus_duracao_travamento(c.jogador)
+    _aplicar_ou_renovar_condicao_arma(luta, c, dados, duracao)
 
 
 def _rolar_critico(luta, c):
@@ -1063,6 +1095,35 @@ def _efeito_prisao_de_cristal(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_conflagracao(luta, c, dados):
+    """Mago de Fogo: dano em cima da MESMA base do ataque normal (com
+    defesa, ver decisoes.md § Step 2b) que CRESCE com a Brasa já
+    acumulada no alvo -- conta as pilhas ANTES de aplicar a Brasa deste
+    golpe (a que ele está prestes a acrescentar não conta pra si mesma).
+    Sempre aplica Brasa -- empilha com Combustão, refresca sem ela (mesmo
+    caminho da arma elemental, ver _talvez_condicionar_chefe)."""
+    stacks_brasa = len([
+        cond for cond in luta.condicoes
+        if cond["tipo"] == "dano_por_rodada" and cond["nome"] == "Brasa" and cond["alvo"] == "chefe"
+    ])
+    multiplicador = MULTIPLICADOR_CONFLAGRACAO + BONUS_CONFLAGRACAO_POR_STACK * stacks_brasa
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, multiplicador), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano.")
+    dados_brasa = CONDICOES_ARMA_ELEMENTAL["fogo"]
+    if passivas.empilha_brasa(c.jogador):
+        _empilhar_condicao_arma(luta, c, dados_brasa, MAX_STACKS_BRASA)
+    else:
+        _aplicar_ou_renovar_condicao_arma(luta, c, dados_brasa, dados_brasa["duracao"])
+    # a skill já garantiu Brasa nesta rodada -- não deixa o proc da arma
+    # elemental (chamado logo abaixo) aplicar ou empilhar de novo em cima
+    luta.elementos_aplicados_rodada.add("fogo")
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1075,6 +1136,7 @@ EFEITOS_HABILIDADE = {
     "golpe_fatal": _efeito_golpe_fatal,
     "flecha_perfurante": _efeito_flecha_perfurante,
     "prisao_de_cristal": _efeito_prisao_de_cristal,
+    "conflagracao": _efeito_conflagracao,
 }
 
 

@@ -5491,3 +5491,60 @@ direta, mais os 2 que reusam o mesmo caminho pra provar "sem a passiva") —
 exatamente o conjunto que deveria notar a condição expirando cedo demais.
 Suíte completa: 538 (528 de antes + 10 novos), 537 passando + 1 xfail
 antigo.
+
+### Commit 2 — Mago de Fogo: Conflagração + Combustão
+
+**Conflagração** (`MULTIPLICADOR_CONFLAGRACAO = 2.0`, com defesa, mesma
+exceção à régua do commit 1) cresce com a Brasa já acumulada no chefe:
+`BONUS_CONFLAGRACAO_POR_STACK = 0.25` por stack, contado ANTES da própria
+Brasa deste golpe entrar na conta (senão um golpe se beneficiaria de si
+mesmo) — com 3 stacks, `2.0 + 0.25*3 = 2.75`, testado com o valor exato
+(não só "maior que"), na mesma linha de precisão que já existia pros
+multiplicadores da fatia anterior.
+
+**Combustão** faz a Brasa que o jogador aplica EMPILHAR (até
+`MAX_STACKS_BRASA = 3`, 4º uso renova a mais antiga) em vez de só
+refrescar a duração — mesma lógica de Sangramento em `_efeito_golpe_
+aberto` (já coberta em `tests/test_condicoes.py`), generalizada numa
+função nova, `_empilhar_condicao_arma(luta, c, dados, max_stacks)`, porque
+DOIS caminhos precisavam da mesma lógica: a skill (Conflagração aplica
+Brasa sempre) E a arma elemental (fogo, quando o golpe normal proca).
+Extraí também `_aplicar_ou_renovar_condicao_arma` (o caminho antigo de
+refresh, inalterado) pra `_talvez_condicionar_chefe` virar só um roteador:
+fogo com Combustão empilha, qualquer outro caso (incluindo fogo sem a
+passiva) refresca como sempre. `passivas.empilha_brasa(jogador) -> bool`
+é a consulta nova (padrão das outras: `False` = neutro).
+
+**Interação entre skill e arma no mesmo golpe**: Conflagração já GARANTE
+Brasa; se o mesmo jogador também tiver arma de fogo, o proc de 25% da arma
+(chamado logo depois, mesmo padrão de toda skill de dano) poderia
+empilhar OUTRA Brasa no mesmo golpe. `_efeito_conflagracao` marca
+`luta.elementos_aplicados_rodada.add("fogo")` antes de chamar
+`_talvez_condicionar_chefe` — o mesmo teto que já existia pra não deixar
+uma party de 4 elementais do mesmo elemento estourar uptime (ver
+decisoes.md § Dano elemental) agora também impede a skill dobrar a
+própria aplicação com a arma no mesmo cast.
+
+Sem a passiva, o comportamento é idêntico ao de antes do Step 2b —
+testado nos dois caminhos: mago de fogo sem Combustão (skill) e mago de
+GELO com cajado de fogo (arma, caso explícito do cartão) continuam só
+refrescando, nunca empilhando.
+
+### Testes
+
+`tests/test_mago_fogo.py`, 8 testes: gate de ascensão; dano aplica defesa;
+o valor EXATO em 0 e 3 stacks (2.0 e 2.75, calculado contra `hab.poder_
+base`, não só comparação relativa); Combustão empilha até 3 e renova a
+mais antiga no 4º uso (referencia, não duplica, a mesma lógica já testada
+pra Sangramento); sem a passiva continua só refrescando — mago de fogo
+sem Combustão e mago de gelo com arma de fogo, os dois casos que o cartão
+pediu.
+
+Validado revertendo: desligando as duas consultas a `passivas.empilha_
+brasa` (`_talvez_condicionar_chefe` e `_efeito_conflagracao`, forçando o
+caminho de refresh sempre), só `test_combustao_empilha_brasa_ate_3_e_
+renova_a_mais_antiga_no_4o_uso` cai — os outros 7 do arquivo continuam
+passando, inclusive os dois que provam "sem a passiva" (esperado, porque
+sem Combustão em lugar nenhum o comportamento é literalmente esse).
+Suíte completa: 546 (538 de antes + 8 novos), 545 passando + 1 xfail
+antigo.
