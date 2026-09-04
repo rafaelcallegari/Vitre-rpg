@@ -111,6 +111,8 @@ TRAVAMENTO_PRISAO_DE_CRISTAL_RODADAS = 1   # N rodadas travado -- regra N+1 (ver
 MULTIPLICADOR_CONFLAGRACAO = 2.0
 BONUS_CONFLAGRACAO_POR_STACK = 0.25        # por stack de Brasa já no alvo -- 3 stacks = 2.75
 MAX_STACKS_BRASA = 3                       # só empilha com Combustão (Step 2b) -- sem a passiva, refresca
+MULTIPLICADOR_INTERRUPCAO = 2.0            # dano igual às outras duas -- cancelar a carga é bônus condicional,
+                                            # não vale mais nominal por isso (ver decisoes.md § Step 2b)
 
 COR_DERROTA = 0x8B0000
 COR_FUGA = 0x6C757D
@@ -1124,6 +1126,38 @@ def _efeito_conflagracao(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
+def _efeito_interrupcao(luta, c, dados):
+    """Mago de Raio: dano em cima da MESMA base do ataque normal (com
+    defesa, ver decisoes.md § Step 2b) e, se o chefe estiver CARREGANDO um
+    golpe (`luta.carregando`), cancela a carga.
+
+    FRONTEIRA DURA, NÃO GENERALIZAR: isto cancela especificamente
+    `luta.carregando` -- o golpe pesado que o chefe prepara em
+    `Luta.turno_do_chefe` (ver `CHANCE_CARREGAR`). NUNCA uma habilidade de
+    chefe -- o chefe ainda não tem nenhuma (a IA de combo entra no step 3),
+    mas quando entrar, Interrupção não cancela ela por acidente só porque
+    alguém generalizou isto pra "ação do chefe" no genérico. Se uma
+    habilidade de chefe precisar ser interrompível um dia, é uma consulta
+    NOVA, não a reutilização deste `if luta.carregando`. Ver
+    tests/test_mago_raio.py, teste que trava exatamente essa fronteira.
+
+    Contra chefe que não está carregando, a skill é só dano -- reativa de
+    propósito, sem efeito de consolação."""
+    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_INTERRUPCAO), luta.chefe["def"])
+    dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
+    dano = _aplicar_sombra(luta, c, dano)
+    luta.hp_chefe -= dano
+    luta.verificar_fase2()
+    if luta.carregando:
+        luta.carregando = False
+        luta.registrar(
+            f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano e interrompe a carga de {luta.chefe['nome']}!"
+        )
+    else:
+        luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano.")
+    _talvez_condicionar_chefe(luta, c)
+
+
 EFEITOS_HABILIDADE = {
     "dardo_arcano": _efeito_dardo_arcano,
     "ruptura": _efeito_ruptura,
@@ -1137,6 +1171,7 @@ EFEITOS_HABILIDADE = {
     "flecha_perfurante": _efeito_flecha_perfurante,
     "prisao_de_cristal": _efeito_prisao_de_cristal,
     "conflagracao": _efeito_conflagracao,
+    "interrupcao": _efeito_interrupcao,
 }
 
 
@@ -1661,6 +1696,34 @@ async def montar_combatentes(ids):
     return combatentes
 
 
+def _resolver_abertura_do_chefe(luta, combatentes, andar_num):
+    """Rola se o chefe abre a luta batendo em alguém antes da rodada 1
+    resolver de verdade -- só roda se RODADA_1_SEM_CHEFE estiver desligado
+    (ver decisoes.md § Rodada 1 sem chefe; hoje sempre True, então isto é
+    código morto até esse toggle mudar -- mesma situação de Interrupção
+    esperando a IA de combo do step 3).
+
+    Reflexos (mago de raio, Step 2b): se alguém na party tiver a passiva,
+    a party SEMPRE abre primeiro -- não rola `at.chance_iniciativa` (a
+    consulta que o cartão citou), só pula a checagem. "Só a rodada 1" já
+    sai de graça: esta função só é chamada uma vez, aqui, no início da
+    luta -- não existe uma segunda rolagem de iniciativa nas rodadas
+    seguintes pra Reflexos alterar."""
+    if RODADA_1_SEM_CHEFE:
+        return
+    if any(passivas.iniciativa_garantida(c.jogador) for c in combatentes):
+        return
+    mais_rapido = max(c.s["atribs"]["destreza"] for c in combatentes)
+    if random.random() >= at.chance_iniciativa(mais_rapido, at.destreza_monstro(andar_num)):
+        alvo = random.choice(combatentes)
+        dano = dano_do_chefe(luta.chefe, alvo.s, andar_num)
+        alvo.hp -= dano
+        luta.registrar(f"{luta.chefe['nome']} foi mais rápido e acerta {alvo.nome} — **{dano}**")
+        if alvo.hp <= 0:
+            alvo.caiu = True
+        alvo.salvar_estado()
+
+
 async def iniciar_luta(destino, ids, andar_num, editar=False):
     """destino e' um ctx (comando) ou uma interaction (botao Começar)."""
     combatentes = await montar_combatentes(ids)
@@ -1673,19 +1736,7 @@ async def iniciar_luta(destino, ids, andar_num, editar=False):
         await db.a_set_cooldown(c.id, "boss", H["COOLDOWN_BOSS"])
         await db.a_marcar_combate(c.id)
 
-    # iniciativa: o chefe pode abrir a luta batendo em alguem — desligado
-    # com RODADA_1_SEM_CHEFE, senão o chefe "agiria" antes da rodada 1 nem
-    # começar de verdade (ver decisoes.md § Rodada 1 sem chefe)
-    if not RODADA_1_SEM_CHEFE:
-        mais_rapido = max(c.s["atribs"]["destreza"] for c in combatentes)
-        if random.random() >= at.chance_iniciativa(mais_rapido, at.destreza_monstro(andar_num)):
-            alvo = random.choice(combatentes)
-            dano = dano_do_chefe(chefe, alvo.s, andar_num)
-            alvo.hp -= dano
-            luta.registrar(f"{chefe['nome']} foi mais rápido e acerta {alvo.nome} — **{dano}**")
-            if alvo.hp <= 0:
-                alvo.caiu = True
-            alvo.salvar_estado()
+    _resolver_abertura_do_chefe(luta, combatentes, andar_num)
 
     painel = PainelLuta(luta)
     if not luta.ativos:

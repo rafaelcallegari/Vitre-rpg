@@ -5548,3 +5548,78 @@ passando, inclusive os dois que provam "sem a passiva" (esperado, porque
 sem Combustão em lugar nenhum o comportamento é literalmente esse).
 Suíte completa: 546 (538 de antes + 8 novos), 545 passando + 1 xfail
 antigo.
+
+### Commit 3 — Mago de Raio: Interrupção + Reflexos
+
+**Interrupção** (`MULTIPLICADOR_INTERRUPCAO = 2.0`, com defesa, mesma
+exceção à régua) é reativa: se `luta.carregando` estiver `True` (o chefe
+está preparando o golpe pesado, `MULTIPLICADOR_CARREGADO = 3.0`), o golpe
+cancela junto com o dano; senão, é só dano — sem efeito de consolação,
+intencional (skill reativa tem que ter downside real quando reage a
+nada).
+
+**Fronteira dura, no código, não só no decisoes.md**: o comentário de
+`_efeito_interrupcao` avisa em letras garrafais que isto cancela
+especificamente `luta.carregando`, nunca uma futura habilidade de chefe —
+o chefe ainda não tem nenhuma (entra no step 3, IA de combo), mas quando
+entrar, a tentação óbvia é generalizar o `if` pra "cancela qualquer ação
+pendente do chefe". `preparando_condicao` (telegraph elemental, andares
+11+, roda INDEPENDENTE do golpe carregado — os dois podem estar pendentes
+na mesma rodada) é o exemplo perfeito de "outra ação pendente do chefe"
+que já existe HOJE e que Interrupção não pode tocar. Testado direto: seta
+os dois, cancela só um.
+
+**Reflexos** garante que a party abre a luta na rodada 1, sem perder pra
+`at.chance_iniciativa`. Achado explorando o código: `combate.iniciar_luta`
+já tinha esse roll — "iniciativa: o chefe pode abrir a luta batendo em
+alguém" —, mas inteiro atrás de `if not RODADA_1_SEM_CHEFE:`, e
+`RODADA_1_SEM_CHEFE = True` sempre (ver decisoes.md § Rodada 1 sem chefe).
+Ou seja: **o código que Reflexos precisava já existia, e já estava
+morto** pelo mesmo motivo que Interrupção espera a IA de combo — um
+toggle que ainda não foi ligado. Extraí o bloco pra
+`_resolver_abertura_do_chefe(luta, combatentes, andar_num)` (testável
+sem precisar montar `iniciar_luta` inteira, que mexe em banco/Discord) e
+inseri a consulta `passivas.iniciativa_garantida` antes do roll: se
+alguém na party tiver Reflexos, a party sempre abre, sem rolagem
+nenhuma. Continua condicional a `RODADA_1_SEM_CHEFE` estar desligado —
+enquanto não estiver, a função é no-op pra todo mundo, exatamente como
+seria sem a passiva.
+
+**Não precisa de estado por combatente nem de "rodada"**: ao contrário de
+Sangue Frio (Step 2a, precisava saber se já disparou nesta luta),
+`iniciativa_garantida` é consultada uma vez só, na abertura da luta — não
+existe uma segunda rolagem de iniciativa mais tarde pra ela alterar, "só
+a rodada 1" já sai de graça da própria estrutura do código.
+
+### Testes
+
+`tests/test_mago_raio.py`, 10 testes: gate de ascensão; dano aplica
+defesa; Interrupção cancela a carga e o PRÓXIMO golpe do chefe não é o
+carregado (espiona `dano_do_chefe` pra confirmar `carregado=False`, não
+só compara HP); contra chefe sem carga é só dano; a fronteira dura
+(`preparando_condicao` intocado); Reflexos com `RODADA_1_SEM_CHEFE`
+forçado `False` (único jeito de exercitar o código, já que o padrão do
+jogo é `True`) -- com a passiva ninguém toma dano de abertura mesmo com
+`chance_iniciativa` forçada a sempre perder; sem a passiva, o chefe abre
+batendo normalmente; e o caso padrão (`RODADA_1_SEM_CHEFE=True`) continua
+no-op com a passiva presente.
+
+Validado revertendo, dois pontos: (1) Interrupção também zerando
+`preparando_condicao` (simulando a generalização que o comentário avisa
+pra não fazer) — só `test_interrupcao_nao_cancela_nada_alem_da_carga`
+cai; (2) tirando a checagem de `passivas.iniciativa_garantida` de
+`_resolver_abertura_do_chefe` — só
+`test_reflexos_garante_a_iniciativa_quando_rodada_1_sem_chefe_esta_desligado`
+cai. Suíte completa: 556 (546 de antes + 10 novos), 555 passando + 1
+xfail antigo.
+
+## DoD do Step 2b
+
+Calibragem documentada acima (§ "Calibragem acima da régua — e por
+quê"): as três skills de ascensão do Mago valem 2.0 nominal (igual ao
+Dardo Arcano) + o efeito, e PASSAM pela defesa do chefe — furando de
+propósito a metade "dano+efeito ~1,3" da régua padrão, porque a defesa
+aplicada já cobra o preço que a régua cobraria de outro jeito, e o Dardo
+Arcano continua sendo a única skill do Mago que ignora defesa (identidade
+dele desde o nível 1). Suíte verde nos três commits, cada um validado
+revertendo separadamente, push feito, sem deploy.

@@ -552,7 +552,7 @@ NIVEL_ASCENSAO_PADRAO = 15
 ASCENSOES = {
     "mago_gelo": {"nome": "Mago de Gelo", "base": "mago", "elemento": "gelo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "prisao_de_cristal", "passivas": ["inverno_constante"]},
     "mago_fogo": {"nome": "Mago de Fogo", "base": "mago", "elemento": "fogo", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "conflagracao", "passivas": ["combustao"]},
-    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
+    "mago_raio": {"nome": "Mago de Raio", "base": "mago", "elemento": "raio", "nivel": NIVEL_ASCENSAO_PADRAO, "skill": "interrupcao", "passivas": ["reflexos"]},
     "soldado": {"nome": "Soldado", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "mercenario": {"nome": "Mercenário", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
     "espadachim": {"nome": "Espadachim", "base": "guerreiro", "elemento": None, "nivel": NIVEL_ASCENSAO_PADRAO, "skill": None, "passivas": []},
@@ -600,6 +600,10 @@ PASSIVAS = {
     "combustao": {
         "nome": "Combustão", "emoji": "🔥",
         "desc": "A Brasa que você aplica no chefe empilha (até 3), em vez de só renovar a duração.",
+    },
+    "reflexos": {
+        "nome": "Reflexos", "emoji": "⚡",
+        "desc": "Na rodada 1, você sempre age antes do chefe.",
     },
 }
 
@@ -718,6 +722,11 @@ HABILIDADES = {
         "nome": "Conflagração", "emoji": "🔥", "classe": "mago",
         "recurso": "mana", "custo": 20, "ascensao": "mago_fogo",
         "desc": "Dano em INT que passa pela defesa do chefe e cresce com a Brasa já acumulada nele, e aplica Brasa.",
+    },
+    "interrupcao": {
+        "nome": "Interrupção", "emoji": "🔌", "classe": "mago",
+        "recurso": "mana", "custo": 18, "ascensao": "mago_raio",
+        "desc": "Dano em INT que passa pela defesa do chefe -- se ele estiver carregando um golpe, cancela a carga.",
     },
 }
 

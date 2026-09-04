@@ -87,3 +87,12 @@ def empilha_brasa(jogador):
     só renovar a duração. False = nenhuma passiva mexe nisso -- Brasa
     continua se comportando como sempre (refresh)."""
     return _tem_passiva(jogador, "combustao")
+
+
+def iniciativa_garantida(jogador):
+    """Reflexos (mago de raio): True se este jogador garante que a party
+    abre a luta na rodada 1, sem rolar `at.chance_iniciativa` contra o
+    chefe (ver combate.iniciar_luta). False = nenhuma passiva mexe nisso.
+    Vale só a chamada única de abertura da luta -- não existe uma segunda
+    rolagem de iniciativa nas rodadas seguintes pra essa consulta afetar."""
+    return _tem_passiva(jogador, "reflexos")
