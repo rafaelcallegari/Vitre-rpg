@@ -1,8 +1,11 @@
 # tests/test_mago_raio.py
 # Step 2b, commit 3: Interrupção (skill) e Reflexos (passiva) do Mago de
-# Raio. Ver decisoes.md § Step 2b.
+# Raio. Reflexos foi reescrita numa correção posterior -- ver decisoes.md
+# § Step 2b (correção): a versão original (iniciativa garantida na rodada
+# 1) era no-op porque RODADA_1_SEM_CHEFE já garante isso pra todo mundo.
 import bot
 import combate
+import condicoes
 import database as db
 import game_data
 import habilidades as hab
@@ -128,38 +131,84 @@ def test_interrupcao_nao_cancela_nada_alem_da_carga(monkeypatch):
 
 
 # ==================================================================
-# Reflexos -- garante a iniciativa na rodada 1 (código hoje dormente sob
-# RODADA_1_SEM_CHEFE=True, ver decisoes.md § Step 2b)
+# Reflexos -- 35% de chance de escapar ILESO só do golpe CARREGADO (ver
+# decisoes.md § Step 2b correção -- a versão de iniciativa era no-op
+# porque RODADA_1_SEM_CHEFE já garantia isso de graça pra todo mundo)
 # ==================================================================
 
-def test_reflexos_garante_a_iniciativa_quando_rodada_1_sem_chefe_esta_desligado(monkeypatch):
-    monkeypatch.setattr(combate, "RODADA_1_SEM_CHEFE", False)
-    monkeypatch.setattr(combate.at, "chance_iniciativa", lambda *a, **k: -1.0)   # perderia sempre sem a passiva
-    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio", destreza=1)
-    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
+def _forcar_golpe_carregado(luta, monkeypatch):
+    """Chefe já está carregando; força o ramo `elif self.carregando` de
+    Luta.turno_do_chefe (sem erro de Corrente, sem condição pendente).
+    rodada=2 pula RODADA_1_SEM_CHEFE, que travaria o chefe inteiro na
+    rodada 1 -- sem isso nenhum dos dois ramos abaixo seria alcançado."""
+    luta.carregando = True
+    luta.rodada = 2
+    monkeypatch.setattr(condicoes, "chance_de_erro", lambda *a, **k: 0.0)
+
+
+def test_golpe_carregado_numa_party_mista_so_o_mago_de_raio_pode_errar(monkeypatch):
+    raio = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    sem_ascensao = _combatente(2, classe="guerreiro", forca=20)
+    luta = combate.Luta([raio, sem_ascensao], {**CHEFE_TESTE, "atk": 50}, andar_num=1)
+    _forcar_golpe_carregado(luta, monkeypatch)
+    # abaixo de 0.35 (chance do raio) mas não usado pro sem_ascensao (chance 0.0 -- nunca erra)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.30)
+    hp_raio_antes, hp_sem_antes = raio.hp, sem_ascensao.hp
+
+    luta.turno_do_chefe()
+
+    assert raio.hp == hp_raio_antes        # errou -- Reflexos consultado com 0.30 < 0.35
+    assert sem_ascensao.hp < hp_sem_antes  # tomou o golpe normal, sem chance de errar
+
+
+def test_reflexos_so_vale_no_golpe_carregado_nao_no_ataque_normal(monkeypatch):
+    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    luta = combate.Luta([c], {**CHEFE_TESTE, "atk": 50}, andar_num=1)
+    luta.carregando = False   # ataque normal, não carregado
+    luta.rodada = 2           # pula RODADA_1_SEM_CHEFE
+    monkeypatch.setattr(condicoes, "chance_de_erro", lambda *a, **k: 0.0)
+    monkeypatch.setattr(combate, "CHANCE_CARREGAR", 0.0)   # não deixa o chefe decidir carregar em vez de atacar
+    monkeypatch.setattr(combate.at, "chance_esquiva", lambda *a, **k: 0.0)   # sem esquiva de sorte
+    monkeypatch.setattr(combate.random, "random", lambda: 0.30)   # abaixo dos 0.35 do Reflexos, se ele valesse aqui
     hp_antes = c.hp
 
-    combate._resolver_abertura_do_chefe(luta, [c], andar_num=1)
+    luta.turno_do_chefe()
 
-    assert c.hp == hp_antes   # o chefe não abriu batendo em ninguém
-    assert not c.caiu
-
-
-def test_sem_reflexos_o_chefe_pode_abrir_batendo_quando_rodada_1_sem_chefe_esta_desligado(monkeypatch):
-    monkeypatch.setattr(combate, "RODADA_1_SEM_CHEFE", False)
-    monkeypatch.setattr(combate.at, "chance_iniciativa", lambda *a, **k: -1.0)   # perde sempre
-    c = _combatente(1, classe="mago", inteligencia=20, destreza=1)   # sem ascensão -- sem Reflexos
-    luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
-    hp_antes = c.hp
-
-    combate._resolver_abertura_do_chefe(luta, [c], andar_num=1)
-
-    assert c.hp < hp_antes   # o chefe abriu batendo -- comportamento de sempre, sem a passiva
+    assert c.hp < hp_antes   # ataque normal acerta na taxa de sempre -- Reflexos não se aplica aqui
 
 
-def test_resolver_abertura_do_chefe_e_no_op_com_rodada_1_sem_chefe_ligado():
-    """Estado padrão do jogo hoje -- Reflexos fica dormente até o toggle
-    mudar, mas não pode quebrar nem interferir enquanto isso."""
+def test_reflexos_nao_cancela_a_carga_nem_protege_os_outros_alvos(monkeypatch):
+    raio = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    outro = _combatente(2, classe="guerreiro", forca=20)
+    luta = combate.Luta([raio, outro], {**CHEFE_TESTE, "atk": 50}, andar_num=1)
+    _forcar_golpe_carregado(luta, monkeypatch)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)   # garante o miss do raio (0.0 < 0.35)
+    hp_outro_antes = outro.hp
+
+    luta.turno_do_chefe()
+
+    assert luta.carregando is False    # a carga resolveu (consumida) mesmo com o miss individual
+    assert outro.hp < hp_outro_antes   # o outro alvo tomou o golpe carregado normalmente
+
+
+def test_sem_ascensao_ou_outro_ramo_nunca_erra_o_carregado(monkeypatch):
+    sem_ascensao = _combatente(1, classe="mago", inteligencia=20)
+    outro_ramo = _combatente(2, classe="mago", inteligencia=20, ascensao="mago_gelo")
+    luta = combate.Luta([sem_ascensao, outro_ramo], {**CHEFE_TESTE, "atk": 50}, andar_num=1)
+    _forcar_golpe_carregado(luta, monkeypatch)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.0)   # o mínimo possível -- erraria com QUALQUER chance > 0
+    hp_sem_antes, hp_gelo_antes = sem_ascensao.hp, outro_ramo.hp
+
+    luta.turno_do_chefe()
+
+    assert sem_ascensao.hp < hp_sem_antes
+    assert outro_ramo.hp < hp_gelo_antes
+
+
+def test_resolver_abertura_do_chefe_continua_no_op_sem_reflexos_nenhum():
+    """A versão antiga (iniciativa garantida) saiu -- ver decisoes.md §
+    Step 2b correção. Esta função continua existindo só como o código
+    morto que já era antes do Step 2b (RODADA_1_SEM_CHEFE=True sempre)."""
     c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     hp_antes = c.hp

@@ -5591,6 +5591,15 @@ Sangue Frio (Step 2a, precisava saber se já disparou nesta luta),
 existe uma segunda rolagem de iniciativa mais tarde pra ela alterar, "só
 a rodada 1" já sai de graça da própria estrutura do código.
 
+> **CORRIGIDO** — os três parágrafos de Reflexos acima descrevem o
+> desenho ORIGINAL deste commit, que era no-op na prática:
+> `RODADA_1_SEM_CHEFE and self.rodada == 1` já retorna ANTES de qualquer
+> coisa em `Luta.turno_do_chefe` rodar, então "a party abre a luta antes
+> do chefe" já era garantido de graça pra TODA classe, com ou sem
+> Reflexos. Ficam aqui como registro histórico de commit — a versão de
+> verdade (chance de errar o golpe carregado) está em § Correção —
+> Reflexos era no-op, logo abaixo do DoD.
+
 ### Testes
 
 `tests/test_mago_raio.py`, 10 testes: gate de ascensão; dano aplica
@@ -5623,3 +5632,77 @@ aplicada já cobra o preço que a régua cobraria de outro jeito, e o Dardo
 Arcano continua sendo a única skill do Mago que ignora defesa (identidade
 dele desde o nível 1). Suíte verde nos três commits, cada um validado
 revertendo separadamente, push feito, sem deploy.
+
+## Correção — Reflexos era no-op
+
+Achado na revisão: o commit 3 do Step 2b implementou Reflexos como
+"garante a iniciativa na rodada 1" — mas `Luta.turno_do_chefe` já
+retorna na primeira linha (`if RODADA_1_SEM_CHEFE and self.rodada == 1:
+... else: ...`) sem o chefe fazer NADA na rodada 1, pra TODA classe,
+sempre (ver decisoes.md § Rodada 1 sem chefe). "Você age antes do chefe
+na rodada 1" descrevia um privilégio que já era universal e gratuito —
+um terço da recompensa de uma ascensão IRREVERSÍVEL não fazia
+absolutamente nada.
+
+**Por que não ligar `RODADA_1_SEM_CHEFE`**: foi desligado por decisão
+própria, com seção própria no decisoes.md, e ligá-lo muda a abertura de
+TODA luta de chefe pra TODAS as classes — decisão de combate que precisa
+de cartão e playtest dela mesma, não conserto de passiva de um ramo só.
+
+### O efeito novo: chance de errar o golpe carregado
+
+Reflexos agora dá 35% de chance (`PASSIVAS["reflexos"]["valor"]`,
+consultada via `passivas.chance_erro_carregado(jogador)`, 0.0 = neutro)
+de o mago de raio escapar ILESO quando o chefe SOLTA o golpe carregado —
+miss INDIVIDUAL dentro do laço que acerta todo mundo
+(`Luta.turno_do_chefe`, ramo `elif self.carregando`), não uma esquiva da
+party inteira. Não cancela a carga (ela já é consumida — `self.carregando
+= False` — antes do laço rodar), não protege os outros alvos do mesmo
+golpe, e não vale pro ataque normal do chefe (ramo `else`, sem relação
+com o carregado).
+
+0.35 é generoso de propósito: o golpe carregado tem penetração extra
+(`PENETRACAO_CARREGADO`) e `MULTIPLICADOR_CARREGADO = 3.0` — é o golpe
+mais perigoso do jogo, então errar ele por completo é a maior mitigação
+individual que existe. Ponto de partida pra playtest, não número final.
+
+`passivas.iniciativa_garantida` saiu inteira (função e toda menção a ela)
+— `_resolver_abertura_do_chefe` voltou a ser exatamente o código morto
+que já era antes do Step 2b, sem nenhuma passiva pendurada nele. O nome
+"Reflexos" ficou (ainda descreve a mesma fantasia — reação rápida a um
+golpe perigoso —, só que aplicada onde o jogo de verdade sente a
+diferença).
+
+### Testes
+
+`tests/test_mago_raio.py`: as 3 funções de teste do Reflexos antigo
+(iniciativa) saíram, 5 novas entraram. Golpe carregado numa party mista
+— só o mago de raio pode errar (`random()` fixo abaixo de 0.35, guerreiro
+sem ascensão sempre toma); Reflexos só vale no carregado, não no ataque
+normal (mesmo `random()` que faria errar o carregado não afeta o normal);
+errar não cancela a carga (`luta.carregando` vira `False` do mesmo jeito)
+nem protege o outro alvo do mesmo golpe; sem ascensão ou outro ramo nunca
+erra, mesmo com a chance no mínimo possível pro teste; e
+`_resolver_abertura_do_chefe` continua no-op (regressão — o código morto
+que sobrou não pode voltar a fazer alguma coisa por acidente). Os testes
+de Interrupção (regressão desta correção) não mudaram nem precisaram
+mudar — o ramo `else` (ataque normal) e o comportamento de
+`luta.carregando` que Interrupção mexe são independentes do laço do
+golpe carregado que Reflexos passou a consultar.
+
+Armadilha real encontrada escrevendo os testes: os quatro que forçam o
+golpe carregado direto (sem passar por `iniciar_luta`) esqueciam de
+também pular `RODADA_1_SEM_CHEFE` (`luta.rodada` nasce em `1` em
+`Luta.__init__`) — sem `luta.rodada = 2`, `turno_do_chefe` retornava na
+primeira linha e NINGUÉM tomava dano, mascarando um "passou" que não
+provava nada. Corrigido no helper compartilhado (`_forcar_golpe_
+carregado`) antes de qualquer teste ser aceito como válido.
+
+Validado revertendo: com `PASSIVAS["reflexos"]["valor"]` zerado, só
+`test_golpe_carregado_numa_party_mista_so_o_mago_de_raio_pode_errar` cai
+— o único teste que depende do valor exato da chance ser positivo pra
+provar o miss acontecendo; os outros 4 do Reflexos testam fronteira
+(carregado vs. normal, não cancela carga, outros ramos não erram, código
+morto continua morto) e continuam verdadeiros mesmo com a passiva
+zerada, então corretamente não caem. Suíte completa: 558 (556 de antes,
+-3 velhos +5 novos), 557 passando + 1 xfail antigo.

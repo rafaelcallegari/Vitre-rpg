@@ -89,10 +89,13 @@ def empilha_brasa(jogador):
     return _tem_passiva(jogador, "combustao")
 
 
-def iniciativa_garantida(jogador):
-    """Reflexos (mago de raio): True se este jogador garante que a party
-    abre a luta na rodada 1, sem rolar `at.chance_iniciativa` contra o
-    chefe (ver combate.iniciar_luta). False = nenhuma passiva mexe nisso.
-    Vale só a chamada única de abertura da luta -- não existe uma segunda
-    rolagem de iniciativa nas rodadas seguintes pra essa consulta afetar."""
-    return _tem_passiva(jogador, "reflexos")
+def chance_erro_carregado(jogador):
+    """Reflexos (mago de raio): chance ADICIONAL de o jogador escapar
+    ILESO quando o chefe SOLTA o golpe carregado (não vale pro ataque
+    normal) -- 0.0 = nenhuma passiva mexe nisso. Consultada por
+    combatente, dentro do laço que resolve o golpe carregado em
+    Luta.turno_do_chefe -- erra só quem tem a passiva, nunca cancela a
+    carga nem afeta o dano dos outros alvos."""
+    if _tem_passiva(jogador, "reflexos"):
+        return PASSIVAS["reflexos"]["valor"]
+    return 0.0

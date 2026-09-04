@@ -441,6 +441,13 @@ class Luta:
                 self.carregando = False
                 self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
                 for c in alvos:
+                    # Reflexos (mago de raio, Step 2b correção): chance
+                    # INDIVIDUAL de escapar ileso só deste golpe carregado
+                    # -- não cancela a carga, não protege os outros alvos
+                    # do laço, não vale pro ataque normal (ramo abaixo).
+                    if random.random() < passivas.chance_erro_carregado(c.jogador):
+                        self.registrar(f"⚡ {c.nome} lê o movimento e escapa do golpe carregado.")
+                        continue
                     dano = dano_do_chefe(
                         self.chefe, c.s, self.andar_num,
                         defendendo=c.defendendo, carregado=True,
@@ -1699,19 +1706,12 @@ async def montar_combatentes(ids):
 def _resolver_abertura_do_chefe(luta, combatentes, andar_num):
     """Rola se o chefe abre a luta batendo em alguém antes da rodada 1
     resolver de verdade -- só roda se RODADA_1_SEM_CHEFE estiver desligado
-    (ver decisoes.md § Rodada 1 sem chefe; hoje sempre True, então isto é
-    código morto até esse toggle mudar -- mesma situação de Interrupção
-    esperando a IA de combo do step 3).
-
-    Reflexos (mago de raio, Step 2b): se alguém na party tiver a passiva,
-    a party SEMPRE abre primeiro -- não rola `at.chance_iniciativa` (a
-    consulta que o cartão citou), só pula a checagem. "Só a rodada 1" já
-    sai de graça: esta função só é chamada uma vez, aqui, no início da
-    luta -- não existe uma segunda rolagem de iniciativa nas rodadas
-    seguintes pra Reflexos alterar."""
+    (ver decisoes.md § Rodada 1 sem chefe). Hoje a flag é sempre True, e
+    `self.rodada == 1` já retorna antes de qualquer coisa aqui dentro
+    poder rodar (ver Luta.turno_do_chefe) -- isto é código morto, do
+    mesmo jeito que já era antes do Step 2b, ver decisoes.md § Step 2b
+    (correção)."""
     if RODADA_1_SEM_CHEFE:
-        return
-    if any(passivas.iniciativa_garantida(c.jogador) for c in combatentes):
         return
     mais_rapido = max(c.s["atribs"]["destreza"] for c in combatentes)
     if random.random() >= at.chance_iniciativa(mais_rapido, at.destreza_monstro(andar_num)):

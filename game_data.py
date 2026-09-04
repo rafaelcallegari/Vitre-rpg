@@ -603,7 +603,8 @@ PASSIVAS = {
     },
     "reflexos": {
         "nome": "Reflexos", "emoji": "⚡",
-        "desc": "Na rodada 1, você sempre age antes do chefe.",
+        "desc": "35% de chance de escapar ileso quando o chefe solta o golpe carregado.",
+        "valor": 0.35,   # CHANCE_ERRO_REFLEXOS -- ponto de partida pra playtest
     },
 }
 
