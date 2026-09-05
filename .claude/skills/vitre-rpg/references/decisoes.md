@@ -6737,3 +6737,198 @@ aumenta as moedas — o teste "sem a passiva" continua passando (ele já
 não tinha ascensão, então nunca dependeu da chamada existir). Suíte
 completa: 704 (694 de antes + 10 novos), 703 passando + 1 xfail
 antigo.
+
+## Dungeon — as dez salas
+
+Cartão "Exploração de Dungeon", commit 4. Fecha o pool: dez salas
+finais, 4 combate, 3 evento, 3 achado.
+
+### A distribuição final: os TRÊS eventos são as três limpas
+
+Nos commits 1-3, o pool intermediário tinha as duas antigas salas de
+armadilha dissolvidas em achado (dando 2 combate + 2 evento + 4
+achado). Redistribuindo pro alvo de 4/3/3, uma peça sobrava — a
+"Corrente Solta" virou sala de COMBATE (o "algo preso que não devia
+estar tão perto" é, literalmente, o monstro da luta — o texto nem
+precisou mudar), e uma sala nova de combate (`covil_ocupado`) mais uma
+de evento (`fonte_parada`) completam as dez. Resultado: **4 combate +
+3 achado = 7 com armadilha, os 3 eventos são as únicas limpas** — não
+por sorteio, por design: o par de portas de cada evento JÁ é a tensão
+dele (uma delas sempre cobra algo), então empilhar a camada de
+armadilha por cima seria tensão duplicada sem necessidade. Isso bate
+exatamente com "sete têm armadilha escondida, três são limpas" do
+cartão, sem precisar escolher 3 salas arbitrárias inseridas dentro dos
+outros tipos.
+
+### O nome que entregava a própria armadilha
+
+Revisando as oito salas antigas com o critério "nunca anuncia":
+**"Piso Instável" quebrava a própria regra do cartão** — um "piso
+instável" JÁ diz que tem uma armadilha ali, antes de qualquer
+interação. Renomeada pra **"Estátua de Mãos Abertas"** (mesma chave de
+armadilha=True, achado de risco baixo garantido) — uma estátua de
+braços erguidos é só uma imagem, não uma etiqueta de perigo. As outras
+sete salas foram revisadas com o mesmo critério e passaram (nomes como
+"Câmara dos Ecos" ou "Baú Esquecido" sugerem atmosfera/conteúdo, nunca
+"isto aqui vai te machucar").
+
+### Os três eventos — duas portas, uma sempre cobrando algo
+
+Dado puro em `game_data.DUNGEON_POOL` (`"portas": [{"chave", "label"},
+...]`), efeito em `dungeon.EFEITOS_EVENTO` indexado pela CHAVE DA
+SALA — mesmo padrão de `EFEITOS_HABILIDADE` (combate.py). Constantes em
+`game_data.py`, todas ponto de partida pra playtest:
+
+- **Salão do Espelho Rachado** — "olhar" custa `DUNGEON_EVENTO_
+  CUSTO_HP_ESPELHO` (10% do HP máximo) e revela o NOME da próxima sala
+  (só o nome — a mesma regra de "nada além do nome" que `_concluir_
+  sala` já seguia desde a fatia 1); "virar as costas" não custa nada e
+  não dá nada.
+- **Jardim Suspenso** — "comer" cura `DUNGEON_EVENTO_CURA_JARDIM_COMER`
+  (30% do HP máximo) com `DUNGEON_EVENTO_CHANCE_VENENO_JARDIM` (35%) de
+  chance de perder `DUNGEON_EVENTO_DANO_VENENO_JARDIM` (10%) por cima;
+  "colher" dá um espólio da faixa BAIXA, sem cura nenhuma.
+- **Fonte Parada** — "beber" enche a mana e **reaproveita o mecanismo
+  de condição da armadilha** (`_sortear_condicao_armadilha` +
+  `db.definir_condicao_armadilha`) pra "deixar alguma coisa em você" —
+  em vez de inventar um sistema de efeito novo, a fonte pluga direto no
+  que a armadilha já usa pra atravessar sala; "lavar as feridas" cura
+  `DUNGEON_EVENTO_CURA_FONTE_LAVAR` (15%) sem nenhum risco.
+
+Reuso do `_ViewEscolhaEvento`/`_BotaoEvento` — visualmente igual à
+escolha da Percepção (`_ViewEscolhaArmadilha`), mas cada evento tem
+SEUS PRÓPRIOS rótulos (vindos de `sala["portas"]`, não fixos como
+"Desarmar"/"Contornar"). `_enviar_de(interaction)` foi extraída dos
+dois botões de armadilha pra não duplicar o wrapper `followup.send`.
+
+### Os três achados — um risco cada
+
+`dungeon.EFEITOS_ACHADO`, indexado pela chave da sala, junto com três
+faixas de preço derivadas de `game_data.ITENS` (`DUNGEON_ESPOLIO_
+TETO_BAIXO`/`_TETO_MEDIO` — ≤120 / 121-300 / >300, mesmas faixas
+documentadas nos itens):
+- **Baú Esquecido** — sempre um espólio da faixa MÉDIA. O "seguro".
+- **Nicho da Torre** — `CHANCE_ACHADO_ALTO_NICHO` (30%) de vir da faixa
+  ALTA, senão vem da BAIXA. Nunca médio — é o "ou lixo, ou o melhor da
+  run" que o cartão pediu, sem meio-termo.
+- **Estátua de Mãos Abertas** — sempre um espólio da faixa BAIXA. O
+  garantido de teto mais baixo dos três — nunca decepciona muito, nunca
+  surpreende muito.
+
+### Medição obrigatória: as três portas por perfil de personagem
+
+Simulação Monte Carlo (mesmo método de `decisoes.md` § "Dano de skill
+abaixo do ataque básico", 20.000 repetições por linha) — 4 classes,
+nível 15, "principal alto, os outros raspando" (BASE=5 + os 42 pontos
+livres do nível 15 TODOS no atributo da classe, os outros dois ficam
+no BASE=5 — o caso mais extremo de investimento, pra não dar desconto
+de "o jogador ia balancear"), 5 salas por run, 70% de chance de
+armadilha por sala (aproxima a proporção real de 7/10 do pool):
+
+| Perfil (atributo dumped) | HP médio ao fim da run | % de runs com HP > 50% |
+|---|---|---|
+| Guerreiro (FOR) | **47,4%** | 47,1% |
+| Ladino (DES) | 89,6% | 99,9% |
+| Mago (INT) | 89,5% | 99,9% |
+| Orador (INT) | 89,5% | 99,8% |
+
+**A medição achou uma assimetria real, e ela não contradiz o
+3×nível+7 — ela expõe uma consequência da ORDEM fixa das portas.**
+Percepção (INT) e Esquiva (DES) são checadas ANTES de Força (FOR),
+sempre — então qualquer personagem que empilhou INT ou DES quase
+sempre resolve a armadilha nas duas primeiras portas (passa ileso);
+quem empilhou FOR só usa o próprio atributo forte na TERCEIRA porta,
+depois de FOR=5 já ter fracassado as duas primeiras contra o alvo 52
+(47 falha OS DOIS de qualquer forma com 5 de base) — ele cai na Força
+quase toda vez que a armadilha dispara, e toma o dano quase sempre.
+
+Verificado que a causa é mesmo a ordem (não a fórmula do alvo):
+rodando de novo com uma distribuição "menos extrema" (6 pontos
+espalhados nos dois atributos secundários, em vez de 0), o guerreiro
+mal muda (47,4% → 47,7% — FOR=5→11 não muda nada porque o alvo dele é
+Força, a TERCEIRA porta, e o problema nunca foi o valor de FOR) mas
+ladino/mago pioram bastante (89% → 58% — tirar pontos do atributo
+PRIMÁRIO deles pra "espalhar" reduz a chance de resolver na Percepção/
+Esquiva). Confirma: o resultado é dirigido por QUAL atributo o
+personagem empilha, não por quanto ele empilha no total.
+
+**Decisão, não correção**: os valores ficam como estavam
+(`DUNGEON_ARMADILHA_FRACAO_DANO = 0.15`, alvo `3×nível + 7`) — o pior
+caso (Guerreiro, FOR puro) bate o alvo do cartão em cheio ("machucada e
+viva": 47% de HP médio, claramente ferido, ZERO chance de morrer por
+armadilha nas 20.000 runs simuladas, teto matemático de dano é 75% da
+vida em 5 acertos seguidos, nunca 100%). Ladino/Mago/Orador saindo
+"só arranhados" (89%) não é um bug escondido pela medição — é a MESMA
+lógica que o cartão descreve pra armadilha em geral: "não é uma
+armadilha por atributo, é a mesma armadilha, e cada personagem lida
+com ela do jeito que sabe" — aqui, "lidar do jeito que sabe" significa
+literalmente que INT/DES são estatisticamente melhores contra ESTA
+camada do que FOR, porque as duas primeiras portas leem elas. Registrar
+como decisão consciente, não como surpresa: se um rebalanceamento
+futuro achar isso problemático, o ponto de ajuste é a ORDEM das portas
+(ou dar à Força uma segunda chance embutida), não o valor do dano nem
+o alvo — aumentar o dano pra "castigar" INT/DES pioraria o Guerreiro
+sem tocar nos outros (ele já toma quase toda vez).
+
+### Testes
+
+`tests/test_dungeon_pool.py`, 19 testes: o pool tem exatamente dez
+salas, na distribuição 4/3/3; todo evento declara exatamente duas
+portas com chave+label distintos; toda sala de evento/achado tem
+efeito registrado no dict certo; "Piso Instável" não existe mais em
+lugar nenhum; as três mecânicas do espelho/jardim/fonte (olhar custa e
+revela, virar não custa nem dá; comer cura com risco de veneno, colher
+dá espólio baixo sem cura; beber enche mana e deixa uma condição
+pendente, lavar cura pouco e é seguro); os três achados diferenciados
+(Baú sempre médio, Estátua sempre baixo, Nicho ou alto ou baixo nunca
+médio, testado nos dois lados forçando a rolagem); as três faixas de
+espólio não se sobrepõem e cobrem a tabela inteira; fiação ponta a
+ponta — `resolver_sala_atual` apresenta os rótulos certos pra sala
+certa, E clicar no botão de verdade (evento e armadilha, os dois)
+chama o efeito registrado e avança a sala (mesma categoria de lacuna
+que o teste de `simular_combate` já tinha achado no commit 1: uma
+unidade isolada nunca prova que o botão de verdade está ligado nela).
+
+Validado revertendo três mecanismos: (1) desligando o `elif sala["tipo"]
+== "evento"` em `_prosseguir_sala`, cai só o teste que resolve uma
+sala de evento ponta a ponta; (2) tirando a chamada de `EFEITOS_
+EVENTO[...]` de dentro do callback do botão, cai só o teste que clica
+no botão de verdade — o teste que chama a função de efeito direto
+continua passando, prova de novo que só o teste de integração cobre a
+fiação; (3) forçando `_achado_nicho_da_torre` a sempre usar a faixa
+baixa, cai só o teste de alta variância do Nicho. Em todos os casos,
+exatamente o teste esperado cai. Suíte completa: 723 (704 de antes +
+19 novos), 722 passando + 1 xfail antigo.
+
+## DoD — Exploração de Dungeon
+
+Suíte verde: 723 no total, 722 passando + 1 xfail antigo (sem relação
+com este cartão). Os quatro commits (armadilha, espólio, cooldown,
+pool final) validados revertendo cada mecanismo isoladamente,
+confirmando que cai exatamente o teste esperado a cada vez — incluindo
+dois casos em que só um teste de integração ponta a ponta (não a
+unidade isolada) pegou uma fiação quebrada, achados durante o próprio
+processo de validação, não depois. Nenhum deploy — o pacote inteiro
+(dungeon + skills de ascensão + espelhos + mestres) sobe junto no fim
+do fechamento da 0.4.
+
+Pontos fixados por este cartão:
+- **"Armadilha" é camada, não tipo** — `sala["armadilha"]`, nunca mais
+  `sala["tipo"] == "armadilha"`.
+- **As três portas são sempre nesta ordem** — Percepção, Esquiva,
+  Força — e a medição confirmou (não contradisse) que essa ordem
+  favorece INT/DES sobre FOR; decisão consciente, registrada acima,
+  não bug.
+- **A condição da armadilha vale por UMA sala**, não duas — "2 rodadas"
+  fora de uma Luta de verdade virou "a resolução inteira da próxima
+  sala", com `vulneravel`/`chance_erro` só mordendo se essa sala for
+  combate.
+- **Espólio ≠ material ≠ tesouro** — três tipos com três papéis
+  diferentes no catálogo, nunca confundidos em código nem em texto.
+- **Cooldown da dungeon é por RUN, contado na entrada** — revoga só o
+  "sem cooldown" da decisão original; entrada gratuita e repetição
+  infinita continuam de pé; morrer não reinicia (escolha registrada
+  como tal, não do Rafael).
+- **Os três eventos são as únicas salas limpas** — não por sorteio,
+  porque o par de portas de cada um já é a tensão que a armadilha
+  proveria em outra sala.

@@ -689,40 +689,73 @@ PASSIVAS = {
 # "achado" nunca "tesouro": tesouro já é o item de andar do Salão da Guilda.
 #
 # Só TRÊS tipos -- "armadilha" NÃO é mais um tipo de sala, é uma CAMADA
-# (`"armadilha": True/False`) por cima de combate/evento/achado. As duas
-# salas que eram tipo "armadilha" (Piso Instável, Corrente Solta) se
-# dissolveram: viraram salas de verdade com a camada ligada, o material
-# delas emprestado pro visual (baú, nicho...) até o cartão seguinte
-# reescrever o pool inteiro com as dez salas finais. A sala NUNCA anuncia
-# a armadilha no nome nem no texto -- ela dispara na interação, não na
-# etiqueta (ver decisoes.md § Dungeon -- pool e armadilha, "narrativa é
-# requisito").
+# (`"armadilha": True/False`) por cima de combate/evento/achado. Dez
+# salas: 4 combate, 3 evento, 3 achado. Os TRÊS eventos são as três
+# salas "limpas" (armadilha sempre False) de propósito -- o par de
+# portas de cada evento já é a tensão dele, não precisa de mais uma
+# camada por cima; os 4 combate + 3 achado (7 no total) carregam
+# armadilha=True. A sala NUNCA anuncia a armadilha no nome nem no
+# texto -- ela dispara na interação, não na etiqueta ("Uma sala que se
+# identifica pelo nome não tem tensão"); é por isso que a antiga "Piso
+# Instável" virou "Estátua de Mãos Abertas" aqui -- o nome antigo
+# ENTREGAVA a armadilha, contra a própria regra que este cartão exige.
+# Ver decisoes.md § Dungeon -- pool e armadilha.
 DUNGEON_SALAS_POR_RUN = 5
 
 DUNGEON_POOL = [
+    # -------- combate (4) -- monstros do andar 9, ver ANDARES[9] --------
     {"chave": "camara_dos_ecos", "tipo": "combate", "nome": "Câmara dos Ecos",
      "texto": "Vozes repetem seus próprios passos -- algo se aproxima na escuridão.",
-     "armadilha": False},
+     "armadilha": True},
     {"chave": "corredor_sussurrante", "tipo": "combate", "nome": "Corredor Sussurrante",
      "texto": "As paredes sussurram um aviso tarde demais.",
-     "armadilha": False},
+     "armadilha": True},
+    {"chave": "corrente_solta", "tipo": "combate", "nome": "Corrente Solta",
+     "texto": "Alguma coisa presa aqui não devia estar tão perto.",
+     "armadilha": True},
+    {"chave": "covil_ocupado", "tipo": "combate", "nome": "Covil Ocupado",
+     "texto": "O covil está ocupado -- e não gosta de visita.",
+     "armadilha": True},
+
+    # -------- evento (3) -- sempre limpas, duas portas cada, uma delas
+    # sempre cobrando algo. "portas" é dado puro (chave + rótulo do
+    # botão); o efeito de cada porta mora em dungeon.EFEITOS_EVENTO,
+    # indexado pela chave da SALA (não da porta).
     {"chave": "salao_do_espelho_rachado", "tipo": "evento", "nome": "Salão do Espelho Rachado",
      "texto": "Um espelho trincado reflete um você que nunca foi.",
-     "armadilha": False},
+     "armadilha": False,
+     "portas": [
+         {"chave": "olhar", "label": "🪞 Olhar no espelho"},
+         {"chave": "virar", "label": "🚶 Virar as costas"},
+     ]},
     {"chave": "jardim_suspenso", "tipo": "evento", "nome": "Jardim Suspenso",
      "texto": "Flores que não deveriam crescer aqui embaixo -- crescem.",
-     "armadilha": False},
+     "armadilha": False,
+     "portas": [
+         {"chave": "comer", "label": "🍎 Comer o fruto"},
+         {"chave": "colher", "label": "🌿 Só colher"},
+     ]},
+    {"chave": "fonte_parada", "tipo": "evento", "nome": "Fonte Parada",
+     "texto": "A água não se move há anos. Ainda assim, pinga de algum lugar.",
+     "armadilha": False,
+     "portas": [
+         {"chave": "beber", "label": "💧 Beber"},
+         {"chave": "lavar", "label": "🩹 Lavar as feridas"},
+     ]},
+
+    # -------- achado (3) -- cada um com um risco diferente, ver
+    # dungeon.EFEITOS_ACHADO. "Baú Esquecido" é o de risco médio
+    # garantido; "Nicho da Torre" é o de alta variância (lixo ou o
+    # melhor da run); "Estátua de Mãos Abertas" é o garantido de teto
+    # baixo (era "Piso Instável" -- o nome entregava a armadilha).
     {"chave": "bau_esquecido", "tipo": "achado", "nome": "Baú Esquecido",
      "texto": "Poeira de anos cobre uma tampa que ainda destranca.",
-     "armadilha": False},
+     "armadilha": True},
     {"chave": "nicho_da_torre", "tipo": "achado", "nome": "Nicho da Torre",
      "texto": "Um vão na pedra guarda o que a Torre não quis levar embora.",
-     "armadilha": False},
-    {"chave": "piso_instavel", "tipo": "achado", "nome": "Piso Instável",
-     "texto": "O chão cede um pouco a cada passo.",
      "armadilha": True},
-    {"chave": "corrente_solta", "tipo": "achado", "nome": "Corrente Solta",
-     "texto": "Alguma coisa presa aqui não devia estar tão perto.",
+    {"chave": "estatua_de_maos_abertas", "tipo": "achado", "nome": "Estátua de Mãos Abertas",
+     "texto": "Uma estátua de pé no centro da sala, os braços erguidos -- a palma virada pra cima.",
      "armadilha": True},
 ]
 
@@ -751,6 +784,22 @@ DUNGEON_CONDICOES_ARMADILHA = [
     {"tipo": "chance_erro", "nome": "Tontura", "emoji": "💫", "valor": 0.20},
     {"tipo": "dano_por_rodada", "nome": "Sangramento", "emoji": "🩹", "valor": 0.05},
 ]
+
+# Limiares de preço que separam as faixas de espólio (ver ITENS,
+# "espólio da dungeon") -- usados pelos três achados pra diferenciar
+# risco (garantido médio / alta variância / garantido baixo). Ponto de
+# partida pra playtest, mesma régua das faixas 60-120/150-300/350-600
+# já documentadas nos itens.
+DUNGEON_ESPOLIO_TETO_BAIXO = 120
+DUNGEON_ESPOLIO_TETO_MEDIO = 300
+
+# Eventos (Fonte Parada, Jardim Suspenso, Salão do Espelho Rachado) --
+# valores das duas portas de cada, ponto de partida pra playtest.
+DUNGEON_EVENTO_CUSTO_HP_ESPELHO = 0.10     # fração do HP máximo -- "olhar" no espelho
+DUNGEON_EVENTO_CURA_JARDIM_COMER = 0.30    # fração do HP máximo -- "comer" o fruto
+DUNGEON_EVENTO_CHANCE_VENENO_JARDIM = 0.35
+DUNGEON_EVENTO_DANO_VENENO_JARDIM = 0.10   # fração do HP máximo, só se envenenar
+DUNGEON_EVENTO_CURA_FONTE_LAVAR = 0.15     # fração do HP máximo -- "lavar as feridas"
 
 # classe -> chave do espelho -- acesso sempre por .get(), nunca subscript,
 # porque nesta fatia toda entrada aponta pro mesmo placeholder (os espelhos

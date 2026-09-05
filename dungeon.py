@@ -193,8 +193,10 @@ async def _prosseguir_sala(enviar, j, s, run, sala, condicao, linhas_extra):
         condicao = None
     if sala["tipo"] == "combate":
         await _resolver_combate(enviar, j, s, run, sala, condicao, linhas_extra)
+    elif sala["tipo"] == "evento":
+        await _resolver_evento(enviar, j, s, run, sala, linhas_extra, j["user_id"])
     else:
-        await _resolver_sem_combate(enviar, j, run, sala, linhas_extra)
+        await _resolver_achado(enviar, j, s, run, sala, linhas_extra, j["user_id"])
 
 
 def _montar_descricao(sala, linhas_extra, log=None):
@@ -287,13 +289,135 @@ async def _resolver_combate(enviar, j, s, run, sala, condicao, linhas_extra):
     await _concluir_sala(enviar, j["user_id"], run, e)
 
 
-async def _resolver_sem_combate(enviar, j, run, sala, linhas_extra):
-    """evento/achado: só a narrativa avança a sala nesta fatia -- o
-    conteúdo mecânico de verdade (Orbe, espelhos, skills de ascensão,
-    os dois botões do evento, a diferenciação do achado) entra em
-    cartões seguintes, ver decisoes.md."""
+async def _concluir_com_texto(enviar, user_id, run, sala, linhas_extra):
     e = discord.Embed(title=sala["nome"], description=_montar_descricao(sala, linhas_extra), color=COR_DUNGEON)
-    await _concluir_sala(enviar, j["user_id"], run, e)
+    await _concluir_sala(enviar, user_id, run, e)
+
+
+# ------------------------------------------------------------- achado
+# Três riscos diferentes -- ver game_data.DUNGEON_POOL e decisoes.md.
+# `linhas_extra` (armadilha/condição da sala anterior) sempre entra
+# ANTES do resultado do achado, nunca depois.
+
+_ESPOLIOS_BAIXOS = [k for k in _ESPOLIOS if game_data.ITENS[k]["preco"] <= game_data.DUNGEON_ESPOLIO_TETO_BAIXO]
+_ESPOLIOS_MEDIOS = [
+    k for k in _ESPOLIOS
+    if game_data.DUNGEON_ESPOLIO_TETO_BAIXO < game_data.ITENS[k]["preco"] <= game_data.DUNGEON_ESPOLIO_TETO_MEDIO
+]
+_ESPOLIOS_ALTOS = [k for k in _ESPOLIOS if game_data.ITENS[k]["preco"] > game_data.DUNGEON_ESPOLIO_TETO_MEDIO]
+
+CHANCE_ACHADO_ALTO_NICHO = 0.30   # Nicho da Torre: alta variância -- 30% o melhor da run, 70% lixo
+
+
+def _dar_espolio(user_id, pool):
+    espolio = random.choice(pool)
+    db.add_item(user_id, espolio)
+    return espolio
+
+
+async def _achado_bau_esquecido(enviar, j, s, run, sala, user_id, linhas_extra):
+    """Espólio garantido de valor MÉDIO -- o "seguro" dos três achados."""
+    dado = game_data.ITENS[_dar_espolio(user_id, _ESPOLIOS_MEDIOS)]
+    linhas_extra.append(f"📦 Você encontra: {dado['emoji']} **{dado['nome']}**.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+async def _achado_nicho_da_torre(enviar, j, s, run, sala, user_id, linhas_extra):
+    """Alta variância -- pode ser o pior ou o melhor espólio da run."""
+    pool = _ESPOLIOS_ALTOS if random.random() < CHANCE_ACHADO_ALTO_NICHO else _ESPOLIOS_BAIXOS
+    dado = game_data.ITENS[_dar_espolio(user_id, pool)]
+    linhas_extra.append(f"📦 Você encontra: {dado['emoji']} **{dado['nome']}**.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+async def _achado_estatua_de_maos_abertas(enviar, j, s, run, sala, user_id, linhas_extra):
+    """Garantido, mas de teto baixo -- o mais seguro dos três, nunca o melhor."""
+    dado = game_data.ITENS[_dar_espolio(user_id, _ESPOLIOS_BAIXOS)]
+    linhas_extra.append(f"📦 Você encontra: {dado['emoji']} **{dado['nome']}**.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+EFEITOS_ACHADO = {
+    "bau_esquecido": _achado_bau_esquecido,
+    "nicho_da_torre": _achado_nicho_da_torre,
+    "estatua_de_maos_abertas": _achado_estatua_de_maos_abertas,
+}
+
+
+async def _resolver_achado(enviar, j, s, run, sala, linhas_extra, user_id):
+    await EFEITOS_ACHADO[sala["chave"]](enviar, j, s, run, sala, user_id, linhas_extra)
+
+
+# ------------------------------------------------------------- evento
+# Duas portas, sempre uma cobrando algo -- ver game_data.DUNGEON_POOL
+# ("portas": dado puro, chave + rótulo) e decisoes.md.
+
+async def _evento_espelho(enviar, j, s, run, sala, user_id, escolha, linhas_extra):
+    if escolha == "olhar":
+        dano = max(1, int(game_data.DUNGEON_EVENTO_CUSTO_HP_ESPELHO * s["hp_max"]))
+        hp_novo = max(1, _hp_atual(j, s) - dano)
+        db.atualizar_jogador(user_id, hp=hp_novo)
+        j["hp"] = hp_novo
+        proximo_indice = run["indice"] + 1
+        if proximo_indice < len(run["salas"]):
+            visao = f"O espelho mostra **{_POOL_POR_CHAVE[run['salas'][proximo_indice]]['nome']}** logo à frente."
+        else:
+            visao = "O espelho mostra só escuridão -- não sobra mais nenhuma sala depois desta."
+        linhas_extra.append(f"🪞 {visao} Custou **{dano}** de HP.")
+    else:
+        linhas_extra.append("🚶 Você vira as costas pro espelho, sem custo -- e sem nada.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+async def _evento_jardim(enviar, j, s, run, sala, user_id, escolha, linhas_extra):
+    if escolha == "comer":
+        cura = max(1, int(game_data.DUNGEON_EVENTO_CURA_JARDIM_COMER * s["hp_max"]))
+        hp_novo = min(s["hp_max"], _hp_atual(j, s) + cura)
+        if random.random() < game_data.DUNGEON_EVENTO_CHANCE_VENENO_JARDIM:
+            dano = max(1, int(game_data.DUNGEON_EVENTO_DANO_VENENO_JARDIM * s["hp_max"]))
+            hp_novo = max(1, hp_novo - dano)
+            linhas_extra.append(f"🍎 O fruto cura **{cura}**, mas envenena -- **{dano}** de dano por cima.")
+        else:
+            linhas_extra.append(f"🍎 O fruto cura **{cura}**, sem problema nenhum.")
+        db.atualizar_jogador(user_id, hp=hp_novo)
+        j["hp"] = hp_novo
+    else:
+        dado = game_data.ITENS[_dar_espolio(user_id, _ESPOLIOS_BAIXOS)]
+        linhas_extra.append(f"🌿 Você só colhe -- {dado['emoji']} **{dado['nome']}**, nenhuma cura.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+async def _evento_fonte(enviar, j, s, run, sala, user_id, escolha, linhas_extra):
+    if escolha == "beber":
+        db.atualizar_jogador(user_id, mana=s["mana_max"])
+        condicao_nova = _sortear_condicao_armadilha()
+        db.definir_condicao_armadilha(user_id, condicao_nova)
+        linhas_extra.append(
+            f"💧 Você bebe -- mana cheia, mas {condicao_nova['emoji']} **{condicao_nova['nome']}** fica em você."
+        )
+    else:
+        cura = max(1, int(game_data.DUNGEON_EVENTO_CURA_FONTE_LAVAR * s["hp_max"]))
+        hp_novo = min(s["hp_max"], _hp_atual(j, s) + cura)
+        db.atualizar_jogador(user_id, hp=hp_novo)
+        j["hp"] = hp_novo
+        linhas_extra.append(f"🩹 Você lava as feridas -- cura **{cura}**, sem risco.")
+    await _concluir_com_texto(enviar, user_id, run, sala, linhas_extra)
+
+
+EFEITOS_EVENTO = {
+    "salao_do_espelho_rachado": _evento_espelho,
+    "jardim_suspenso": _evento_jardim,
+    "fonte_parada": _evento_fonte,
+}
+
+
+async def _resolver_evento(enviar, j, s, run, sala, linhas_extra, user_id):
+    """Apresenta as duas portas -- botões, como a escolha da Percepção.
+    Não conclui a sala ainda: espera o clique (`_BotaoEvento.callback`),
+    que chama de volta o efeito certo em `EFEITOS_EVENTO`."""
+    e = discord.Embed(title=sala["nome"], description=_montar_descricao(sala, linhas_extra), color=COR_DUNGEON)
+    view = _ViewEscolhaEvento(user_id, j, s, run, sala, linhas_extra)
+    await enviar(embed=e, view=view)
 
 
 async def _concluir_sala(enviar, user_id, run, embed):
@@ -337,6 +461,19 @@ class _ViewEscolhaArmadilha(discord.ui.View):
         return True
 
 
+def _enviar_de(interaction):
+    """`enviar(*, embed, view=None)` de cima do followup de uma
+    interação -- mesma convenção de `ctx.send`, pra escolha da
+    Percepção/evento e o comando normal caírem no mesmo caminho de
+    resolução de conteúdo (ver `_prosseguir_sala`)."""
+    async def enviar(*, embed, view=None):
+        kwargs = {"embed": embed}
+        if view is not None:
+            kwargs["view"] = view
+        await interaction.followup.send(**kwargs)
+    return enviar
+
+
 class _BotaoArmadilha(discord.ui.Button):
     def __init__(self, escolha, label):
         super().__init__(label=label, style=discord.ButtonStyle.primary)
@@ -349,16 +486,48 @@ class _BotaoArmadilha(discord.ui.Button):
             item.disabled = True
         await interaction.edit_original_response(view=view)
 
-        async def enviar(*, embed, view=None):
-            kwargs = {"embed": embed}
-            if view is not None:
-                kwargs["view"] = view
-            await interaction.followup.send(**kwargs)
-
+        enviar = _enviar_de(interaction)
         if self.escolha == "desarmar":
             await _resolver_desarmar(enviar, view.j, view.s, view.run, view.sala, view.condicao, view.user_id)
         else:
             await _resolver_contornar(enviar, view.j, view.s, view.run, view.sala, view.condicao)
+
+
+class _ViewEscolhaEvento(discord.ui.View):
+    """As duas portas de um evento -- rótulos vêm de `sala["portas"]`
+    (dado puro em game_data.DUNGEON_POOL), o efeito de cada uma mora em
+    `EFEITOS_EVENTO`, indexado pela CHAVE DA SALA. Só o dono da run pode
+    clicar; os dois botões desativam depois de um clique."""
+
+    def __init__(self, user_id, j, s, run, sala, linhas_extra):
+        super().__init__(timeout=120)
+        self.user_id = user_id
+        self.j, self.s, self.run, self.sala, self.linhas_extra = j, s, run, sala, linhas_extra
+        for porta in sala["portas"]:
+            self.add_item(_BotaoEvento(porta["chave"], porta["label"]))
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Essa run não é sua.", ephemeral=True)
+            return False
+        return True
+
+
+class _BotaoEvento(discord.ui.Button):
+    def __init__(self, escolha, label):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.escolha = escolha
+
+    async def callback(self, interaction):
+        await interaction.response.defer()
+        view: _ViewEscolhaEvento = self.view
+        for item in view.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=view)
+
+        enviar = _enviar_de(interaction)
+        efeito = EFEITOS_EVENTO[view.sala["chave"]]
+        await efeito(enviar, view.j, view.s, view.run, view.sala, view.user_id, self.escolha, list(view.linhas_extra))
 
 
 # ------------------------------------------------------------- comando
