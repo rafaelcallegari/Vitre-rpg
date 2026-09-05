@@ -7082,3 +7082,194 @@ chefe; (2) tirando a checagem de duplicata de `conceder_orbe` (sempre
 concede, sempre devolve `True`), caem exatamente os dois testes de
 duplicata. Suíte completa: 750 (742 de antes + 8 novos), 749 passando
 + 1 xfail antigo.
+
+### Commit 3 — os quatro espelhos
+
+Cada classe encontra sempre o próprio espelho — não é sorteio, e não
+depende da ASCENSÃO do jogador: um mago_fogo ou mago_raio enfrenta o
+mesmo Espectro do Lich que um mago_gelo enfrentaria. `game_data.
+DUNGEON_ESPELHOS` (classe → chave) trocou o placeholder único por
+quatro chaves reais; `DUNGEON_ESPELHOS_DADOS` guarda hp/atk/def/kit de
+cada um — uma escolha REPRESENTATIVA de ramo por classe (mago_gelo,
+mercenário, assassino, clérigo), não um espelho por ramo (seriam 11).
+**Nenhuma passiva**: o Arauto não se levanta — a Graça Divina dele é
+sempre Chama Divina, nunca o Reerguer, porque a luta do espelho é
+SEMPRE solo (testado explicitamente).
+
+### O ponto mais perigoso do step: a direção do efeito
+
+Os `_efeito_*` de `combate.py` foram escritos pra JOGADOR atacando
+CHEFE — `luta.hp_chefe -= dano`, condição em `alvo=jogador.id` ou
+`alvo="chefe"` sempre na mesma direção fixa. O espelho precisa da
+direção contrária.
+
+**Escolha: funções PRÓPRIAS em `espelhos.py`, não generalizar as
+`_efeito_*` existentes.** Cada uma das 12 habilidades do kit ganhou uma
+versão `_efeito_espelho_*` escrita à mão, na direção contrária —
+duplicação deliberada. O porquê:
+- A suíte cobre 750+ testes em cima das versões do jogador; qualquer
+  parâmetro de "direção" adicionado às funções existentes vira
+  superfície nova de bug em código que já funciona, testado e
+  calibrado. O cartão pediu cautela extra explicitamente ("vá devagar
+  e valide revertendo com mais cuidado que o normal") — a forma mais
+  segura de não arriscar isso é não tocar nelas.
+- Boa parte do trabalho de generalizar não seria sintática (trocar
+  `alvo=jogador.id` por um parâmetro) — seria SEMÂNTICA. Duas
+  descobertas confirmam isso:
+  - `condicoes._tick_cura` recusa explicitamente curar `alvo ==
+    "chefe"` ("chefe não cura por condição") — Palavra de Alento
+    revertida (o espelho cura A SI MESMO) bateria nessa guarda de
+    propósito.
+  - NADA no caminho jogador→chefe consulta `reducao_dano_recebido(luta,
+    "chefe")` — nunca precisou, porque nenhum chefe teve defesa
+    temporária antes deste cartão. Voto de Ferro revertido (o espelho
+    reduz o QUE TOMA) exigiria adicionar essa consulta em ~13 pontos
+    espalhados que hoje fazem `luta.hp_chefe -= dano` direto.
+  Reescrever do zero, sabendo de antemão que a direção é sempre
+  jogador-alvo, evita essas duas guardas por completo — a superfície
+  de mudança em código antigo fica em ZERO.
+- O custo é duplicação de código (12 funções a mais, ~200 linhas) — mas
+  cada uma é pequena, isolada, e testada sozinha (`tests/test_
+  espelhos.py`). O risco fica contido num arquivo novo que só os
+  espelhos usam.
+
+**O que FOI reaproveitado, sem tocar em nada**: as consultas GENÉRICAS
+de `condicoes.py` (`bonus_critico`, `pode_agir`, `pode_lancar_
+habilidade`, `multiplicador_dano_causado`) já filtram por QUALQUER
+`alvo`, não só "chefe" — nunca precisaram de mudança. Duas descobertas
+felizes:
+- `condicoes.pode_lancar_habilidade(self.luta, c.id)` já era consultada
+  pro JOGADOR desde a Choque (andares 11+, elemento) — `BotaoHabilidade.
+  callback` já recusa o clique se o jogador estiver com `bloqueia_
+  skill`. Isso significa que travar um jogador de verdade (ataque E
+  skill) só precisa aplicar OS DOIS tipos (`pula_turno` + `bloqueia_
+  skill`) — mecanismo já pronto, nunca antes combinado dos dois lados
+  na mesma direção.
+- `condicoes.bonus_critico(luta, "chefe")` é a mesma consulta genérica
+  de sempre — o Ponto Cego revertido (auto-buff no espelho) só precisou
+  que `_rolar_dano_espelho` a consultasse, um `_rolar_dano_habilidade`
+  próprio pro espelho (usa `luta.chefe["atk"]`, não atributo de
+  jogador).
+
+### Duas simplificações deliberadas (documentadas, não escondidas)
+
+- **Palavra de Alento revertida**: o original regenera ao longo de 2
+  rodadas (`cura_por_rodada`). Como isso bateria na guarda de `_tick_
+  cura` (chefe não cura por condição) — em vez de abrir exceção nela,
+  o espelho cura o equivalente de 2 rodadas DE UMA VEZ, instantâneo.
+- **Voto de Ferro revertido**: o original reduz dano por 2 rodadas
+  cronometradas. Em vez de instrumentar os ~13 pontos de dano
+  jogador→chefe com uma consulta nova, o espelho ganha um reforço
+  PERMANENTE de defesa (`luta.chefe["def"] *= 1.5`, só uma vez —
+  `_voto_de_ferro_usado` evita reaplicar) — a defesa já é consultada
+  por todo mundo (`_defesa_efetiva`), então funciona sem tocar em mais
+  nada. Simplificação, não gambiarra: os dois efeitos existem e têm
+  peso na luta, só a JANELA de tempo virou diferente.
+- **Pancada Atordoante revertida**: o original escala a chance com a
+  FORÇA do jogador. O espelho não tem ficha de personagem (só hp/atk/
+  def) — a chance virou fixa (`CHANCE_PANCADA_ESPELHO = 0.25`, o
+  próprio teto do original).
+
+### A rotina: chefe_ia decide, uma tabela por classe escolhe a skill
+
+`espelhos.escolher_habilidade(luta, jogador_id)` chama `chefe_ia.
+decidir_acao` (Step 3, commit 1) e usa a decisão pra indexar
+`ROTINA_POR_CLASSE[classe]`, uma tabela FIXA {decisão: chave da
+habilidade} por classe:
+- **"priorizar_carregado"** (jogador com pouco HP) → a habilidade de
+  ASCENSÃO do kit (a mais forte -- Prisão de Cristal, Golpe
+  Oportunista, Golpe Fatal, ou Chama Divina pro Arauto, que não tem
+  outra opção de dano).
+- **"reduzir_cura"/"pressionar"** → a habilidade de UTILIDADE do kit
+  (Ruptura, Pancada Atordoante, Ponto Cego, Voto de Ferro) — o espelho
+  fica mais tático em vez de só bater.
+- **"padrao"** → a habilidade de dano simples do kit (Dardo Arcano,
+  Golpe Aberto, Corte Rápido, Chama Divina de novo pro Arauto — ele só
+  tem uma fonte de dano, então "padrao" e "priorizar_carregado" batem
+  na mesma).
+
+`turno_do_espelho(luta)` é chamado de `combate.Luta.turno_do_chefe`
+através de um desvio de UMA linha (`if self.chefe.get("e_espelho"):
+espelhos.turno_do_espelho(self); ...`) logo depois de `_resolver_
+condicao_pendente()` — pula TODA a lógica de carregado/ataque normal
+por RNG (os espelhos nunca carregam, nunca atacam sem decisão). Pra
+qualquer chefe de torre (que nunca tem essa chave), o desvio nunca
+dispara — comportamento intocado, testado explicitamente (mesmo
+espírito do teste de fronteira do commit 1).
+
+### A integração com a dungeon
+
+`dungeon._resolver_sala_do_chefe` monta um `combate.Luta` de verdade
+(`combatente = combate.Combatente(j, s)`, `luta = combate.Luta(
+[combatente], dados_espelho, andar_num=9)`) — `dados_espelho` é uma
+CÓPIA de `DUNGEON_ESPELHOS_DADOS` (`dict(...)`, nunca o dict original:
+Voto de Ferro muta `luta.chefe["def"]`, mutar o dict compartilhado
+vazaria pra a PRÓXIMA pessoa que enfrentasse o mesmo espelho).
+
+`PainelEspelho(combate.PainelLuta)` só sobrescreve `fim_da_luta`/
+`_continuar` — mesmíssimo padrão de `raide.PainelRaide` — os botões
+(Atacar/Defender/Habilidade/Mortalha/Fugir) são os de sempre,
+intocados: o jogador ataca o espelho exatamente como atacaria qualquer
+chefe, `luta.hp_chefe -= dano` já funciona sem mudança nenhuma (só o
+lado do CHEFE precisava de código novo). `_finalizar_vitoria_espelho`/
+`_finalizar_derrota_espelho`/`_finalizar_abandono_espelho` substituem
+`combate.finalizar_vitoria`/`finalizar_derrota` (que são tower-
+específicas: avançam `andar_max`, texto de "andar destrancado" — não
+fazem sentido pra um duelo de espelho):
+- **Vitória**: concede o Orbe (commit 2) e encerra a run.
+- **Derrota**: `a_processar_morte(na_dungeon=True)` — a MESMA
+  penalidade de qualquer morte na dungeon; o espelho é o fim da mesma
+  run das cinco salas, o risco não muda no final.
+- **Abandono** (fugir/sumir): encerra a run sem penalidade extra, mesmo
+  espírito de `rpg dungeon sair`.
+
+**Auto-ressurreição do clérigo dobra aqui, de propósito** — a luta do
+espelho é uma `combate.Luta` NOVA (não reaproveita nenhum estado das
+cinco salas anteriores), então `luta.auto_ressurreicao_usada` nasce
+`False` de novo, mesmo que o jogador já tenha gastado a auto-
+ressurreição POR RUN da dungeon (`dungeon_run.auto_ressurreicao_
+usada`, Step 2d fechamento) nas cinco salas antes. Ver "Regras" do
+cartão: os dois motores contam coisas diferentes de propósito — aqui
+achei que o clérigo ganhar essa segunda rede de segurança justo no
+duelo mais difícil da run é um payoff de identidade de classe
+razoável, não um furo — registrado aqui pra não ser "descoberto" como
+bug depois.
+
+### Testes
+
+`tests/test_espelhos.py`, 26 testes: cada uma das 12 habilidades
+revertidas isolada (Dardo Arcano ignora defesa; Ruptura só debuff;
+Prisão de Cristal trava ataque E skill; Golpe Aberto empilha até 3;
+Pancada Atordoante com chance fixa; Golpe Oportunista escala com o HP
+do PRÓPRIO espelho; Corte Rápido dois golpes; Ponto Cego é auto-buff
+puro; Golpe Fatal escala com o HP do jogador; Palavra de Alento cura só
+o espelho; Voto de Ferro sobe a defesa uma vez só; Chama Divina é dano
+puro); `_rolar_dano_espelho` usa o atk do próprio chefe e responde ao
+bônus de crítico de `condicoes.bonus_critico(luta, "chefe")`; a rotina
+por classe (padrão/pressionar/reduzir_cura/priorizar_carregado, com o
+caso especial do Arauto que só tem uma fonte de dano); `turno_do_
+espelho` mira sempre o único jogador, não faz nada se ele já caiu, e
+registra o motivo telegrafado; e a fronteira -- chefe de torre normal
+nunca chama `espelhos.turno_do_espelho`, um chefe marcado `e_espelho`
+sempre chama.
+
+`tests/test_dungeon_chefe.py` ganhou 5 testes (substituindo os 3 do
+placeholder do commit 2, que a luta de verdade tornou obsoletos):
+resolver a sala do chefe abre uma `PainelEspelho` de verdade contra o
+espelho certo pra classe; vencer concede o Orbe e termina a run;
+vencer de novo com Orbe já existente não duplica; perder processa
+`a_processar_morte(na_dungeon=True)`; e o fluxo ponta a ponta das 5
+salas + vitória contra o espelho.
+
+Validado revertendo quatro mecanismos: (1) desligando o desvio `if
+self.chefe.get("e_espelho")` em `turno_do_chefe`, cai só o teste que
+prova que um chefe marcado dispara `espelhos.turno_do_espelho`; (2)
+trocando a habilidade de "priorizar_carregado" do guerreiro pra
+`golpe_aberto` (a de dano simples), cai só o teste que prova a
+priorização; (3) tirando o `bloqueia_skill` de Prisão de Cristal (só
+`pula_turno`), cai só o teste que prova a trava COMPLETA (ataque E
+skill); (4) tirando `conceder_orbe` de `_finalizar_vitoria_espelho`,
+caem exatamente os dois testes que dependem do Orbe aparecer na
+vitória. Em todos os casos, exatamente os testes esperados caem. Suíte
+completa: 778 (750 de antes + 26 de espelhos + 5 de dungeon_chefe - 3
+obsoletos), 777 passando + 1 xfail antigo.

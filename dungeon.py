@@ -464,25 +464,100 @@ def conceder_orbe(user_id):
 
 
 async def _resolver_sala_do_chefe(enviar, j, s, run, user_id):
-    """Placeholder do commit 2 -- concede o Orbe direto, sem luta
-    nenhuma. O commit 3 substitui isto por uma luta de verdade contra o
-    espelho da classe (combate.Luta, não simular_combate -- ver
-    decisoes.md § Step 3, "Regras") e só concede o Orbe na vitória."""
+    """Luta de VERDADE contra o espelho da própria classe --
+    combate.Luta, não simular_combate (os dois motores contam coisas
+    diferentes, ver decisoes.md § Step 3, "Regras"). Cada classe
+    encontra sempre o próprio espelho -- não é sorteio. Vitória concede
+    o Orbe (ver `_finalizar_vitoria_espelho`); derrota processa a morte
+    normal da dungeon; fugir/sumir encerra a run sem penalidade extra."""
+    chave_espelho = game_data.DUNGEON_ESPELHOS.get(j["classe"])
+    if not chave_espelho:
+        await enviar(embed=discord.Embed(
+            title="A Sala do Chefe", color=COR_DUNGEON,
+            description="Um reflexo turvo espera, mas sem classe não há o que ele reflita. `rpg classe` primeiro.",
+        ))
+        return
+    dados_espelho = dict(game_data.DUNGEON_ESPELHOS_DADOS[chave_espelho])
+    dados_espelho["e_espelho"] = True   # ver combate.Luta.turno_do_chefe
+    combatente = combate.Combatente(j, s)
+    luta = combate.Luta([combatente], dados_espelho, andar_num=9)
+    painel = PainelEspelho(luta, user_id)
+    e = luta.embed(
+        titulo=f"O Espelho — {dados_espelho['nome']}",
+        rodape="É você, do outro lado -- ou o que resta de você, se você continuar assim.",
+    )
+    painel.mensagem = await enviar(embed=e, view=painel)
+
+
+class PainelEspelho(combate.PainelLuta):
+    """Mesmo botões de sempre (Atacar/Defender/Habilidade/Mortalha/
+    Fugir) -- o jogador ataca o espelho exatamente como atacaria
+    qualquer chefe, `luta.hp_chefe -= dano` já funciona sem mudança
+    nenhuma. Só o FIM da luta é diferente (Orbe na vitória, morte de
+    dungeon na derrota) -- mesmo padrão de `raide.PainelRaide`
+    (overriding só `fim_da_luta`/`_continuar`, nunca os botões)."""
+
+    def __init__(self, luta, user_id):
+        super().__init__(luta)
+        self.user_id = user_id
+
+    def _continuar(self, luta):
+        return PainelEspelho(luta, self.user_id)
+
+    async def fim_da_luta(self, interaction=None):
+        luta = self.luta
+        if luta.hp_chefe <= 0:
+            return await _finalizar_vitoria_espelho(luta, self.user_id)
+        if not luta.ativos:
+            combate._talvez_auto_ressuscitar(luta)   # clérigo solo -- a luta do espelho é sempre solo
+            if not luta.ativos:
+                if any(c.caiu for c in luta.participantes) and not any(
+                    c.fugiu or c.saiu for c in luta.participantes
+                ):
+                    return await _finalizar_derrota_espelho(luta, self.user_id)
+                return await _finalizar_abandono_espelho(luta, self.user_id)
+        return None
+
+
+async def _finalizar_vitoria_espelho(luta, user_id):
+    luta.encerrada = True
+    c = luta.participantes[0]
+    c.salvar_estado()
     concedido = conceder_orbe(user_id)
-    e = discord.Embed(title="A Sala do Chefe", color=COR_DUNGEON)
-    if concedido:
-        e.description = (
-            "Um espelho rachado espera no centro da sala. Quando você se aproxima, "
-            "ele já não reflete você -- e algo fica pra trás quando o reflexo se desfaz.\n\n"
-            "✨ Você encontra o **Orbe de Ascensão**."
-        )
-    else:
-        e.description = (
-            "O mesmo espelho de sempre. Você já carrega o que ele tinha pra dar -- "
-            "não sobra nada novo desta vez."
-        )
     sair(user_id)
-    await enviar(embed=e)
+    e = luta.embed(
+        titulo=f"O reflexo se desfaz — {luta.chefe['nome']}",
+        rodape=f"Vencido na rodada {luta.rodada}.",
+    )
+    if concedido:
+        e.add_field(name="✨ Orbe de Ascensão", value="Você encontra o que ele guardava.", inline=False)
+    else:
+        e.add_field(name="Nada novo", value="Você já carrega o que ele tinha pra dar.", inline=False)
+    return e
+
+
+async def _finalizar_derrota_espelho(luta, user_id):
+    """Mesma penalidade de qualquer morte na dungeon (na_dungeon=True --
+    apaga a run, não deixa linha órfã) -- o espelho é o fim da mesma
+    run que as cinco salas, o risco continua o mesmo até o fim."""
+    luta.encerrada = True
+    c = luta.participantes[0]
+    perda = await H["a_processar_morte"](c.jogador, c.s, na_dungeon=True)
+    e = luta.embed(
+        titulo=f"Você cai diante do próprio reflexo — {luta.chefe['nome']}",
+        cor=combate.COR_DERROTA,
+        rodape=f"Caiu na rodada {luta.rodada}.",
+    )
+    e.add_field(name="Derrota", value=f"Perdeu **{perda}** 🪙. A run foi encerrada.", inline=False)
+    return e
+
+
+async def _finalizar_abandono_espelho(luta, user_id):
+    """Fugiu ou sumiu -- a run acaba, sem a penalidade de morte (mesmo
+    espírito de `rpg dungeon sair`: sem penalidade extra além de perder
+    a run e o cooldown já gasto)."""
+    sair(user_id)
+    return await combate.encerrar_por_abandono(luta)
 
 
 # ------------------------------------------------------------- botões
@@ -515,7 +590,7 @@ def _enviar_de(interaction):
         kwargs = {"embed": embed}
         if view is not None:
             kwargs["view"] = view
-        await interaction.followup.send(**kwargs)
+        return await interaction.followup.send(**kwargs)
     return enviar
 
 

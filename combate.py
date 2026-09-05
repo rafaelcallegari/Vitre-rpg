@@ -9,6 +9,7 @@ import discord
 import atributos as at
 import condicoes
 import database as db
+import espelhos
 import habilidades as hab
 import passivas
 import pronomes
@@ -638,7 +639,13 @@ class Luta:
             self.registrar(f"{self.chefe['nome']} está sob efeito e perde a rodada.")
         else:
             self._resolver_condicao_pendente()
-            if random.random() < condicoes.chance_de_erro(self, "chefe"):
+            if self.chefe.get("e_espelho"):
+                # Step 3, commit 3: os espelhos não carregam golpe nem
+                # atacam por RNG puro -- toda a lógica de carregado/
+                # ataque normal abaixo é só pra chefe da torre, e
+                # continua intocada pra eles. Ver espelhos.py.
+                espelhos.turno_do_espelho(self)
+            elif random.random() < condicoes.chance_de_erro(self, "chefe"):
                 self.registrar(f"🌬️ Corrente desvia o golpe de {self.chefe['nome']} — ele erra a rodada.")
             elif self.carregando:
                 self.carregando = False

@@ -814,14 +814,51 @@ DUNGEON_EVENTO_CHANCE_VENENO_JARDIM = 0.35
 DUNGEON_EVENTO_DANO_VENENO_JARDIM = 0.10   # fração do HP máximo, só se envenenar
 DUNGEON_EVENTO_CURA_FONTE_LAVAR = 0.15     # fração do HP máximo -- "lavar as feridas"
 
-# classe -> chave do espelho -- acesso sempre por .get(), nunca subscript,
-# porque nesta fatia toda entrada aponta pro mesmo placeholder (os espelhos
-# de verdade, um design de reflexo por classe, entram numa fatia futura).
+# classe -> chave do espelho -- acesso sempre por .get(), nunca subscript
+# (protege contra uma classe nova sem espelho ainda). Cada classe encontra
+# SEMPRE o próprio espelho -- não é sorteio, e não depende da ASCENSÃO do
+# jogador (um mago_fogo ou mago_raio enfrenta o mesmo Espectro do Lich que
+# um mago_gelo enfrentaria -- o espelho é por CLASSE base, uma escolha
+# representativa de ramo por classe, não um espelho por ramo). Ver
+# decisoes.md § Step 3.
 DUNGEON_ESPELHOS = {
-    "guerreiro": "espelho_placeholder",
-    "mago": "espelho_placeholder",
-    "ladino": "espelho_placeholder",
-    "orador": "espelho_placeholder",
+    "mago": "espectro_do_lich",
+    "guerreiro": "campeao_da_arena",
+    "ladino": "assassino_do_vento",
+    "orador": "arauto_dos_deuses",
+}
+
+# Dados de cada espelho -- kit de TRÊS habilidades (nunca passiva: "o
+# Arauto não se levanta", Graça Divina dele é só a Chama Divina porque a
+# luta é SEMPRE solo, nunca o Reerguer). hp/atk/def são ponto de partida
+# pra playtest -- a calibragem de verdade (Step 3, commit 4) mede contra
+# um jogador que chega machucado da dungeon, não um duelo com todo mundo
+# cheio. `elemento: None` -- nenhum espelho usa a camada elemental
+# (Brasa/Travamento de arma etc.); as habilidades do kit já carregam seus
+# próprios efeitos, escritos à mão pra atacar NA DIREÇÃO CONTRÁRIA da
+# versão do jogador (ver espelhos.py e decisoes.md § Step 3, "o ponto
+# mais perigoso do step").
+DUNGEON_ESPELHOS_DADOS = {
+    "espectro_do_lich": {
+        "nome": "Espectro do Lich", "classe": "mago", "elemento": None,
+        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "kit": ["dardo_arcano", "ruptura", "prisao_de_cristal"],
+    },
+    "campeao_da_arena": {
+        "nome": "Campeão da Arena", "classe": "guerreiro", "elemento": None,
+        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "kit": ["golpe_aberto", "pancada_atordoante", "golpe_oportunista"],
+    },
+    "assassino_do_vento": {
+        "nome": "Assassino do Vento", "classe": "ladino", "elemento": None,
+        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "kit": ["corte_rapido", "ponto_cego", "golpe_fatal"],
+    },
+    "arauto_dos_deuses": {
+        "nome": "Arauto dos Deuses", "classe": "orador", "elemento": None,
+        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "kit": ["palavra_de_alento", "voto_de_ferro", "graca_divina"],
+    },
 }
 
 # Catálogo de habilidades. Cada chave segue este formato:

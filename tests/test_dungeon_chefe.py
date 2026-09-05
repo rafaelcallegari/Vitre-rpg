@@ -1,8 +1,9 @@
 # tests/test_dungeon_chefe.py
-# Cartão "Step 3 — os 4 espelhos e o motor de decisão de chefe", commit 2:
-# a sala do chefe e o Orbe de Ascensão. Placeholder até o commit 3 (sem
-# luta ainda -- só o Orbe, com proteção contra duplicata). Ver decisoes.md
-# § Step 3.
+# Cartão "Step 3 — os 4 espelhos e o motor de decisão de chefe", commits
+# 2 e 3: a sala do chefe (a integração dungeon.py <-> a luta de verdade
+# contra o espelho) e o Orbe de Ascensão. Os efeitos do espelho em si
+# (as 12 habilidades revertidas) têm arquivo próprio, tests/test_espelhos.py.
+# Ver decisoes.md § Step 3.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -122,9 +123,11 @@ def test_completar_a_quinta_sala_nao_apaga_a_run_avanca_pro_indice_do_chefe(monk
     assert run_depois["indice"] == game_data.DUNGEON_SALAS_POR_RUN
 
 
-def test_resolver_a_sala_do_indice_do_chefe_concede_o_orbe_e_termina_a_run():
-    j = _jogador(1)
-    s = bot.stats(j)
+def test_resolver_a_sala_do_indice_do_chefe_inicia_uma_luta_de_verdade():
+    """Commit 3 substitui o placeholder do commit 2 -- a sala do chefe
+    agora abre uma luta de verdade (combate.Luta + PainelEspelho)
+    contra o espelho da própria classe, não concede o Orbe direto."""
+    j = _jogador(1, classe="guerreiro", forca=20)
     db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
     db.atualizar_dungeon_run_indice(1, game_data.DUNGEON_SALAS_POR_RUN)
     run = dungeon.obter_run(1)
@@ -132,35 +135,76 @@ def test_resolver_a_sala_do_indice_do_chefe_concede_o_orbe_e_termina_a_run():
 
     asyncio.run(dungeon.resolver_sala_atual(ctx, j, run))
 
+    painel = ctx.send.call_args.kwargs["view"]
+    assert isinstance(painel, dungeon.PainelEspelho)
+    chave_espelho = game_data.DUNGEON_ESPELHOS["guerreiro"]
+    assert painel.luta.chefe["nome"] == game_data.DUNGEON_ESPELHOS_DADOS[chave_espelho]["nome"]
+    assert not db.tem_item(1, "orbe_de_ascensao")   # ainda não venceu -- ainda não tem o Orbe
+    assert dungeon.obter_run(1) is not None   # a luta começou, a run não acabou ainda
+
+
+def test_vencer_o_espelho_concede_o_orbe_e_termina_a_run():
+    j = _jogador(1, classe="guerreiro", forca=20)
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+    db.atualizar_dungeon_run_indice(1, game_data.DUNGEON_SALAS_POR_RUN)
+    run = dungeon.obter_run(1)
+    ctx = _ctx(1)
+    asyncio.run(dungeon.resolver_sala_atual(ctx, j, run))
+    painel = ctx.send.call_args.kwargs["view"]
+
+    painel.luta.hp_chefe = 0   # simula a vitória sem depender de RNG de combate real
+    embed = asyncio.run(painel.fim_da_luta())
+
     assert db.tem_item(1, "orbe_de_ascensao")
-    assert dungeon.obter_run(1) is None   # a run termina na sala do chefe
-    embed = ctx.send.call_args.kwargs["embed"]
-    assert "Orbe" in embed.description
+    assert dungeon.obter_run(1) is None   # a run termina na vitória
+    assert embed is not None
+    assert "Orbe" in embed.fields[-1].name
 
 
-def test_sala_do_chefe_com_orbe_ja_existente_nao_concede_outro():
-    j = _jogador(1)
+def test_vencer_de_novo_com_orbe_ja_existente_nao_concede_outro():
+    j = _jogador(1, classe="guerreiro", forca=20)
     db.add_item(1, "orbe_de_ascensao")   # já tinha de uma descida anterior
     db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
     db.atualizar_dungeon_run_indice(1, game_data.DUNGEON_SALAS_POR_RUN)
     run = dungeon.obter_run(1)
     ctx = _ctx(1)
-
     asyncio.run(dungeon.resolver_sala_atual(ctx, j, run))
+    painel = ctx.send.call_args.kwargs["view"]
+
+    painel.luta.hp_chefe = 0
+    embed = asyncio.run(painel.fim_da_luta())
 
     inventario = {i["item"]: i["qtd"] for i in db.get_inventario(1)}
     assert inventario["orbe_de_ascensao"] == 1   # continua 1, não virou 2
     assert dungeon.obter_run(1) is None   # a run ainda termina normalmente
-    embed = ctx.send.call_args.kwargs["embed"]
-    assert "Orbe" not in embed.description   # não anuncia um Orbe que não concedeu
+    assert "Orbe" not in embed.fields[-1].name   # não anuncia um Orbe que não concedeu
 
 
-def test_run_inteira_ponta_a_ponta_ate_a_sala_do_chefe(monkeypatch):
+def test_perder_para_o_espelho_processa_morte_de_dungeon_e_apaga_a_run():
+    j = _jogador(1, classe="guerreiro", forca=20, moedas=1000)
+    db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
+    db.atualizar_dungeon_run_indice(1, game_data.DUNGEON_SALAS_POR_RUN)
+    run = dungeon.obter_run(1)
+    ctx = _ctx(1)
+    asyncio.run(dungeon.resolver_sala_atual(ctx, j, run))
+    painel = ctx.send.call_args.kwargs["view"]
+    c = painel.luta.participantes[0]
+
+    c.hp = 0
+    c.caiu = True
+    embed = asyncio.run(painel.fim_da_luta())
+
+    assert dungeon.obter_run(1) is None   # a run acabou -- mesma penalidade de qualquer morte na dungeon
+    assert db.get_jogador(1)["moedas"] < 1000
+    assert embed is not None
+
+
+def test_run_inteira_ponta_a_ponta_ate_vencer_o_espelho(monkeypatch):
     """As 5 salas + a sala do chefe, uma chamada de cada vez -- prova o
     fluxo inteiro, não só o índice isolado."""
     _sempre_vitoria(monkeypatch)
     _forcar_esquiva(monkeypatch)
-    j = _jogador(1)
+    j = _jogador(1, classe="guerreiro", forca=20)
     db.criar_dungeon_run(1, list(SALAS_AUTO_RESOLVIVEIS))
 
     for _ in range(game_data.DUNGEON_SALAS_POR_RUN):
@@ -174,7 +218,14 @@ def test_run_inteira_ponta_a_ponta_ate_a_sala_do_chefe(monkeypatch):
     assert run_no_chefe["indice"] == game_data.DUNGEON_SALAS_POR_RUN
 
     j = db.get_jogador(1)
-    asyncio.run(dungeon.resolver_sala_atual(_ctx(1), j, run_no_chefe))
+    ctx = _ctx(1)
+    asyncio.run(dungeon.resolver_sala_atual(ctx, j, run_no_chefe))
+    painel = ctx.send.call_args.kwargs["view"]
+    assert dungeon.obter_run(1) is not None   # a luta do espelho começou -- ainda não acabou
+
+    painel.luta.hp_chefe = 0
+    asyncio.run(painel.fim_da_luta())
 
     assert dungeon.obter_run(1) is None
+    assert db.tem_item(1, "orbe_de_ascensao")
     assert db.tem_item(1, "orbe_de_ascensao")
