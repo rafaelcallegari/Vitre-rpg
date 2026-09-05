@@ -121,8 +121,14 @@ def _aplicar_dano_armadilha(user_id, j, s):
 
 async def resolver_sala_atual(ctx, j, run):
     """Resolve a sala em run['indice'] e avança (ou encerra) a run. Chamada
-    tanto pra run recém-criada quanto pra uma retomada."""
+    tanto pra run recém-criada quanto pra uma retomada. `indice ==
+    DUNGEON_SALAS_POR_RUN` é a sala do chefe -- não vem do pool sorteado
+    (`run["salas"]` só tem os 5 sorteados), é sempre a mesma etapa extra
+    no fim. Ver decisoes.md § Step 3."""
     s = H["stats"](j)
+    if run["indice"] >= game_data.DUNGEON_SALAS_POR_RUN:
+        await _resolver_sala_do_chefe(ctx.send, j, s, run, ctx.author.id)
+        return
     sala = sala_atual(run)
     condicao = db.consumir_condicao_armadilha(j["user_id"])
     if sala["armadilha"]:
@@ -423,10 +429,13 @@ async def _resolver_evento(enviar, j, s, run, sala, linhas_extra, user_id):
 async def _concluir_sala(enviar, user_id, run, embed):
     novo_indice = run["indice"] + 1
     if novo_indice >= game_data.DUNGEON_SALAS_POR_RUN:
-        sair(user_id)
+        # a run NÃO acaba aqui -- avança pra sala do chefe (índice ==
+        # DUNGEON_SALAS_POR_RUN, fora do pool sorteado). Ver decisoes.md
+        # § Step 3.
+        db.atualizar_dungeon_run_indice(user_id, novo_indice)
         embed.add_field(
-            name="🏆 Dungeon concluída",
-            value="Você atravessou as 5 salas. (Recompensa de conclusão entra numa fatia futura.)",
+            name="A Sala do Chefe",
+            value="As cinco salas ficaram pra trás. Chame `rpg dungeon` de novo -- alguma coisa te espera.",
             inline=False,
         )
     else:
@@ -438,6 +447,42 @@ async def _concluir_sala(enviar, user_id, run, embed):
             inline=False,
         )
     await enviar(embed=embed)
+
+
+# ------------------------------------------------------------- sala do chefe
+
+def conceder_orbe(user_id):
+    """O Orbe de Ascensão -- único item que a dungeon larga fora do
+    espólio. Quem já tem um não ganha outro: a dungeon é infinitamente
+    repetível (ver decisoes.md § Dungeon -- cooldown), mas o Orbe não é
+    espólio farmável, é o portão da ascensão -- um por jogador. Devolve
+    True se concedeu (primeira vez), False se já tinha."""
+    if db.tem_item(user_id, "orbe_de_ascensao"):
+        return False
+    db.add_item(user_id, "orbe_de_ascensao")
+    return True
+
+
+async def _resolver_sala_do_chefe(enviar, j, s, run, user_id):
+    """Placeholder do commit 2 -- concede o Orbe direto, sem luta
+    nenhuma. O commit 3 substitui isto por uma luta de verdade contra o
+    espelho da classe (combate.Luta, não simular_combate -- ver
+    decisoes.md § Step 3, "Regras") e só concede o Orbe na vitória."""
+    concedido = conceder_orbe(user_id)
+    e = discord.Embed(title="A Sala do Chefe", color=COR_DUNGEON)
+    if concedido:
+        e.description = (
+            "Um espelho rachado espera no centro da sala. Quando você se aproxima, "
+            "ele já não reflete você -- e algo fica pra trás quando o reflexo se desfaz.\n\n"
+            "✨ Você encontra o **Orbe de Ascensão**."
+        )
+    else:
+        e.description = (
+            "O mesmo espelho de sempre. Você já carrega o que ele tinha pra dar -- "
+            "não sobra nada novo desta vez."
+        )
+    sair(user_id)
+    await enviar(embed=e)
 
 
 # ------------------------------------------------------------- botões

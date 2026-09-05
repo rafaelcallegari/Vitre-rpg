@@ -269,6 +269,19 @@ ITENS = {
         "loja": False, "nome": "Mapa Rasgado", "emoji": "🗺️", "tipo": "espolio", "preco": 520,
         "descricao": "Falta o pedaço com o destino. Sobrou o pedaço com o aviso.",
     },
+
+    # ---------------- Orbe de Ascensão (dungeon, andar 9) ----------------
+    # Tipo PRÓPRIO ("orbe") -- não é espólio (não vende, `vendavel:
+    # False`), não é material (não crafta), não é tesouro (não é o item
+    # de andar do Salão da guilda). É o único item que a dungeon larga
+    # fora do espólio -- não faz NADA até o Step 4 (isso é esperado: o
+    # pacote 0.4 sobe junto, o Orbe só ganha função quando a ascensão de
+    # verdade for ligada). `loja: False` -- não se compra o portão da
+    # própria ascensão. Ver decisoes.md § Step 3.
+    "orbe_de_ascensao": {
+        "vendavel": False, "loja": False, "nome": "Orbe de Ascensão", "emoji": "🔮", "tipo": "orbe",
+        "descricao": "Pulsa devagar, esperando por algo que ainda não existe.",
+    },
 }
 
 

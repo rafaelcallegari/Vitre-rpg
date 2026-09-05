@@ -7021,3 +7021,64 @@ plugando o motor sem passar pelo cartão certo), o teste de fronteira
 cai sozinho, sem afetar nenhum outro. Em todos os casos, exatamente os
 testes esperados caem; os outros continuam verdes. Suíte completa: 742
 (723 de antes + 19 novos), 741 passando + 1 xfail antigo.
+
+### Commit 2 — a sala do chefe e o Orbe
+
+A run não acaba mais na quinta sala. `_concluir_sala` avança `indice`
+pra `DUNGEON_SALAS_POR_RUN` (5) em vez de apagar a run — esse índice
+NÃO existe em `run["salas"]` (a lista sorteada só tem 5 posições, 0-4),
+é sempre a mesma etapa extra, fora do pool: a sala do chefe.
+`resolver_sala_atual` checa `indice >= DUNGEON_SALAS_POR_RUN` ANTES de
+chamar `sala_atual(run)` (que indexaria fora da lista senão) e desvia
+pra `_resolver_sala_do_chefe`.
+
+**Placeholder deliberado, substituído no commit 3**: `_resolver_sala_
+do_chefe` de hoje não tem luta nenhuma — concede o Orbe direto. O
+commit 3 troca o MIOLO dessa função por uma luta de verdade contra o
+espelho da classe, movendo a concessão do Orbe pra dentro do caminho
+de vitória. A estrutura ao redor (o índice extra, o desvio em
+`resolver_sala_atual`, `conceder_orbe`) já fica pronta e não muda.
+
+**O Orbe de Ascensão** — tipo próprio (`"orbe"`) em `game_data.ITENS`,
+distinto dos três que já existiam: não é espólio (não vende --
+`vendavel: False`, ao contrário dos oito espólios que vendem a preço
+cheio), não é material (não entra em receita), não é tesouro (não é o
+item de andar do Salão da guilda). `loja: False` -- não se compra o
+portão da própria ascensão. Não faz NADA até o Step 4 (esperado: o
+pacote 0.4 sobe junto, ver decisões anteriores). `rpg vender` ganhou um
+`elif dado["tipo"] == "orbe"` próprio -- sem isso, a mensagem genérica
+de "não vendável" diria "é material de fabricação", errado e confuso
+pra um item que não tem nada a ver com craft.
+
+**Duplicata**: `dungeon.conceder_orbe(user_id)` checa `db.tem_item`
+antes de `db.add_item` — quem já tem o Orbe e desce de novo não ganha
+um segundo. Decisão: a dungeon continua infinitamente repetível (nada
+muda nisso), mas o Orbe não é espólio farmável — é um marco de
+progressão, um por jogador, não uma recompensa repetível. Uma segunda
+descida até a sala do chefe ainda termina a run normalmente (mesma
+mensagem de "a run acabou"), só que sem anunciar um Orbe que não foi
+concedido.
+
+### Testes
+
+`tests/test_dungeon_chefe.py`, 8 testes: o Orbe tem tipo próprio, não
+vendável, fora da loja; `rpg vender` recusa com mensagem específica
+(não a genérica de material); `conceder_orbe` dá na primeira vez e
+nunca duplica na segunda (inventário confirmado em `qtd == 1`);
+completar a quinta sala NÃO apaga a run, avança pro índice do chefe;
+resolver esse índice concede o Orbe e SÓ ENTÃO termina a run; a mesma
+resolução com Orbe já existente não concede outro e não anuncia um
+Orbe na mensagem; e um teste ponta a ponta com as 5 salas + a sala do
+chefe, uma chamada de cada vez, provando o fluxo inteiro (não só o
+índice isolado) -- usa só salas de combate/achado com a armadilha
+neutralizada (`_forcar_esquiva`, mesma técnica de `test_dungeon_
+armadilha.py`), porque toda sala de evento pararia numa escolha de
+botão e quebraria a sequência de chamadas automáticas.
+
+Validado revertendo dois mecanismos: (1) voltando `_concluir_sala` a
+apagar a run na quinta sala em vez de avançar o índice, caem
+exatamente os dois testes que dependem da run sobreviver até a sala do
+chefe; (2) tirando a checagem de duplicata de `conceder_orbe` (sempre
+concede, sempre devolve `True`), caem exatamente os dois testes de
+duplicata. Suíte completa: 750 (742 de antes + 8 novos), 749 passando
++ 1 xfail antigo.

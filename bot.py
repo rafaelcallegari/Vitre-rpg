@@ -1502,6 +1502,8 @@ async def vender(ctx, *, argumento: str = ""):
                 f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é pro Salão da guilda. "
                 f"`rpg guilda depositar {dado['nome']}`."
             )
+        elif dado["tipo"] == "orbe":
+            await ctx.send(f"**{dado['nome']}** não se vende — é o portão da sua própria ascensão. Guarda.")
         else:
             await ctx.send(
                 f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é "
