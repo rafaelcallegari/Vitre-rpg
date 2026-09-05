@@ -98,6 +98,47 @@ def test_ruptura_aplica_vulneravel_no_jogador_sem_causar_dano():
     assert condicoes.multiplicador_dano_causado(luta, jogador.id) > 1.0
 
 
+def test_ruptura_com_vulneravel_ja_ativo_ataca_em_vez_de_empilhar(monkeypatch):
+    """Achado na calibragem: sem essa guarda, a rotina caindo em
+    "pressionar" repetidas vezes empilharia "vulnerável" sem teto --
+    uma escalada que o jogador fazendo a mesma coisa contra um chefe de
+    verdade não tem (`condicoes.aplicar` nunca funde condições)."""
+    _sem_variancia(monkeypatch)
+    jogador = _combatente(1, classe="mago", inteligencia=20)
+    luta = _luta_espelho("espectro_do_lich", jogador)
+    espelhos._efeito_espelho_ruptura(luta, jogador)   # primeira vez -- aplica
+    hp_antes = jogador.hp
+
+    espelhos._efeito_espelho_ruptura(luta, jogador)   # segunda vez -- deveria atacar, não empilhar
+
+    vulneraveis = [c for c in luta.condicoes if c["tipo"] == "vulneravel"]
+    assert len(vulneraveis) == 1   # não virou 2
+    assert jogador.hp < hp_antes   # atacou de verdade (Dardo Arcano)
+
+
+def test_vulneravel_da_ruptura_de_verdade_aumenta_o_dano_que_o_jogador_toma(monkeypatch):
+    """Achado durante a calibragem (commit 4): aplicar "vulneravel" no
+    jogador sem NENHUM dano consultar `multiplicador_dano_causado(luta,
+    jogador.id)` seria puro teatro -- a condição existiria mas nunca
+    morderia. `_aplicar_dano_no_jogador` agora consulta essa multiplicação
+    genérica (já existia em condicoes.py, só não estava plugada)."""
+    _sem_variancia(monkeypatch)
+    jogador = _combatente(1, classe="mago", inteligencia=20)
+    luta = _luta_espelho("espectro_do_lich", jogador)
+    hp_antes = jogador.hp
+    espelhos._efeito_espelho_dardo_arcano(luta, jogador)
+    dano_sem_vulneravel = hp_antes - jogador.hp
+
+    jogador2 = _combatente(2, classe="mago", inteligencia=20)
+    luta2 = _luta_espelho("espectro_do_lich", jogador2)
+    condicoes.aplicar(luta2, jogador2.id, "vulneravel", "Marca", "✨", duracao=5, valor=0.20, origem="chefe")
+    hp_antes2 = jogador2.hp
+    espelhos._efeito_espelho_dardo_arcano(luta2, jogador2)
+    dano_com_vulneravel = hp_antes2 - jogador2.hp
+
+    assert dano_com_vulneravel == int(dano_sem_vulneravel * 1.20)
+
+
 # ==================================================================
 # Prisão de Cristal (mago_gelo) -- dano com defesa + trava ataque E skill
 # ==================================================================
@@ -147,25 +188,35 @@ def test_golpe_aberto_empilha_ate_tres_depois_renova_em_vez_de_empilhar(monkeypa
 # Pancada Atordoante (guerreiro) -- chance fixa, trava ataque E skill
 # ==================================================================
 
-def test_pancada_atordoante_acerta_trava_o_jogador(monkeypatch):
+def test_pancada_atordoante_acerta_trava_o_jogador_e_causa_dano(monkeypatch):
+    monkeypatch.setattr(espelhos.random, "uniform", lambda a, b: 1.0)
     monkeypatch.setattr(espelhos.random, "random", lambda: 0.0)   # sempre acerta
     jogador = _combatente(1, classe="guerreiro", forca=20)
     luta = _luta_espelho("campeao_da_arena", jogador)
+    hp_antes = jogador.hp
 
     espelhos._efeito_espelho_pancada_atordoante(luta, jogador)
 
     assert condicoes.pode_agir(luta, jogador.id) is False
     assert condicoes.pode_lancar_habilidade(luta, jogador.id) is False
+    assert jogador.hp < hp_antes
 
 
-def test_pancada_atordoante_erra_nao_trava_nada(monkeypatch):
-    monkeypatch.setattr(espelhos.random, "random", lambda: 0.99)   # sempre falha
+def test_pancada_atordoante_erra_o_atordoamento_mas_ainda_causa_dano(monkeypatch):
+    """DIFERENÇA DELIBERADA do original (que nunca causa dano, nem
+    acertando nem errando o atordoamento) -- ver decisoes.md § Step 3,
+    achado calibrando o commit 4: sem dano nenhum, o Campeão da Arena
+    passava rodadas inteiras sem ameaçar nada."""
+    monkeypatch.setattr(espelhos.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(espelhos.random, "random", lambda: 0.99)   # sempre falha o atordoamento
     jogador = _combatente(1, classe="guerreiro", forca=20)
     luta = _luta_espelho("campeao_da_arena", jogador)
+    hp_antes = jogador.hp
 
     espelhos._efeito_espelho_pancada_atordoante(luta, jogador)
 
-    assert condicoes.pode_agir(luta, jogador.id) is True
+    assert condicoes.pode_agir(luta, jogador.id) is True   # não travou
+    assert jogador.hp < hp_antes   # mas causou dano mesmo assim
 
 
 # ==================================================================
@@ -221,6 +272,20 @@ def test_ponto_cego_e_um_auto_buff_sem_dano_que_vale_pro_proximo_golpe():
     assert condicoes.bonus_critico(luta, "chefe") == 0.45
 
 
+def test_ponto_cego_com_buff_ja_ativo_ataca_em_vez_de_empilhar(monkeypatch):
+    _sem_variancia(monkeypatch)
+    jogador = _combatente(1, classe="ladino", destreza=20)
+    luta = _luta_espelho("assassino_do_vento", jogador)
+    espelhos._efeito_espelho_ponto_cego(luta, jogador)
+    hp_antes = jogador.hp
+
+    espelhos._efeito_espelho_ponto_cego(luta, jogador)
+
+    buffs = [c for c in luta.condicoes if c["tipo"] == "bonus_critico"]
+    assert len(buffs) == 1
+    assert jogador.hp < hp_antes   # atacou (Corte Rápido) em vez de empilhar o buff
+
+
 # ==================================================================
 # Golpe Fatal (assassino) -- escala com o quanto O JOGADOR já perdeu
 # ==================================================================
@@ -270,6 +335,21 @@ def test_voto_de_ferro_aumenta_a_defesa_do_espelho_permanentemente_uma_vez():
 
     espelhos._efeito_espelho_voto_de_ferro(luta, jogador)   # segunda vez -- não aplica de novo
     assert luta.chefe["def"] == 30
+
+
+def test_voto_de_ferro_ja_usado_ataca_em_vez_de_nao_fazer_nada(monkeypatch):
+    """Achado na calibragem: um Arauto que só reforça a guarda e nunca
+    ataca de novo nunca perde a luta -- a segunda vez em diante, Voto
+    de Ferro vira Chama Divina (a única fonte de dano do kit)."""
+    _sem_variancia(monkeypatch)
+    jogador = _combatente(1, classe="orador", inteligencia=20)
+    luta = _luta_espelho("arauto_dos_deuses", jogador, defesa=20)
+    espelhos._efeito_espelho_voto_de_ferro(luta, jogador)   # gasta o único uso
+    hp_antes = jogador.hp
+
+    espelhos._efeito_espelho_voto_de_ferro(luta, jogador)   # de novo -- agora ataca
+
+    assert jogador.hp < hp_antes
 
 
 def test_chama_divina_e_dano_puro_com_defesa(monkeypatch):

@@ -7273,3 +7273,159 @@ caem exatamente os dois testes que dependem do Orbe aparecer na
 vitória. Em todos os casos, exatamente os testes esperados caem. Suíte
 completa: 778 (750 de antes + 26 de espelhos + 5 de dungeon_chefe - 3
 obsoletos), 777 passando + 1 xfail antigo.
+
+**Correção achada na calibragem (commit 4), antes do push**: Ruptura
+revertida aplicava "vulneravel" no jogador, mas NENHUM dano consultava
+`condicoes.multiplicador_dano_causado(luta, jogador.id)` pra ler essa
+condição -- a debuff existia, mas era puro teatro, nunca mordia de
+verdade. `_aplicar_dano_no_jogador` agora multiplica por essa consulta
+(genérica, já existia em `condicoes.py`, só não estava plugada nessa
+direção). Achado rodando o Monte Carlo da calibragem contra números que
+não faziam sentido (a suíte inteira já passava sem isso -- nenhum teste
+testava o EFEITO da condição, só que ela era aplicada). Um teste novo
+(`test_vulneravel_da_ruptura_de_verdade_aumenta_o_dano_que_o_jogador_
+toma`) trava o comportamento certo. Corrigido no mesmo commit da
+calibragem, não em xfail separado -- o bug estava em código do commit
+3 ainda não empurrado (`git push`), não em comportamento já publicado.
+
+### Commit 4 — a calibragem
+
+Simulação de verdade (`combate.Luta`/`Combatente`, `espelhos.py`,
+`chefe_ia.py`, banco sqlite em memória), não uma reimplementação das
+fórmulas -- mesmo método do Monte Carlo dos outros cartões. Cada
+repetição: monta um jogador nível N com os pontos todos no atributo
+principal da classe, joga ele contra as 5 salas da dungeon (armadilha
+70% de chance por sala, `Percepção`/`Esquiva` como no motor real,
+15% de HP máximo por armadilha que passa), leva o HP resultante pro
+espelho, e simula a luta rodada a rodada com o motor de verdade —
+tick de condições uma vez por rodada, ordem idêntica ao
+`registrar_acao` de `combate.py` (tick → jogador age → chefe age).
+
+**Achado 1 — o motor de calibragem tickava condição duas vezes por
+rodada.** O script rodava `condicoes.tick(luta)` depois do turno do
+jogador E depois do turno do chefe; o jogo de verdade ticka uma vez só,
+no começo da rodada (`combate.py` linha ~1798). Isso dobrava a
+velocidade de Sangramento (a única condição contínua no reversed kit
+do guerreiro) — não é bug de produção, é bug do script de calibragem,
+mas inflava a letalidade do Campeão da Arena artificialmente antes de
+qualquer medição fazer sentido. Corrigido no script antes de confiar
+em qualquer número.
+
+**Achado 2 — Golpe Oportunista revertido cria um espiral de morte
+independente do `atk` do espelho.** Com os quatro espelhos rodando o
+mesmo bloco de stats (2000 HP / 50 atk / 20 def), guerreiro e orador
+davam 0% de vitória em TODOS os níveis testados (15/18/21) — mago e
+ladino, não. Isolando efeito por efeito (substituindo cada
+`_efeito_espelho_*` por um no-op e remedindo), o culpado era só um:
+desligar `golpe_oportunista` sozinho levava o guerreiro de 0% pra
+100% em qualquer nível. A causa: `golpe_oportunista` escala com o
+quanto o PRÓPRIO ESPELHO já perdeu de HP (2.0x a 3.0x), e
+`chefe_ia.decidir_acao` só escolhe essa habilidade quando o JOGADOR já
+está abaixo de 35% de HP (`com_pouco_hp`) — uma vez nessa janela, o
+jogador não tem cura pra sair dela, então o espelho repete
+Golpe Oportunista rodada após rodada, e o multiplicador só cresce
+conforme a luta avança (o espelho perde HP conforme o jogador acerta).
+Baixar o `atk` do espelho pra 25 (metade do candidato mais fraco
+testado) não mudou o resultado — confirma que a letalidade não vinha
+do `atk`, vinha da mecânica em si. **Isso não é um bug de fórmula: é a
+mesma característica do Mercenário original** ("Golpe Oportunista"
+escala com o quanto ELE MESMO perdeu — ver Step 2c, Commit 2), só que
+espelhada num chefe com pool de HP muito maior que o do jogador, o
+espiral vira inevitável em vez de arriscado. **Decisão: não mexer na
+fórmula do efeito** (mudar a identidade da habilidade não era o
+pedido) — em vez disso, o Campeão da Arena e o Arauto dos Deuses
+recebem HP MUITO menor que os outros dois espelhos, encurtando a luta
+o bastante pra a janela "abaixo de 35%" não virar um moedor. Ver
+Achado 3.
+
+**Achado 3 — os quatro espelhos não podem compartilhar o mesmo bloco
+de stats.** Depois dos Achados 1 e 2, sobrou claro que o ritmo de dano
+de cada kit é diferente o bastante (burst direto do Mago/Ladino vs.
+sangramento + execução do Guerreiro vs. quase-zero dano própria do
+Orador pré-ascensão) que forçar HP/atk/def iguais pros quatro não
+converge pra nenhuma calibragem sã — ou um kit fica fácil demais
+enquanto o outro nunca vence. `DUNGEON_ESPELHOS_DADOS` já é um dict
+por espelho (kit, nome, etc.); a calibragem trata `hp`/`atk`/`def`
+como mais um desses campos independentes, um por espelho, cada um
+varrido e medido separadamente contra o mesmo alvo de design.
+
+**A fraqueza real do Orador pré-ascensão.** Confirmado na simulação:
+sem ascender, o Orador não tem NENHUMA habilidade de dano (Palavra de
+Alento cura, Voto de Ferro reduz dano recebido) — a única fonte de
+dano é o ataque básico, escalando com `afinidade_arma` (destreza), não
+com `atributo_habilidade` (inteligência). Isso é fato de design real,
+não artefato da simulação (confirmado lendo `habilidades.py` e
+`game_data.HABILIDADES`) — o Orador precisa de um espelho
+proporcionalmente mais frágil que os outros três pra ter uma curva de
+vitória comparável, e é exatamente isso que a calibragem entregou.
+
+**Os dois vetores, como o cartão previu**: quem desce o espelho é
+nível 15+ com Mortalha e arma sombria — cura mais que a referência
+antiga dos chefes 1-10, o que ajudaria a vencer; mas chega mordido
+pela dungeon (5 salas, 70% de chance de armadilha cada, condição
+atravessa sala), o que empurra ao contrário. A simulação incorpora os
+dois: joga o jogador pelas 5 salas primeiro (com a chance/dano real de
+armadilha) antes de montar a luta do espelho, então o HP inicial do
+duelo já reflete o desgaste da descida — não é um duelo começando com
+todo mundo cheio.
+
+**Tabela final** (Monte Carlo, 800 repetições por célula, motor de
+verdade, jogador vindo das 5 salas da dungeon):
+
+| espelho | HP / ATK / DEF | nível 15 | nível 18 | nível 21 |
+|---|---|---|---|---|
+| Espectro do Lich (mago) | 2400 / 65 / 25 | 0.8% | 38.9% | 76.8% |
+| Campeão da Arena (guerreiro) | 550 / 50 / 20 | 6.5% | 23.4% | 47.6% |
+| Assassino do Vento (ladino) | 2400 / 65 / 25 | 0.5% | 14.9% | 59.1% |
+| Arauto dos Deuses (orador) | 700 / 60 / 23 | 5.0% | 36.1% | 81.4% |
+
+As quatro curvas batem o alvo do cartão: a primeira descida no nível
+15 perde na grande maioria das vezes (≤6.5%), e sobe consistentemente
+com uns níveis a mais — a dungeon exige preparo, não é pedágio. O
+Guerreiro fica com a curva mais lenta das quatro (47.6% no 21, contra
+59-81% dos outros) — decisão consciente: forçar mais HP nele reabre o
+Achado 2 (o espiral de Golpe Oportunista); o número fica registrado
+aqui como ponto de partida de playtest, não como igualdade artificial
+entre os quatro kits.
+
+Todos os valores (`hp`/`atk`/`def` em `game_data.DUNGEON_ESPELHOS_
+DADOS`) são constantes nomeadas, ponto de partida pra playtest —
+ninguém jogou a dungeon de verdade até o nível 15+ ainda.
+
+**Outras três correções achadas durante a mesma calibragem** (mesmo
+espírito do Achado da Ruptura já registrado acima — bugs em código do
+commit 3 ainda não publicado, corrigidos no commit da calibragem, não
+em xfail separado):
+
+- **Voto de Ferro virava no-op pra sempre depois do primeiro uso.**
+  `_efeito_espelho_voto_de_ferro` marcava `chefe["_voto_de_ferro_usado"]`
+  e, em qualquer chamada seguinte, não fazia literalmente nada — nem
+  dano, nem registro. Como `chefe_ia.segurando_recurso` tende a
+  default pra "segurando" (some só quando o jogador varia o gasto de
+  recurso de verdade), a rotina do Arauto cai em "pressionar"/"reduzir
+  cura" (ambos mapeados pra Voto de Ferro) com frequência alta — o
+  Arauto podia passar a luta inteira sem atacar depois do primeiro
+  cast. Corrigido: chamadas repetidas caem pra `_efeito_espelho_
+  chama_divina` (a outra habilidade do kit) em vez de não fazer nada.
+- **Ruptura e Ponto Cego empilhavam sem teto.** `condicoes.aplicar`
+  nunca funde com uma condição já ativa do mesmo tipo/alvo — se a
+  rotina escolher "pressionar" de novo antes da vulnerabilidade/crítico
+  anterior expirar (comum pelo mesmo motivo do item acima), o debuff
+  empilha sem limite, um espiral que não existe do lado do jogador
+  fazendo a mesma coisa contra um chefe de verdade (lá o jogador tem
+  variedade de ações; aqui a IA repete o kit fixo). Corrigido com uma
+  guarda idêntica nos dois: enquanto já tiver uma cópia ativa, cai pra
+  `_ataque_leve` (golpe de reserva) em vez de empilhar mais.
+- **Pancada Atordoante nunca causava dano, fiel ao original — mas isso
+  vira "chefe que passa rodadas inteiras sem ameaçar nada" quando a
+  rotina cai nela toda vez que "pressionar"/"reduzir_cura" dispara.**
+  Diferença deliberada do original: a versão do espelho sempre causa
+  `_ataque_leve` de dano, além de tentar o atordoamento (mesma chance
+  fixa de 25% do original).
+
+Suíte cresceu de 26 pra 30 testes em `test_espelhos.py` cobrindo os
+quatro achados (vulnerável mordendo de verdade, Ruptura/Ponto Cego não
+empilhando, Voto de Ferro caindo pra Chama Divina). Validado revertendo
+cada correção individualmente — cada revert derruba exatamente o teste
+novo daquele achado e nenhum outro. Suíte completa: 781 passando + 1
+xfail antigo.

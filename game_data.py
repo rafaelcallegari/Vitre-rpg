@@ -841,22 +841,22 @@ DUNGEON_ESPELHOS = {
 DUNGEON_ESPELHOS_DADOS = {
     "espectro_do_lich": {
         "nome": "Espectro do Lich", "classe": "mago", "elemento": None,
-        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "hp": 2400, "atk": 65, "def": 25, "xp": 0, "moedas": 0,
         "kit": ["dardo_arcano", "ruptura", "prisao_de_cristal"],
     },
     "campeao_da_arena": {
         "nome": "Campeão da Arena", "classe": "guerreiro", "elemento": None,
-        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "hp": 550, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
         "kit": ["golpe_aberto", "pancada_atordoante", "golpe_oportunista"],
     },
     "assassino_do_vento": {
         "nome": "Assassino do Vento", "classe": "ladino", "elemento": None,
-        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "hp": 2400, "atk": 65, "def": 25, "xp": 0, "moedas": 0,
         "kit": ["corte_rapido", "ponto_cego", "golpe_fatal"],
     },
     "arauto_dos_deuses": {
         "nome": "Arauto dos Deuses", "classe": "orador", "elemento": None,
-        "hp": 2000, "atk": 50, "def": 20, "xp": 0, "moedas": 0,
+        "hp": 700, "atk": 60, "def": 23, "xp": 0, "moedas": 0,
         "kit": ["palavra_de_alento", "voto_de_ferro", "graca_divina"],
     },
 }
