@@ -533,6 +533,11 @@ class Luta:
         # _talvez_auto_ressuscitar.
         self.reergueres_usados = 0
         self.auto_ressurreicao_usada = False
+        # Step 3, commit 1: registro pro motor GERAL de decisão de chefe
+        # (chefe_ia.py) -- só o que aconteceu NESTA luta, nunca persiste.
+        # Vazio e nunca consultado pelos chefes da torre nesta passada
+        # (ver decisoes.md § Step 3) -- só os espelhos (commit 3) leem.
+        self.historico_ia = {}
 
     @property
     def ativos(self):

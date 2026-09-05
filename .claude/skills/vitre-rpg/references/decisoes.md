@@ -6932,3 +6932,92 @@ Pontos fixados por este cartão:
 - **Os três eventos são as únicas salas limpas** — não por sorteio,
   porque o par de portas de cada um já é a tensão que a armadilha
   proveria em outra sala.
+
+## Step 3 — os 4 espelhos e o motor de decisão de chefe
+
+### Commit 1 — o motor de decisão
+
+Nasce como motor GERAL de decisão de chefe, num arquivo próprio
+(`chefe_ia.py`) — não dentro de `combate.py`, e **zero linhas de
+`Luta.turno_do_chefe` mudam nesta passada**. Os chefes da torre (1-10)
+não herdam o motor agora; isso é cartão futuro, próprio. O primeiro
+consumidor de verdade são os espelhos (commit 3, abaixo).
+
+**Por que nada persiste entre lutas**: um jogo de chat não mostra o
+estado interno da IA pro jogador — um chefe que "adivinha" usando
+informação de FORA daquela luta específica lê como injustiça
+("como ele sabia disso?"), não como inteligência. O motor só lê o que
+aconteceu NAQUELA luta: o próprio HP do chefe, o do jogador, as
+condições ativas dos dois lados, e um registro do que o jogador fez
+nas rodadas daquela luta (cura, habilidades usadas, quanto recurso
+ainda tem). `Luta` ganhou `self.historico_ia = {}` (vazio no
+`__init__`, mesma vida útil de `self.condicoes`/`self.reergueres_
+usados` — nasce e morre com a luta, nunca é persistido em banco).
+
+**Decisão é regra legível, nunca peso aleatório**: `chefe_ia.
+decidir_acao(luta, jogador_id)` checa três condições em ORDEM DE
+PRIORIDADE FIXA — a primeira que bate vence, nunca um sorteio entre as
+que bateram:
+1. HP baixo (`LIMIAR_FRACAO_HP_BAIXO = 0.35`) → `"priorizar_
+   carregado"` — o golpe pesado vale mais que o combo quando o alvo já
+   está fraco.
+2. Curou `LIMIAR_CURAS_PARA_REDUZIR_CURA` (2) vezes ou mais → `"reduzir_
+   cura"` — pune quem vive de cura, não quem cura uma vez por
+   emergência.
+3. Ainda com `LIMIAR_FRACAO_RECURSO_SEGURANDO` (0.8) ou mais do
+   recurso → `"pressionar"` — ataca antes que ele gaste o que está
+   guardando.
+4. Nenhuma bateu → `"padrao"`, `motivo: None`.
+
+**Telegrafar é requisito, não sabor**: toda decisão que não seja
+`"padrao"` carrega um `"motivo"` (string, nunca vazia) — o texto que
+vai pro log da luta. Quem consumir o motor (os espelhos, no commit 3)
+é obrigado a mostrar esse motivo pro jogador, nunca só aplicar o
+efeito calado. Sem isso a IA vira truque escondido.
+
+**A fração de recurso nasce em 1.0, de propósito**: um combatente que
+ainda não registrou nada tem 100% do recurso (verdade literal — ele
+não gastou nada ainda), então `segurando_recurso` já bate por padrão
+pra quem não agiu. Isso é uma leitura correta, não um bug — só exigiu
+cuidado no teste do caminho "padrao" (precisa registrar uma fração
+BAIXA explicitamente pra isolar o cenário onde nenhuma das três regras
+bate; ver `test_decidir_acao_padrao_sem_nenhuma_leitura_disparando`).
+
+**A fronteira da Interrupção continua dura** — `_efeito_interrupcao`
+(Step 2b) só cancela `luta.carregando`, nunca uma ação de chefe. Este
+cartão não mexeu nela: o motor de decisão não tem NENHUM consumidor
+que produza uma "ação de chefe" cancelável ainda (os espelhos, no
+commit 3, vão ser luta de verdade mas não vão ter golpe carregado nem
+combo interruptível — só habilidades atacando na hora). O teste que
+trava essa fronteira contra generalização futura já existe desde o
+Step 2b (`tests/test_mago_raio.py::test_interrupcao_nao_cancela_nada_
+alem_da_carga`) e continua de pé; este commit não precisou adicionar
+um novo, porque não há ainda um segundo tipo de "ação pendente do
+chefe" pra alguém confundir com `carregando`.
+
+### Testes
+
+`tests/test_chefe_ia.py`, 19 testes: histórico nasce vazio numa luta
+nova e nunca herda de outra; curas/habilidades/fração de recurso não
+se misturam entre jogadores diferentes na mesma luta; `curou_demais`
+bate exatamente no limiar; `registrar_fracao_recurso` sobrescreve, não
+soma; `com_pouco_hp` reflete o HP ATUAL (não acumulado) e um
+combatente caído sempre conta como "pouco HP"; `condicoes_no_chefe`/
+`condicoes_no_jogador` filtram por alvo e por duração (ignoram
+expiradas); as quatro combinações de `decidir_acao` (padrão, cada
+regra isolada, e duas prioridades competindo pra provar a ORDEM FIXA);
+e a fronteira -- `Luta.turno_do_chefe` não importa nem referencia
+`chefe_ia` em lugar nenhum do próprio código-fonte (`inspect.
+getsource`), e rodar um turno de chefe de verdade não deixa
+`historico_ia` populado (prova indireta de que a fiação real só
+acontece no commit 3).
+
+Validado revertendo cada regra da decisão isoladamente: (1) desligando
+a checagem de HP baixo, caem os dois testes que dependem dela (a regra
+isolada e a de prioridade); (2) desligando `curou_demais`, caem os
+dois testes correspondentes; (3) inserindo uma referência literal a
+`"chefe_ia"` dentro do corpo de `turno_do_chefe` (simulando alguém
+plugando o motor sem passar pelo cartão certo), o teste de fronteira
+cai sozinho, sem afetar nenhum outro. Em todos os casos, exatamente os
+testes esperados caem; os outros continuam verdes. Suíte completa: 742
+(723 de antes + 19 novos), 741 passando + 1 xfail antigo.
