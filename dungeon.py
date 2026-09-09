@@ -506,7 +506,7 @@ class PainelEspelho(combate.PainelLuta):
 
     async def fim_da_luta(self, interaction=None):
         luta = self.luta
-        if luta.hp_chefe <= 0:
+        if not luta.inimigos_ativos:   # Step A -- ver combate.PainelLuta.fim_da_luta
             return await _finalizar_vitoria_espelho(luta, self.user_id)
         if not luta.ativos:
             combate._talvez_auto_ressuscitar(luta)   # clérigo solo -- a luta do espelho é sempre solo

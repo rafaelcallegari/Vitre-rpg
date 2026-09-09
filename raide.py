@@ -74,7 +74,7 @@ class PainelRaide(combate.PainelLuta):
 
     async def fim_da_luta(self, interaction=None):
         luta = self.luta
-        if luta.hp_chefe <= 0:
+        if not luta.inimigos_ativos:   # Step A -- ver combate.PainelLuta.fim_da_luta
             return await finalizar_vitoria_raide(luta, self.guilda_id, self.iniciador_id)
         if not luta.ativos:
             if any(c.caiu for c in luta.participantes) and not any(

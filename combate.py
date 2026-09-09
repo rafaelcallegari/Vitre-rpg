@@ -431,6 +431,12 @@ class Combatente:
     def ativo(self):
         return not (self.caiu or self.fugiu or self.saiu)
 
+    def matar(self):
+        """Chamado por condicoes._tick_dano quando hp chega a 0 -- existe
+        pra `_tick_dano` tratar Combatente e Inimigo (Step A) pelo mesmo
+        código, sem `if` sobre o tipo. Ver Inimigo.matar abaixo."""
+        self.caiu = True
+
     def recurso_atual(self):
         """Mana, Fúria ou Energia — o que a classe do jogador usa pra lançar."""
         recurso = CLASSES.get(self.jogador["classe"], {}).get("recurso")
@@ -478,6 +484,41 @@ class Combatente:
         return linha
 
 
+# ---------------------------------------------------------------- inimigo
+
+class Inimigo:
+    """Um inimigo dentro da luta -- Step A (multi-inimigo no motor):
+    `self.hp_chefe`/`self.hp_chefe_max`/`self.carregando`/
+    `self.preparando_condicao`, que até aqui eram estado da `Luta`
+    inteira, viram estado PRÓPRIO de cada inimigo. `dados` é o dict de
+    definição do inimigo (nome/atk/def/elemento/hp/etc — o mesmo shape
+    que sempre foi `Luta.chefe`). Ver Luta.__init__ e decisoes.md § Step
+    A."""
+
+    def __init__(self, id, dados, hp):
+        self.id = id
+        self.dados = dados
+        self.hp = hp
+        self.hp_max = hp
+        self.carregando = False
+        self.preparando_condicao = None   # telegraph independente — ver Luta._talvez_telegrafar_condicao
+
+    @property
+    def nome(self):
+        return self.dados["nome"]
+
+    @property
+    def ativo(self):
+        return self.hp > 0
+
+    def matar(self):
+        """No-op -- `ativo` já deriva de hp <= 0 sozinho, ao contrário de
+        Combatente (que precisa marcar `caiu` pra sair de `luta.ativos`).
+        Existe só pra `condicoes._tick_dano` chamar sem saber qual dos
+        dois tipos tem na mão."""
+        pass
+
+
 # ------------------------------------------------------------ estado da luta
 
 class Luta:
@@ -490,7 +531,6 @@ class Luta:
         não olham `dono` — vitória é igual pra todo mundo que estava na
         luta. Ver decisoes.md § Ajuda de veterano na party."""
         self.participantes = combatentes
-        self.chefe = chefe
         self.andar_num = andar_num
         donos_ids = set(donos_ids) if donos_ids is not None else {c.id for c in combatentes}
         for c in combatentes:
@@ -503,14 +543,29 @@ class Luta:
         # esse mesmo caminho com andar_num=ANDAR_REFERENCIA_RAIDE=7, sempre
         # abaixo do limiar, então a raide não muda). Ver decisoes.md § HP
         # de chefe fixo acima do Selo.
-        if andar_num > ANDAR_ACIMA_DO_SELO:
-            self.hp_chefe = chefe["hp"]
-        else:
-            self.hp_chefe = chefe["hp"] * max(1, num_donos)
-        self.hp_chefe_max = self.hp_chefe
+        escala = 1 if andar_num > ANDAR_ACIMA_DO_SELO else max(1, num_donos)
+
+        # Step A: `chefe` sempre vira uma LISTA de inimigos -- um dict
+        # sozinho (todo chamador de hoje: raide.py, dungeon.py,
+        # iniciar_luta abaixo) vira lista de um, de propósito ("chefe
+        # sozinho vira lista de um", ver decisoes.md § Step A). Cada
+        # inimigo escala o PRÓPRIO hp por dono, de forma independente --
+        # a extensão mais fiel ao que já valia pra um chefe só (decisão
+        # registrada em decisoes.md § Step A -- escala de HP por
+        # inimigo). inimigos[0] SEMPRE recebe o id "chefe": é a ponte
+        # explícita e temporária pra todo código (e a suíte inteira) que
+        # ainda pensa em "o chefe", singular -- ver as propriedades
+        # chefe/hp_chefe/hp_chefe_max/carregando/preparando_condicao
+        # logo abaixo. Os inimigos seguintes (sem nenhum conteúdo usando
+        # ainda) ganham "chefe_1", "chefe_2"... -- nunca colide com
+        # user_id de jogador (sempre int).
+        dados_inimigos = chefe if isinstance(chefe, list) else [chefe]
+        self.inimigos = [
+            Inimigo("chefe" if i == 0 else f"chefe_{i}", dados, dados["hp"] * escala)
+            for i, dados in enumerate(dados_inimigos)
+        ]
+
         self.rodada = 1
-        self.carregando = False
-        self.preparando_condicao = None   # telegraph independente — ver _talvez_telegrafar_condicao
         self.materiais_extras = []        # material da fase 1 quando o chefe troca de fase (andar 15)
         self.encerrada = False
         self.condicoes = []   # ver condicoes.py — sangramento, confusão, elementos etc.
@@ -539,6 +594,64 @@ class Luta:
         # Vazio e nunca consultado pelos chefes da torre nesta passada
         # (ver decisoes.md § Step 3) -- só os espelhos (commit 3) leem.
         self.historico_ia = {}
+
+    # -------- ponte pro inimigo principal (Step A) --------
+    # Explícita e temporária: todo código escrito antes do Step A (e a
+    # suíte inteira) fala de "o chefe" no singular, lendo/escrevendo
+    # `luta.chefe`/`luta.hp_chefe`/`luta.hp_chefe_max`/`luta.carregando`/
+    # `luta.preparando_condicao` direto. As cinco propriedades abaixo só
+    # espelham `self.inimigos[0]` -- sempre o mesmo objeto que tem id
+    # "chefe" (ver __init__). Nada aqui decide comportamento: é
+    # encanamento pra não ter que reescrever ~15 pontos de combate.py e
+    # ~15 arquivos de teste que já assumem um chefe só. Código NOVO que
+    # pensa em múltiplos inimigos usa `self.inimigos`/`self.inimigo_por_id`
+    # direto, nunca esta ponte. Ver decisoes.md § Step A.
+    @property
+    def chefe(self):
+        return self.inimigos[0].dados
+
+    @chefe.setter
+    def chefe(self, valor):
+        self.inimigos[0].dados = valor
+
+    @property
+    def hp_chefe(self):
+        return self.inimigos[0].hp
+
+    @hp_chefe.setter
+    def hp_chefe(self, valor):
+        self.inimigos[0].hp = valor
+
+    @property
+    def hp_chefe_max(self):
+        return self.inimigos[0].hp_max
+
+    @hp_chefe_max.setter
+    def hp_chefe_max(self, valor):
+        self.inimigos[0].hp_max = valor
+
+    @property
+    def carregando(self):
+        return self.inimigos[0].carregando
+
+    @carregando.setter
+    def carregando(self, valor):
+        self.inimigos[0].carregando = valor
+
+    @property
+    def preparando_condicao(self):
+        return self.inimigos[0].preparando_condicao
+
+    @preparando_condicao.setter
+    def preparando_condicao(self, valor):
+        self.inimigos[0].preparando_condicao = valor
+
+    def inimigo_por_id(self, id_inimigo):
+        return next((i for i in self.inimigos if i.id == id_inimigo), None)
+
+    @property
+    def inimigos_ativos(self):
+        return [i for i in self.inimigos if i.ativo]
 
     @property
     def ativos(self):
@@ -1767,9 +1880,13 @@ class PainelLuta(discord.ui.View):
         return PainelLuta(luta)
 
     async def fim_da_luta(self, interaction=None):
-        """Devolve o embed final se a luta acabou, ou None se continua."""
+        """Devolve o embed final se a luta acabou, ou None se continua.
+        Vitória exige TODOS os inimigos mortos, não só o principal --
+        Step A: "matar um não encerra a luta; matar todos encerra". Hoje
+        `luta.inimigos` tem sempre um só, então equivale a `hp_chefe <=
+        0` de antes."""
         luta = self.luta
-        if luta.hp_chefe <= 0:
+        if not luta.inimigos_ativos:
             return await finalizar_vitoria(luta)
         if not luta.ativos:
             _talvez_auto_ressuscitar(luta)   # clérigo solo, Step 2d -- ANTES de decidir derrota

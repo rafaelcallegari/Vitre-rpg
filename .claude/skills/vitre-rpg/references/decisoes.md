@@ -7556,3 +7556,65 @@ o ciclo completo); (4) tirar a remoção do Orbe de `ascender_jogador` —
 cai só `test_confirmar_grava_a_ascensao_e_consome_o_orbe_na_mesma_acao`.
 Em todos os casos, exatamente os testes esperados caem. Suíte completa:
 26 testes novos em `test_mestres.py`, 807 passando + 1 xfail antigo.
+
+## Step A — multi-inimigo no motor de combate
+
+Refatoração pura de infra: nenhum chefe existente ganha companhia, nenhum
+conteúdo novo, nada muda pra quem joga. A prova é a suíte inteira (807
+testes + 1 xfail) passando **sem um único teste alterado** — regra mais
+importante do cartão. Ver decisoes.md dos steps anteriores pro resto do
+pacote 0.4, que este cartão não sobe sozinho.
+
+### Commit 1 — a `Luta` aceita uma lista
+
+`Inimigo` (classe nova em `combate.py`) carrega o que antes morava solto
+na `Luta`: `hp`, `hp_max`, `carregando`, `preparando_condicao`, mais
+`dados` (o dict de definição — nome/atk/def/elemento/etc, o mesmo shape
+que sempre foi `Luta.chefe`) e um `id`. `Luta.__init__` agora aceita
+`chefe` como dict OU lista de dicts — "chefe sozinho vira lista de um":
+`chefe if isinstance(chefe, list) else [chefe]`. Nenhum chamador de hoje
+(raide.py, dungeon.py, `iniciar_luta`) muda uma linha — todos continuam
+passando um dict solto.
+
+**A ponte pro inimigo principal, explícita e temporária** (pedida pelo
+cartão): `Luta.chefe`/`hp_chefe`/`hp_chefe_max`/`carregando`/
+`preparando_condicao` viraram `@property` com getter E setter, espelhando
+sempre `self.inimigos[0]` — o primeiro inimigo tem SEMPRE `id == "chefe"`
+(inimigos seguintes ganham `"chefe_1"`, `"chefe_2"`... nunca colidindo
+com um `user_id`, sempre int). Isso é o que deixa ~15 pontos de
+`combate.py` e ~15 arquivos de teste que fazem `luta.hp_chefe -= dano` ou
+`luta.chefe["def"]` funcionando sem tocar uma linha neles — inclusive
+mutação in-place de dict (`luta.chefe["_voto_de_ferro_usado"] = True`,
+em `espelhos.py`, continua funcionando porque a property devolve o MESMO
+dict, não uma cópia) e reatribuição inteira (`verificar_fase2` faz
+`self.chefe = novo_chefe`, que passa pelo setter sem mudança nenhuma).
+
+**Escala de HP por dono — decisão registrada** (o cartão pede
+explicitamente): cada inimigo escala o PRÓPRIO HP por `num_donos`,
+independente dos outros — não só o principal escala, não fixo pro grupo
+inteiro. É a extensão mais fiel ao que já valia pra um chefe só (cada
+inimigo se comporta como se fosse "o chefe" da fórmula de sempre), e
+mantém o comportamento de hoje idêntico (só existe `inimigos[0]`, então
+"escala por inimigo" e "só o principal escala" dão o mesmo número
+enquanto não houver um segundo inimigo de verdade). Acima do Selo
+continua fixo (escala = 1), igual sempre foi, agora aplicado a cada
+inimigo da lista.
+
+**Vitória exige todos os inimigos mortos, não só o principal.** As três
+telas que checavam `luta.hp_chefe <= 0` (`combate.PainelLuta.fim_da_luta`,
+`raide.PainelRaide.fim_da_luta`, `dungeon.PainelEspelho.fim_da_luta`)
+passaram a checar `not luta.inimigos_ativos` (propriedade nova,
+`[i for i in self.inimigos if i.ativo]`). Equivalente byte a byte pra
+lista de um (é exatamente o que `inimigos_ativos` vazio significa quando
+só existe `inimigos[0]`), e correto pro caso novo (matar um não encerra a
+luta enquanto outro inimigo segue vivo).
+
+`Inimigo.matar()` é no-op (`ativo` já deriva de `hp <= 0` sozinho) contra
+`Combatente.matar()` (marca `caiu = True`) — os dois existem só pra
+`condicoes._tick_dano` (commit 2) chamar sem saber qual tipo tem na mão.
+
+Validado revertendo a troca de `hp_chefe <= 0` por `not luta.
+inimigos_ativos` em `combate.PainelLuta.fim_da_luta`: cai só
+`test_fim_da_luta_so_dispara_quando_todos_os_inimigos_morrem`, o resto da
+suíte (testes antigos inclusive) continua verde. Suíte completa: 6 testes
+novos em `test_multi_inimigo.py`, 813 passando + 1 xfail antigo.
