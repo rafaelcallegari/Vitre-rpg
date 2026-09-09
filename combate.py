@@ -431,12 +431,6 @@ class Combatente:
     def ativo(self):
         return not (self.caiu or self.fugiu or self.saiu)
 
-    def matar(self):
-        """Chamado por condicoes._tick_dano quando hp chega a 0 -- existe
-        pra `_tick_dano` tratar Combatente e Inimigo (Step A) pelo mesmo
-        código, sem `if` sobre o tipo. Ver Inimigo.matar abaixo."""
-        self.caiu = True
-
     def recurso_atual(self):
         """Mana, Fúria ou Energia — o que a classe do jogador usa pra lançar."""
         recurso = CLASSES.get(self.jogador["classe"], {}).get("recurso")
@@ -510,13 +504,6 @@ class Inimigo:
     @property
     def ativo(self):
         return self.hp > 0
-
-    def matar(self):
-        """No-op -- `ativo` já deriva de hp <= 0 sozinho, ao contrário de
-        Combatente (que precisa marcar `caiu` pra sair de `luta.ativos`).
-        Existe só pra `condicoes._tick_dano` chamar sem saber qual dos
-        dois tipos tem na mão."""
-        pass
 
 
 # ------------------------------------------------------------ estado da luta

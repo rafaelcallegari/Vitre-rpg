@@ -63,10 +63,13 @@ def pode_agir(luta, alvo):
     )
 
 
-def alvo_forcado(luta):
-    """user_id que o chefe é obrigado a atacar, ou None se ninguém provocou."""
+def alvo_forcado(luta, inimigo_id="chefe"):
+    """user_id que o inimigo `inimigo_id` é obrigado a atacar, ou None se
+    ninguém provocou. Default "chefe" -- Step A (multi-inimigo): quem
+    chama sem o segundo argumento continua olhando só pro inimigo
+    principal, igual sempre."""
     for c in luta.condicoes:
-        if c["tipo"] == "redireciona" and c["alvo"] == "chefe" and c["duracao"] > 0:
+        if c["tipo"] == "redireciona" and c["alvo"] == inimigo_id and c["duracao"] > 0:
             combatente = luta.por_id(c["valor"])
             if combatente and combatente.ativo:
                 return combatente
@@ -161,7 +164,15 @@ def _nome_alvo(luta, alvo):
     if alvo == "chefe":
         return luta.chefe["nome"]
     combatente = luta.por_id(alvo)
-    return combatente.nome if combatente else "alguém que já saiu"
+    if combatente:
+        return combatente.nome
+    # Step A -- inimigo além do principal (id "chefe_1", "chefe_2"...).
+    # `getattr` porque LutaFake (tests/test_condicoes.py, blocos 1-5) não
+    # modela múltiplos inimigos -- ela só conhece "chefe", já coberto
+    # acima; nenhum teste dela passa um alvo que caia aqui.
+    inimigo_por_id = getattr(luta, "inimigo_por_id", None)
+    inimigo = inimigo_por_id(alvo) if inimigo_por_id else None
+    return inimigo.nome if inimigo else "alguém que já saiu"
 
 
 def _valor_absoluto(valor, hp_max):
@@ -177,19 +188,31 @@ def _aplicar_efeito_rodada(luta, cond):
 
 
 def _tick_dano(luta, cond):
-    if cond["alvo"] == "chefe":
+    alvo = cond["alvo"]
+    if alvo == "chefe":
         dano = _valor_absoluto(cond["valor"], luta.hp_chefe_max)
         luta.hp_chefe -= dano
         luta.registrar(f"{cond['emoji']} {luta.chefe['nome']} sofre **{dano}** de {cond['nome']}.")
     else:
-        c = luta.por_id(cond["alvo"])
-        if not c or not c.ativo:
-            return
-        dano = _valor_absoluto(cond["valor"], c.s["hp_max"])
-        c.hp -= dano
-        luta.registrar(f"{cond['emoji']} {c.nome} sofre **{dano}** de {cond['nome']}.")
-        if c.hp <= 0:
-            c.caiu = True
+        c = luta.por_id(alvo)
+        if c:
+            if not c.ativo:
+                return
+            dano = _valor_absoluto(cond["valor"], c.s["hp_max"])
+            c.hp -= dano
+            luta.registrar(f"{cond['emoji']} {c.nome} sofre **{dano}** de {cond['nome']}.")
+            if c.hp <= 0:
+                c.caiu = True
+        else:
+            # Step A -- inimigo além do principal (ver _nome_alvo acima
+            # pro mesmo `getattr`, mesmo motivo de LutaFake).
+            inimigo_por_id = getattr(luta, "inimigo_por_id", None)
+            inimigo = inimigo_por_id(alvo) if inimigo_por_id else None
+            if not inimigo or not inimigo.ativo:
+                return
+            dano = _valor_absoluto(cond["valor"], inimigo.hp_max)
+            inimigo.hp -= dano   # `ativo` deriva de hp <= 0 sozinho, nada mais a marcar
+            luta.registrar(f"{cond['emoji']} {inimigo.nome} sofre **{dano}** de {cond['nome']}.")
     if cond.get("origem") and cond.get("drena"):
         curador = luta.por_id(cond["origem"])
         if curador and curador.ativo:
@@ -203,9 +226,19 @@ def _tick_dano(luta, cond):
 
 
 def _tick_cura(luta, cond):
-    if cond["alvo"] == "chefe":
+    alvo = cond["alvo"]
+    if alvo == "chefe":
         return  # chefe não cura por condição — guarda por segurança, não deveria acontecer
-    c = luta.por_id(cond["alvo"])
+    # Step A -- nenhum inimigo cura por condição, mesma guarda de cima
+    # generalizada (redundante com o `not c` duas linhas abaixo, já que
+    # nenhum id de inimigo bate com um user_id -- mas explícito por
+    # clareza, mesmo espírito do guard de "chefe" acima). `getattr` por
+    # causa de LutaFake, que não modela múltiplos inimigos -- ver
+    # _nome_alvo.
+    inimigo_por_id = getattr(luta, "inimigo_por_id", None)
+    if inimigo_por_id and inimigo_por_id(alvo) is not None:
+        return
+    c = luta.por_id(alvo)
     if not c or not c.ativo:
         return
     cura = _valor_absoluto(cond["valor"], c.s["hp_max"])

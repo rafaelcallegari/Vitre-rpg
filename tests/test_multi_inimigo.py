@@ -105,3 +105,58 @@ def test_hp_fixo_acima_do_selo_vale_pra_cada_inimigo():
 
     assert luta.inimigos[0].hp == 100
     assert luta.inimigos[1].hp == 80
+
+
+# ==================================================================
+# Commit 2 -- o alvo de condição vira id
+# ==================================================================
+
+def test_condicao_em_cada_inimigo_e_independente():
+    c = _combatente(1)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+
+    condicoes.aplicar(luta, "chefe", "dano_por_rodada", "Queimadura", "🔥", duracao=1, valor=0.10)
+    condicoes.aplicar(luta, "chefe_1", "vulneravel", "Ruptura", "💠", duracao=5, valor=0.20)
+
+    assert condicoes.multiplicador_dano_causado(luta, "chefe") == 1.0   # sem vulnerável
+    assert condicoes.multiplicador_dano_causado(luta, "chefe_1") == 1.2  # a Ruptura é só dele
+
+    antes_a, antes_b = luta.inimigos[0].hp, luta.inimigos[1].hp
+    condicoes.tick(luta)
+    assert luta.inimigos[0].hp == antes_a - 10   # 10% de 100 -- só o "chefe" tomou a Queimadura
+    assert luta.inimigos[1].hp == antes_b        # "chefe_1" intacto
+
+
+def test_condicao_no_segundo_inimigo_usa_o_nome_e_o_hp_max_dele():
+    c = _combatente(1)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    condicoes.aplicar(luta, "chefe_1", "dano_por_rodada", "Sangramento", "🩸", duracao=1, valor=0.5)
+
+    condicoes.tick(luta)
+
+    assert luta.inimigos[1].hp == 40   # 50% de 80 (hp_max do CHEFE_B), não do CHEFE_A
+    assert "Inimigo B" in luta.log[-1]
+
+
+def test_condicao_em_inimigo_morto_para_de_tickar():
+    c = _combatente(1)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    condicoes.aplicar(luta, "chefe_1", "dano_por_rodada", "Sangramento", "🩸", duracao=5, valor=1000)
+
+    condicoes.tick(luta)
+    assert luta.inimigos[1].hp <= 0
+
+    hp_antes = luta.inimigos[1].hp
+    condicoes.tick(luta)
+    assert luta.inimigos[1].hp == hp_antes   # já não está ativo -- não desce mais
+
+
+def test_alvo_forcado_com_dois_inimigos_aponta_para_um_so():
+    c1 = _combatente(1)
+    c2 = _combatente(2)
+    luta = combate.Luta([c1, c2], [CHEFE_A, CHEFE_B], andar_num=1)
+    condicoes.aplicar(luta, "chefe_1", "redireciona", "Provocação", "📣", duracao=1, valor=c1.id)
+
+    assert condicoes.alvo_forcado(luta, "chefe_1") is c1
+    assert condicoes.alvo_forcado(luta, "chefe") is None   # a provocação é só do chefe_1
+    assert condicoes.alvo_forcado(luta) is None            # default "chefe" -- mesma coisa

@@ -7609,12 +7609,60 @@ lista de um (é exatamente o que `inimigos_ativos` vazio significa quando
 só existe `inimigos[0]`), e correto pro caso novo (matar um não encerra a
 luta enquanto outro inimigo segue vivo).
 
-`Inimigo.matar()` é no-op (`ativo` já deriva de `hp <= 0` sozinho) contra
-`Combatente.matar()` (marca `caiu = True`) — os dois existem só pra
-`condicoes._tick_dano` (commit 2) chamar sem saber qual tipo tem na mão.
-
 Validado revertendo a troca de `hp_chefe <= 0` por `not luta.
 inimigos_ativos` em `combate.PainelLuta.fim_da_luta`: cai só
 `test_fim_da_luta_so_dispara_quando_todos_os_inimigos_morrem`, o resto da
 suíte (testes antigos inclusive) continua verde. Suíte completa: 6 testes
 novos em `test_multi_inimigo.py`, 813 passando + 1 xfail antigo.
+
+### Commit 2 — o alvo de condição vira id
+
+Das oito funções de consulta em `condicoes.py` (`pode_agir`,
+`multiplicador_dano_causado`, `reducao_dano_recebido`, `bonus_critico`,
+`pode_lancar_habilidade`, `chance_de_erro`, `reducao_cura_recebida`,
+`fracao_reflexao`), **nenhuma mudou** — todas já tratavam `alvo` como um
+id genérico, só filtrando `c["alvo"] == alvo`; o hardcode de "chefe"
+vivia inteiro em só quatro pontos: `_nome_alvo`, `_tick_dano`,
+`_tick_cura` e `alvo_forcado`.
+
+**A restrição real que decidiu o desenho**: `tests/test_condicoes.py` usa
+uma `LutaFake` própria (blocos 1-5, condicoes.py testado puro sem
+discord/banco) que só modela "chefe" pelos atributos antigos
+(`.chefe`/`.hp_chefe`/`.hp_chefe_max`) — ela não tem `.inimigos` nem
+`.inimigo_por_id`, e o cartão proíbe mexer em teste. Então as quatro
+funções ganharam um TERCEIRO caminho, não uma substituição: (1) player
+via `luta.por_id` — sem mudança; (2) "chefe" continua com o caminho
+antigo (`luta.chefe`/`luta.hp_chefe`/`luta.hp_chefe_max`), que funciona
+idêntico pra `LutaFake` E pra `Luta` de verdade (a ponte do commit 1 faz
+os dois caminhos lerem/escreverem a MESMA memória — não é dois
+comportamentos, é o mesmo dado por duas portas); (3) qualquer outro id
+cai em `luta.inimigo_por_id(alvo)`, só existe na `Luta` de verdade,
+acessado via `getattr(luta, "inimigo_por_id", None)` pra `LutaFake` não
+quebrar com `AttributeError`. A string `"chefe"` continua aparecendo no
+código — mas não como um caso especial de "é o chefe, trata diferente":
+é só o id, sempre válido, do inimigo principal (ver ponte do commit 1).
+O que sai de circulação é ela como o ÚNICO jeito de mirar um inimigo —
+`"chefe_1"` em diante só existe pelo caminho (3).
+
+`alvo_forcado(luta, inimigo_id="chefe")` ganhou o segundo parâmetro, com
+default "chefe" -- toda chamada existente (`alvo_forcado(luta)`) continua
+igual; `turno_do_chefe` (commit 4) passa o id do inimigo da vez.
+
+`_tick_cura` ganhou uma guarda gêmea da de "chefe" pra qualquer inimigo
+(nenhum inimigo cura por condição) — tecnicamente redundante com o
+`not c` duas linhas abaixo (nenhum id de inimigo bate com um `user_id`,
+sempre int), mas mantida por clareza explícita, mesmo espírito de o
+guard de "chefe" já ser redundante com a mesma checagem antes deste
+cartão. Por ser redundante, não dá pra validar por revert (removê-la não
+quebra teste nenhum) — não entra na lista de commits validados abaixo.
+
+Validado revertendo, um de cada vez: (1) tirar o caminho (3) de
+`_tick_dano` (`else: return` em vez de resolver por `inimigo_por_id`) —
+caem `test_condicao_no_segundo_inimigo_usa_o_nome_e_o_hp_max_dele` e
+`test_condicao_em_inimigo_morto_para_de_tickar`; (2) trocar
+`c["alvo"] == inimigo_id` por `c["alvo"] == "chefe"` fixo em
+`alvo_forcado` — cai só
+`test_alvo_forcado_com_dois_inimigos_aponta_para_um_so`. Em ambos os
+casos, exatamente os testes esperados caem, e nenhum teste antigo se
+move. Suíte completa: 4 testes novos em `test_multi_inimigo.py` (mais os
+6 do commit 1), 817 passando + 1 xfail antigo.
