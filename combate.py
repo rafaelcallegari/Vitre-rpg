@@ -1656,6 +1656,28 @@ EFEITOS_HABILIDADE = {
 }
 
 
+# Step A, commit 3: os dois tipos de "alvo escolhido pelo jogador" que
+# BotaoAlvoHabilidade/MenuAlvoHabilidade sabem listar -- "aliado_escolhido"
+# é o único usado hoje (Palavra de Alento); "inimigo_escolhido" é infra
+# pura, sem nenhuma skill usando ainda (nenhum chefe tem companhia, ver
+# decisoes.md § Step A). Generalizar o widget existente em vez de escrever
+# um novo -- é o que o cartão pede.
+TIPOS_ALVO_ESCOLHIDO = {"aliado_escolhido", "inimigo_escolhido"}
+
+
+def _alvos_possiveis(luta, dados):
+    """Quem pode ser alvo de uma skill "aliado_escolhido"/
+    "inimigo_escolhido" -- cada item tem `.id`/`.nome` (Combatente ou
+    Inimigo, os dois já têm os dois), então BotaoAlvoHabilidade nem
+    precisa saber qual dos dois recebeu."""
+    tipo = dados.get("alvo")
+    if tipo == "aliado_escolhido":
+        return luta.ativos
+    if tipo == "inimigo_escolhido":
+        return luta.inimigos_ativos
+    return []
+
+
 def _lancar_habilidade(luta, c, chave, dados, alvo_id=None):
     if dados["recurso"] == "mana":
         c.mana -= dados["custo"]
@@ -1664,7 +1686,7 @@ def _lancar_habilidade(luta, c, chave, dados, alvo_id=None):
     else:
         c.energia -= dados["custo"]
     efeito = EFEITOS_HABILIDADE[chave]
-    if dados.get("alvo") == "aliado_escolhido":
+    if dados.get("alvo") in TIPOS_ALVO_ESCOLHIDO:
         efeito(luta, c, dados, alvo_id)
     else:
         efeito(luta, c, dados)
@@ -1710,24 +1732,35 @@ class BotaoHabilidade(discord.ui.Button):
         c = self.view.combatente
         dados = HABILIDADES[self.chave]
 
-        if dados.get("alvo") == "aliado_escolhido" and len(painel.luta.ativos) > 1:
-            await responder(interaction, painel.luta.embed(), MenuAlvoHabilidade(painel, c, self.chave))
-            return
-
-        # luta solo ou skill sem alvo escolhido: alvo é sempre quem lançou
-        alvo_id = c.id if dados.get("alvo") == "aliado_escolhido" else None
+        tipo_alvo = dados.get("alvo")
+        if tipo_alvo in TIPOS_ALVO_ESCOLHIDO:
+            alvos = _alvos_possiveis(painel.luta, dados)
+            # regra de interface: com um alvo só (luta solo, ou hoje
+            # sempre pra inimigo_escolhido -- nenhum chefe tem companhia
+            # ainda), nada muda na tela -- resolve direto, sem mostrar
+            # uma escolha que não existe. Só abre o menu com mais de uma
+            # opção de verdade.
+            if len(alvos) > 1:
+                await responder(interaction, painel.luta.embed(), MenuAlvoHabilidade(painel, c, self.chave))
+                return
+            alvo_id = alvos[0].id if alvos else (c.id if tipo_alvo == "aliado_escolhido" else None)
+        else:
+            alvo_id = None
         _lancar_habilidade(painel.luta, c, self.chave, dados, alvo_id)
         await painel.registrar_acao(interaction, c, "habilidade")
 
 
 class MenuAlvoHabilidade(discord.ui.View):
-    """Seletor de alvo pra skills que miram um aliado escolhido (Palavra de Alento)."""
+    """Seletor de alvo pra skills que miram um aliado OU inimigo escolhido
+    -- Step A generalizou o widget pra inimigo também. "Aliado escolhido"
+    continua sendo o único caso com skill de verdade usando (Palavra de
+    Alento); "inimigo escolhido" é infra pura, ver decisoes.md § Step A."""
 
     def __init__(self, painel, combatente, chave):
         super().__init__(timeout=TIMEOUT_RODADA)
         self.painel = painel
         self.combatente = combatente
-        for alvo in painel.luta.ativos:
+        for alvo in _alvos_possiveis(painel.luta, HABILIDADES[chave]):
             self.add_item(BotaoAlvoHabilidade(alvo, chave))
         self.add_item(BotaoVoltar())
 

@@ -6,6 +6,9 @@
 # cobre o mínimo novo que o cartão pede: dois inimigos de verdade dentro de
 # uma `Luta`, com estado independente.
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
+
+import discord
 
 import bot  # noqa: F401 -- popula combate.H
 import combate
@@ -24,6 +27,21 @@ def _combatente(user_id, **campos):
         db.atualizar_jogador(user_id, **campos)
     j = db.get_jogador(user_id)
     return combate.Combatente(j, bot.stats(j))
+
+
+def _interacao(user_id):
+    it = MagicMock()
+    it.user.id = user_id
+    it.response = MagicMock()
+    it.response.defer = AsyncMock()
+    it.response.is_done.return_value = True
+    it.response.send_message = AsyncMock()
+    it.edit_original_response = AsyncMock()
+    return it
+
+
+def _botao(view, label):
+    return next(c for c in view.children if getattr(c, "label", None) == label)
 
 
 # ==================================================================
@@ -160,3 +178,78 @@ def test_alvo_forcado_com_dois_inimigos_aponta_para_um_so():
     assert condicoes.alvo_forcado(luta, "chefe_1") is c1
     assert condicoes.alvo_forcado(luta, "chefe") is None   # a provocação é só do chefe_1
     assert condicoes.alvo_forcado(luta) is None            # default "chefe" -- mesma coisa
+
+
+# ==================================================================
+# Commit 3 -- os botões miram inimigo (generaliza BotaoAlvoHabilidade/
+# MenuAlvoHabilidade, o mesmo widget que a Palavra de Alento já usa pra
+# aliado). Nenhuma skill real usa "inimigo_escolhido" ainda -- infra pura
+# -- então os testes montam uma sintética via monkeypatch.
+# ==================================================================
+
+def _instalar_skill_de_teste(monkeypatch, efeito):
+    dados = {"nome": "Teste", "emoji": "🎯", "custo": 0, "recurso": "mana", "alvo": "inimigo_escolhido"}
+    monkeypatch.setitem(combate.HABILIDADES, "teste_alvo_inimigo", dados)
+    monkeypatch.setitem(combate.EFEITOS_HABILIDADE, "teste_alvo_inimigo", efeito)
+    return dados
+
+
+def _botao_habilidade_de_teste(dados, painel, c):
+    view = discord.ui.View()
+    view.painel = painel
+    view.combatente = c
+    botao = combate.BotaoHabilidade("teste_alvo_inimigo", dados)
+    view.add_item(botao)
+    return botao
+
+
+def test_alvos_possiveis_de_inimigo_escolhido_e_a_lista_de_inimigos_ativos():
+    c = _combatente(1)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    dados = {"alvo": "inimigo_escolhido"}
+
+    assert combate._alvos_possiveis(luta, dados) == luta.inimigos_ativos
+
+
+def test_com_um_inimigo_so_nada_muda_na_tela_resolve_direto(monkeypatch):
+    """"Com um inimigo só, nada muda na tela" -- hoje SEMPRE (nenhum chefe
+    tem companhia ainda), então toda skill inimigo_escolhido resolve
+    direto, sem o passo extra de escolha."""
+    alvos_atingidos = []
+
+    def _efeito(luta, c, dados, alvo_id):
+        alvos_atingidos.append(alvo_id)
+
+    dados = _instalar_skill_de_teste(monkeypatch, _efeito)
+    c = _combatente(1, classe="guerreiro", forca=20)
+    luta = combate.Luta([c], CHEFE_A, andar_num=1)
+    painel = combate.PainelLuta(luta)
+    botao = _botao_habilidade_de_teste(dados, painel, c)
+
+    asyncio.run(botao.callback(_interacao(1)))
+
+    assert alvos_atingidos == ["chefe"]   # resolveu contra o único inimigo, sem menu
+
+
+def test_alvo_de_habilidade_escolhido_pelo_jogador_acerta_quem_ele_escolheu(monkeypatch):
+    def _efeito(luta, c, dados, alvo_id):
+        luta.inimigo_por_id(alvo_id).hp -= 10
+
+    dados = _instalar_skill_de_teste(monkeypatch, _efeito)
+    c = _combatente(1, classe="guerreiro", forca=20)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    painel = combate.PainelLuta(luta)
+    botao = _botao_habilidade_de_teste(dados, painel, c)
+
+    it1 = _interacao(1)
+    asyncio.run(botao.callback(it1))
+    view_alvo = it1.edit_original_response.call_args.kwargs["view"]
+    labels = {item.label for item in view_alvo.children if isinstance(item, combate.BotaoAlvoHabilidade)}
+    assert labels == {"Inimigo A", "Inimigo B"}   # menu apareceu, um botão por inimigo
+
+    hp_a_antes, hp_b_antes = luta.inimigos[0].hp, luta.inimigos[1].hp
+    it2 = _interacao(1)
+    asyncio.run(_botao(view_alvo, "Inimigo B").callback(it2))
+
+    assert luta.inimigos[1].hp == hp_b_antes - 10   # só quem foi escolhido tomou dano
+    assert luta.inimigos[0].hp == hp_a_antes        # o outro, intacto

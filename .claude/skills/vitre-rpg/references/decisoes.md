@@ -7666,3 +7666,49 @@ caem `test_condicao_no_segundo_inimigo_usa_o_nome_e_o_hp_max_dele` e
 casos, exatamente os testes esperados caem, e nenhum teste antigo se
 move. Suíte completa: 4 testes novos em `test_multi_inimigo.py` (mais os
 6 do commit 1), 817 passando + 1 xfail antigo.
+
+### Commit 3 — os botões miram inimigo
+
+Generalizou `BotaoAlvoHabilidade`/`MenuAlvoHabilidade` em vez de escrever
+seletor novo, exatamente como o cartão pediu — `BotaoAlvoHabilidade` nem
+precisou mudar uma linha (já só lê `alvo.id`/`alvo.nome`, que Combatente e
+Inimigo têm os dois). `MenuAlvoHabilidade.__init__` e `BotaoHabilidade.
+callback` passaram a chamar `_alvos_possiveis(luta, dados)` (função nova)
+em vez de sempre `luta.ativos` — devolve `luta.ativos` pra
+`"aliado_escolhido"`, `luta.inimigos_ativos` pra `"inimigo_escolhido"`
+(vocabulário novo, simétrico ao que já existia).
+
+**Nenhuma skill real usa `"inimigo_escolhido"` ainda** — "nada muda para
+o jogador" vale igual pro commit 3: a Palavra de Alento continua o único
+usuário de `"aliado_escolhido"`, e não existe ramo de código que hoje
+escolha esse novo tipo pra nenhuma habilidade de `game_data.HABILIDADES`.
+Os testes novos montam uma skill sintética via `monkeypatch.setitem` (em
+`combate.HABILIDADES`/`combate.EFEITOS_HABILIDADE`, nunca no dict real) —
+mesmo espírito de não adicionar conteúdo, só provar que o mecanismo
+funciona quando alguém (uma carta futura) precisar dele.
+
+**Regra de interface, testada nos dois sentidos**: com um alvo só (hoje,
+SEMPRE, pra `inimigo_escolhido` — nenhum chefe tem companhia ainda), o
+menu nunca aparece, resolve direto contra esse único alvo — nada muda na
+tela de quem já joga. Com mais de um alvo possível (só alcançável hoje
+via a skill sintética do teste), o menu abre listando um botão por
+inimigo, e escolher um só afeta aquele — o outro inimigo fica intacto.
+
+**Fora do escopo, de propósito**: o botão "Atacar" (ataque básico) e as
+skills de dano de hoje continuam sempre mirando `luta.inimigos[0]` (a
+ponte "chefe" do commit 1), sem seletor nenhum — o cartão só pede pra
+generalizar o widget de escolha de alvo (`BotaoAlvoHabilidade`), não pra
+dar seletor de inimigo ao ataque básico. Enquanto nenhuma luta tiver mais
+de um inimigo de verdade, isso é 100% equivalente ao de sempre; uma carta
+futura que adicione conteúdo multi-inimigo de verdade precisa decidir se
+o ataque básico também ganha escolha (não decidido aqui).
+
+Validado revertendo, um de cada vez: (1) trocar `tipo_alvo in
+TIPOS_ALVO_ESCOLHIDO` por `tipo_alvo == "aliado_escolhido"` em
+`BotaoHabilidade.callback` -- caem os dois testes que exercitam o clique
+de verdade (`test_com_um_inimigo_so...` e `test_alvo_de_habilidade_
+escolhido...`); (2) fazer `_alvos_possiveis` devolver `[]` pra
+`"inimigo_escolhido"` -- caem os mesmos dois mais `test_alvos_possiveis_
+de_inimigo_escolhido...`. Em ambos os casos, exatamente os testes
+esperados caem. Suíte completa: 3 testes novos em `test_multi_inimigo.py`
+(mais os 10 dos commits 1-2), 820 passando + 1 xfail antigo.
