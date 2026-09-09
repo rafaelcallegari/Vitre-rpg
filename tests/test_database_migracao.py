@@ -16,6 +16,7 @@ COLUNAS_ESPERADAS = {
     "avatar_msg_id", "avatar_url",
     "mortalha", "mortalha_instancia_id",
     "ascensao",
+    "arvin_divida",
 }
 
 

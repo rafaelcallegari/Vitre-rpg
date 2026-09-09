@@ -7429,3 +7429,130 @@ empilhando, Voto de Ferro caindo pra Chama Divina). Validado revertendo
 cada correção individualmente — cada revert derruba exatamente o teste
 novo daquele achado e nenhum outro. Suíte completa: 781 passando + 1
 xfail antigo.
+
+## Step 4 — os mestres do andar 7 e o `rpg ascencao` jogável
+
+Último step do pacote 0.4 — o deploy (seção própria abaixo) sobe tudo desde
+`bc7621a` de uma vez: dungeon (pool + armadilha + espólio + cooldown), motor
+de decisão de chefe, os 4 espelhos, e agora os mestres + ascensão jogável.
+
+### Commit 1 — o Orbe não duplica
+
+**Nenhuma mudança de código.** A trava já nasceu no Step 3 (`dungeon.
+conceder_orbe` recusa dar o Orbe a quem já tem um, e `_finalizar_vitoria_
+espelho` já mostra "Nada novo" em vez do Orbe quando isso acontece) —
+`test_conceder_orbe_nao_duplica_na_segunda_vez` e `test_vencer_de_novo_
+com_orbe_ja_existente_nao_concede_outro` já cobrem exatamente isso. O
+cartão pedia a trava sem saber que o Step 3 já tinha resolvido como
+consequência natural do próprio design (a dungeon é infinitamente
+repetível, então "não duplicar item único" já precisava valer desde o
+primeiro dia do Orbe). Registrado aqui só pra não parecer item esquecido.
+
+### Commit 2 — os quatro mestres (e commit 3 — `rpg ascencao` jogável)
+
+Implementados juntos, num commit git só: o requisito do commit 3 "um
+ladino que chegue com o Orbe na primeira conversa [com o Arvin] precisa
+conseguir as duas coisas [ser roubado E poder ascender]" amarra as duas
+features desde a primeira linha de código — a função que decide o que
+`rpg falar arvin` mostra já precisa saber sobre roubo E sobre ascensão ao
+mesmo tempo. Mesmo precedente do Step 3 (commits 1+3 da dungeon, também
+combinados por interdependência real, não por preguiça de separar).
+
+**Arquitetura decidida com o Rafael antes de codar** (fork real, duas
+arquiteturas diferentes): a ação de ascender vive **dentro da conversa
+com o mestre** (`rpg falar <mestre>` ganha uma view de escolha quando o
+NPC é o mestre da própria classe do jogador e os requisitos batem), não
+dentro de um `rpg ascencao <ramo>` que checasse presença sozinho. Mais
+fiel ao "falar com o mestre" do cartão, e é o único jeito de a recusa de
+"mestre errado" ser uma fala em personagem de verdade (você tentou, ele
+te dispensou) em vez de um erro de sistema. `rpg ascencao` (sem alvo)
+continua sendo só wiki — agora aponta pra onde a ação de verdade
+acontece, em vez de dizer "ainda não jogável".
+
+**`mestres.py` nasce sem discord** (nenhum import de `discord`, só
+`database`/`game_data`) — mesmo padrão de `andares_altos.py`: lógica pura
+testável sem simular interação nenhuma, toda a UI (embeds, Views, botões)
+mora em `bot.py`, que já é onde `DialogoView`/`GuiaDialogoView` vivem.
+`npcs.py` ganhou um campo novo por NPC (`"mestre_de": <classe>`, só nos 4
+do andar 7) e a função `mestre_do_andar(andar, classe)` — não hardcoda o
+andar 7 dentro da função, então um mestre novo em outro andar no futuro
+funciona sem mudança ali.
+
+**O Cavaleiro foi promovido, não recriado**: ganhou só o campo
+`"mestre_de": "guerreiro"` em `npcs.NPCS[7]`; nome, título, diálogo e fala
+originais continuam intactos. Os outros três (Santo Augustiel, o
+Paciente; Gregory Merlin, o Quinto; Arvin, Mãos Rápidas) são NPCs novos,
+com entrada nova em `dialogos.py` (abertura + 2 perguntas de Lore cada,
+mesmo formato dos NPCs "conversa" existentes).
+
+**O Arvin — coluna própria pra dívida, não recálculo.** `jogadores.
+arvin_divida` (migração 20, `0` = nada a devolver) guarda o valor EXATO
+roubado; a devolução lê essa coluna, nunca recalcula 20% do saldo atual
+(que pode ter mudado — caçar, vender, comprar — entre as duas conversas).
+`mestres.arvin_interagir` alterna sozinho: dívida zerada rouba
+`VALOR_ROUBO_ARVIN` (0.20, constante nomeada) do saldo atual e grava;
+dívida pendente devolve esse valor exato e zera — o que também significa
+que o ciclo se repete (fala nele de novo depois de já ter sido
+devolvido, rouba de novo). Roubo/devolução acontecem com QUALQUER classe
+que fale com ele — só o TEXTO muda quando quem fala é ladino (o cartão
+descreve isso como "um teste que reprovou": o Arvin tenta roubar um
+ladino do mesmo jeito que rouba qualquer um, e nem o ladino percebe — a
+"lição" que a classe deveria ensinar não serve de nada aqui, de
+propósito, é a piada). Zero moedas não quebra (rouba 0, sem dívida
+registrada — a próxima conversa rouba de novo, não "devolve zero").
+
+**A comparação lado a lado é o núcleo do commit 3.** `mestres.
+descricao_ramo(chave)` devolve `(dados, skill, [passivas])` direto de
+`ASCENSOES`/`HABILIDADES`/`PASSIVAS` — nome E descrição de verdade, nunca
+só o nome. O botão "Ver os caminhos" (só existe quando `mestres.
+pode_ascender` devolve `True`) abre uma tela com um field por ramo (2 do
+Ladino, 3 dos outros três — sai de `ASCENSOES` filtrado por `base`, não
+hardcoda "3 ramos" em lugar nenhum) mostrando skill completa + passiva(s)
+completa(s) de cada um, ANTES de qualquer botão de escolha aparecer.
+Escolher um ramo abre uma tela de CONFIRMAÇÃO separada ("Isso não tem
+volta"), com "Confirmar — sem volta" e "Voltar" (volta pra tela anterior
+sem gravar nada). Só o clique em "Confirmar" chama `mestres.
+executar_ascensao` -> `db.ascender_jogador`, que grava `jogadores.
+ascensao` e remove o Orbe do inventário NA MESMA transação (mesmo padrão
+de `atualizar_jogador_e_apagar_dungeon_run`) — perder o Orbe sem gravar a
+ascensão (ou vice-versa) era o pior bug possível aqui, então as duas
+escritas vivem dentro do mesmo `with conectar()`.
+
+**`pode_ascender(jogador)` é o único lugar que sabe os quatro
+requisitos** (nível 15+, tem o Orbe, andar 7, ainda não ascendeu) —
+devolve `(bool, motivo)`, motivo em `nivel_baixo`/`sem_orbe`/
+`andar_errado`/`ja_ascendeu`/`None`. `andar_errado` nunca dispara de
+dentro da conversa (o mestre só existe no próprio andar 7, então quem
+está falando com ele já está lá) — fica na função mesmo assim porque ela
+é testada isolada, sem view nenhuma por perto, e porque é o requisito
+mais barato de checar errado no futuro se alguém mexer no fluxo.
+
+**Gravar a coluna já basta pra destravar a skill nova** — `habilidades.
+conhecidas` já lê `jogador["ascensao"]` desde o Step 2a (o teste
+`test_ascensao_destrava_a_skill_nova_na_hora` prova isso sem tocar em
+`habilidades.py`). Nenhuma mudança precisou entrar lá.
+
+**Dois bugs achados escrevendo os testes, corrigidos antes do commit
+(não em xfail — o código ainda nem tinha ido pro commit)**: o primeiro
+rascunho de `falar()` comparava `n.get("mestre_de")` (que guarda a
+CLASSE, ex. `"mago"`) contra `"arvin"`/contra as chaves de `RECUSA_
+CLASSE_ERRADA` (indexado pela CHAVE DO NPC, ex. `"merlin"`) — os dois
+nunca batiam, então o roubo do Arvin nunca disparava e a recusa de
+"mestre errado" sempre estourava `KeyError`. Corrigido comparando contra
+`n["dialogo"]` (a chave do NPC) nos dois lugares. Achado pelos próprios
+testes novos (`test_falar_com_arvin_mostra_o_roubo...` e `test_falar_
+com_mestre_de_outra_classe_recusa_em_personagem` falhavam antes da
+correção), não por revert deliberado — mas serve como a mesma prova: o
+teste cai exatamente quando o código exercitado por ele quebra.
+
+Validado revertendo, um de cada vez: (1) tirar a checagem de nível de
+`pode_ascender` — cai só `test_pode_ascender_recusa_nivel_baixo` e
+`test_falar_com_o_proprio_mestre_nivel_baixo_nao_oferece_ascensao`; (2)
+trocar `if mestre_de == j["classe"]` por `if True` em `falar()` — cai só
+`test_falar_com_mestre_de_outra_classe_recusa_em_personagem`; (3) fazer
+`arvin_interagir` recalcular 20% do saldo atual em vez de ler a dívida
+guardada — caem os dois testes que dependem do valor exato (devolução E
+o ciclo completo); (4) tirar a remoção do Orbe de `ascender_jogador` —
+cai só `test_confirmar_grava_a_ascensao_e_consome_o_orbe_na_mesma_acao`.
+Em todos os casos, exatamente os testes esperados caem. Suíte completa:
+26 testes novos em `test_mestres.py`, 807 passando + 1 xfail antigo.

@@ -602,6 +602,11 @@ CLASSES = {
 # sem tocar em bot.py. É por ramo (e não só a constante abaixo) de propósito
 # -- permite um ramo abrir em nível diferente dos irmãos no futuro.
 NIVEL_ASCENSAO_PADRAO = 15
+
+# Andar dos quatro mestres (Step 4) -- onde a curva de XP costuma cruzar o
+# nível 15, de propósito: ninguém ascende antes de ninguém. Ver mestres.py e
+# decisoes.md § Step 4.
+ANDAR_MESTRES = 7
 # "skill" (chave em HABILIDADES) e "passivas" (lista de chaves em PASSIVAS,
 # abaixo) nasceram no Step 2a (motor de ascensão) -- None/[] pra todo ramo
 # que ainda não tem conteúdo de verdade. Cada cartão preenche um ramo por

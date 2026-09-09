@@ -144,8 +144,23 @@ NPCS = {
          "fala": "Sacode a roupa antes de entrar. A cinza aqui pega carona."},
         {"nome": "Ignatia", "titulo": "a Bigorna Viva", "tipo": "ferreiro", "dialogo": "ignatia",
          "fala": "Não forjo com fogo. Forjo com o que sobrou dele."},
+        # Os quatro mestres da ascensão (Step 4) -- todos no mesmo andar de
+        # propósito, pra ninguém ascender antes de ninguém (ver
+        # game_data.ANDAR_MESTRES e decisoes.md § Step 4). O Cavaleiro já
+        # existia como NPC de conversa comum desde antes -- ganhou
+        # "mestre_de" aqui, não foi recriado.
         {"nome": "O Cavaleiro", "titulo": "que espera", "tipo": "conversa", "dialogo": "cavaleiro",
+         "mestre_de": "guerreiro",
          "fala": "Vou subir amanhã. Falo isso há bastante tempo."},
+        {"nome": "Santo Augustiel", "titulo": "o Paciente", "tipo": "conversa", "dialogo": "augustiel",
+         "mestre_de": "orador",
+         "fala": "Chega quando chega. Eu aprendi a não contar as horas."},
+        {"nome": "Gregory Merlin", "titulo": "o Quinto", "tipo": "conversa", "dialogo": "merlin",
+         "mestre_de": "mago",
+         "fala": "Sou o quinto a carregar esse nome. Os outros quatro não terminaram o que começaram."},
+        {"nome": "Arvin", "titulo": "Mãos Rápidas", "tipo": "conversa", "dialogo": "arvin",
+         "mestre_de": "ladino",
+         "fala": "Suas mãos são rápidas? As minhas também. Vamos ver."},
         {"nome": "Talla", "titulo": "da Última Brasa", "tipo": "encantador", "dialogo": "talla",
          "fala": "Guardo uma brasa só, a última que não virou cinza. É o suficiente pra encantar o resto."},
     ],
@@ -228,6 +243,17 @@ def guia_do_andar(andar):
     """Só existe nos andares 11-15 — ver decisoes.md § A Guia."""
     for n in npcs_do_andar(andar):
         if n["tipo"] == "guia":
+            return n
+    return None
+
+
+def mestre_do_andar(andar, classe):
+    """O NPC "mestre_de" == classe naquele andar, ou None -- hoje só existe
+    no andar 7 (ver game_data.ANDAR_MESTRES), mas não hardcoda o andar
+    aqui: se um mestre novo nascer noutro andar no futuro, isso funciona
+    sem mudança. Ver mestres.py e decisoes.md § Step 4."""
+    for n in npcs_do_andar(andar):
+        if n.get("mestre_de") == classe:
             return n
     return None
 

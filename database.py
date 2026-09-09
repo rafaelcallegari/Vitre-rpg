@@ -261,6 +261,17 @@ COLUNAS_ASCENSAO = {
     "ascensao": "TEXT DEFAULT NULL",
 }
 
+COLUNAS_ARVIN = {
+    # migração 20 -- Step 4, o roubo do Arvin (mestre do ladino, andar 7).
+    # Guarda o valor EXATO roubado, pra devolver igual, não recalcular 20%
+    # de um saldo que mudou no meio (jogador pode caçar/vender entre as
+    # duas conversas). 0 = "nada a devolver" -- tanto o estado inicial
+    # (nunca falou com ele) quanto "já devolveu" caem no mesmo valor, e os
+    # dois se comportam igual (mestres.arvin_interagir rouba de novo). Ver
+    # decisoes.md § Step 4.
+    "arvin_divida": "INTEGER NOT NULL DEFAULT 0",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -610,6 +621,16 @@ def init_db():
                     f"ALTER TABLE dungeon_run ADD COLUMN {coluna} {COLUNAS_DUNGEON_RUN[coluna]}"
                 )
             print(f"Banco migrado: coluna(s) {', '.join(novas_dungeon_run)} criada(s) em dungeon_run.")
+
+        # migração 20: coluna do roubo do Arvin (Step 4). 0 pra todo mundo --
+        # ninguém falou com ele ainda. Ver COLUNAS_ARVIN acima.
+        novas_arvin = [c for c in COLUNAS_ARVIN if c not in colunas]
+        if novas_arvin:
+            for coluna in novas_arvin:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ARVIN[coluna]}"
+                )
+            print("Banco migrado: coluna arvin_divida criada -- ninguém foi roubado ainda.")
 
 
 def _migrar_upgrades_para_instancias(conn):
@@ -1528,6 +1549,47 @@ def set_cooldown(user_id, comando, segundos):
         conn.execute(
             "INSERT OR REPLACE INTO cooldowns (user_id, comando, expira_em) VALUES (?, ?, ?)",
             (user_id, comando, time.time() + segundos),
+        )
+
+
+# ---------------- mestres do andar 7 (Step 4) ----------------
+def arvin_roubar(user_id, valor):
+    """Debita e grava a dívida na mesma escrita -- mestres.arvin_interagir
+    já calculou `valor` a partir do saldo atual, então não recalcula nada
+    aqui, só aplica."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE jogadores SET moedas = moedas - ?, arvin_divida = ? WHERE user_id = ?",
+            (valor, valor, user_id),
+        )
+
+
+def arvin_devolver(user_id, valor):
+    """Credita exatamente o que `arvin_divida` guardava e zera a dívida --
+    nunca recalcula 20% de um saldo que já mudou (ver decisoes.md § Step 4)."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE jogadores SET moedas = moedas + ?, arvin_divida = 0 WHERE user_id = ?",
+            (valor, user_id),
+        )
+
+
+def ascender_jogador(user_id, ramo):
+    """Grava `jogadores.ascensao` e consome o Orbe na MESMA transação --
+    o pior bug possível aqui é perder o Orbe sem gravar a ascensão (ou
+    vice-versa), então as duas escritas vivem na mesma conexão `with`,
+    igual ao padrão de atualizar_jogador_e_apagar_dungeon_run. Pressupõe
+    que quem chama já validou requisito (mestres.pode_ascender) -- não
+    checa nada aqui, só executa."""
+    with conectar() as conn:
+        _atualizar_jogador_na_conexao(conn, user_id, {"ascensao": ramo})
+        conn.execute(
+            "UPDATE inventario SET qtd = qtd - 1 WHERE user_id = ? AND item = 'orbe_de_ascensao'",
+            (user_id,),
+        )
+        conn.execute(
+            "DELETE FROM inventario WHERE user_id = ? AND item = 'orbe_de_ascensao' AND qtd <= 0",
+            (user_id,),
         )
 
 

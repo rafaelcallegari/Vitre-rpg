@@ -87,6 +87,39 @@ DIALOGOS = {
         ],
         "saida": "Ele acena, sem se levantar. \"Amanhã\", ele repete, pra si mesmo.",
     },
+    # Os outros três mestres (Step 4) -- augustiel, merlin e arvin. O Arvin
+    # tem lógica própria além do diálogo (rouba/devolve moedas, ver
+    # mestres.py) -- as opções abaixo são só a Lore, iguais pros outros três.
+    "augustiel": {
+        "abertura": "Chega quando chega. Eu aprendi a não contar as horas.",
+        "opcoes": [
+            {"label": "Perguntar o que ele espera",
+             "resposta": "Nada que eu possa apressar. A paciência não é minha virtude — é o único jeito que sobrou de lidar com o tempo aqui."},
+            {"label": "Perguntar sobre a fé dele",
+             "resposta": "Rezei tanto que a oração virou hábito antes de virar crença. Ainda funciona, do jeito que funciona."},
+        ],
+        "saida": "Ele fecha os olhos, do jeito de quem já esperou coisa maior que uma despedida.",
+    },
+    "merlin": {
+        "abertura": "Sou o quinto a carregar esse nome. Os outros quatro não terminaram o que começaram.",
+        "opcoes": [
+            {"label": "Perguntar sobre os outros quatro",
+             "resposta": "Um desistiu. Um morreu terminando outra coisa. Um virou lenda antes de virar sábio. O quarto eu não conto — ele ainda pode estar por aí, tentando de novo."},
+            {"label": "Perguntar o que ele estuda",
+             "resposta": "O que gela, o que queima, o que estala no ar antes de cair. Cada um puxa o corpo pra um lado diferente — eu só aprendi a escolher qual."},
+        ],
+        "saida": "Ele volta os olhos pros próprios livros antes mesmo de você terminar de se virar.",
+    },
+    "arvin": {
+        "abertura": "Suas mãos são rápidas? As minhas também. Vamos ver.",
+        "opcoes": [
+            {"label": "Perguntar como ele é tão rápido",
+             "resposta": "Treino com quem não sabe que está treinando comigo. Você, por exemplo."},
+            {"label": "Perguntar se ele já roubou alguém importante",
+             "resposta": "Já. Ele nem percebeu. Isso também é parte do talento — o roubo que ninguém sente é o único que conta."},
+        ],
+        "saida": "Ele sorri e enfia as mãos nos bolsos — os dele, dessa vez.",
+    },
     "corista": {
         "abertura": "(Ela move os lábios. O som chega três segundos depois, de outro lugar.)",
         "opcoes": [

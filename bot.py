@@ -18,13 +18,14 @@ import database as db
 import despertar
 import dialogos
 import habilidades as hab
+import mestres
 import paginacao
 import passivas
 import pronomes
 import travas
 from game_data import (
-    ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, xp_necessario,
-    multiplicador_elemento,
+    ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, ANDAR_MESTRES,
+    NIVEL_ASCENSAO_PADRAO, xp_necessario, multiplicador_elemento,
 )
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
@@ -1277,6 +1278,169 @@ class GuiaDialogoView(discord.ui.View):
         await self.mensagem.edit(view=self)
 
 
+class BotaoVerCaminhosAscensao(discord.ui.Button):
+    """Só entra na conversa quando o NPC é o mestre da própria classe do
+    jogador E os quatro requisitos batem (mestres.pode_ascender) -- ver
+    falar(). Abre a comparação, não escolhe nada sozinho: "não pode ser
+    'qual ramo? gravado'" (decisoes.md § Step 4)."""
+
+    def __init__(self):
+        super().__init__(label="Ver os caminhos", style=discord.ButtonStyle.success)
+
+    async def callback(self, interaction):
+        view = ViewEscolhaRamo(
+            self.view.autor_id, self.view.pronome, self.view.jogador,
+            self.view, interaction.message.embeds[0],
+        )
+        view.mensagem = interaction.message
+        await interaction.response.edit_message(embed=view.embed(), view=view)
+
+
+class ViewConversaMestre(DialogoView):
+    """DialogoView comum + um botão condicional -- reaproveita
+    BotaoOpcaoDialogo/BotaoSairDialogo/interaction_check/on_timeout de
+    DialogoView sem duplicar, só insere BotaoVerCaminhosAscensao antes do
+    Sair quando `oferece_ascensao` for True."""
+
+    def __init__(self, autor_id, pronome, jogador, opcoes, saida, oferece_ascensao):
+        super().__init__(autor_id, pronome, opcoes, saida)
+        self.jogador = jogador
+        if oferece_ascensao:
+            botao_sair = self.children[-1]
+            self.remove_item(botao_sair)
+            self.add_item(BotaoVerCaminhosAscensao())
+            self.add_item(botao_sair)
+
+
+class ViewMestreBase(discord.ui.View):
+    """interaction_check/on_timeout comuns às telas do fluxo de ascensão
+    (escolha de ramo e confirmação) -- mesma regra de DialogoView, mas
+    essas telas carregam view_anterior/embed_anterior pro botão Voltar."""
+
+    def __init__(self, autor_id, pronome, timeout=180):
+        super().__init__(timeout=timeout)
+        self.autor_id = autor_id
+        self.pronome = pronome
+        self.mensagem = None
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message(
+                "Essa conversa não é sua. Manda `rpg falar` você mesmo.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        if self.mensagem is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        await self.mensagem.edit(view=self)
+
+
+class BotaoVoltarMestre(discord.ui.Button):
+    """Reaproveitado nas duas telas do fluxo (escolha de ramo -> volta pra
+    conversa; confirmação -> volta pra escolha) -- cada View carrega a
+    própria view_anterior/embed_anterior, o botão só devolve os dois."""
+
+    def __init__(self):
+        super().__init__(label="Voltar", style=discord.ButtonStyle.secondary, row=1)
+
+    async def callback(self, interaction):
+        v = self.view
+        await interaction.response.edit_message(embed=v.embed_anterior, view=v.view_anterior)
+
+
+def _texto_ramo(chave_ramo):
+    """Texto REAL da skill e da(s) passiva(s) de um ramo -- nome + descrição
+    de cada peça, nunca só o nome (ver decisoes.md § Step 4)."""
+    _, skill, passivas_do_ramo = mestres.descricao_ramo(chave_ramo)
+    texto_passivas = "\n".join(f"**{p['nome']}** — {p['desc']}" for p in passivas_do_ramo)
+    return f"**{skill['emoji']} {skill['nome']}** — {skill['desc']}\n{texto_passivas}"
+
+
+class BotaoEscolherRamo(discord.ui.Button):
+    def __init__(self, chave_ramo, nome_ramo):
+        super().__init__(label=nome_ramo, style=discord.ButtonStyle.primary, row=0)
+        self.chave_ramo = chave_ramo
+
+    async def callback(self, interaction):
+        v = self.view
+        view = ViewConfirmarAscensao(
+            v.autor_id, v.pronome, v.jogador, self.chave_ramo, v, interaction.message.embeds[0],
+        )
+        view.mensagem = interaction.message
+        await interaction.response.edit_message(embed=view.embed(), view=view)
+
+
+class ViewEscolhaRamo(ViewMestreBase):
+    """Mostra os 2 ou 3 ramos daquela base lado a lado (embed()) e um botão
+    por ramo -- a lista sai de ASCENSOES, então o Ladino ter 2 em vez de 3
+    acontece sozinho, sem hardcode."""
+
+    def __init__(self, autor_id, pronome, jogador, view_anterior, embed_anterior):
+        super().__init__(autor_id, pronome)
+        self.jogador = jogador
+        self.view_anterior = view_anterior
+        self.embed_anterior = embed_anterior
+        for chave, dados in mestres.ramos_da_base(jogador["classe"]).items():
+            self.add_item(BotaoEscolherRamo(chave, dados["nome"]))
+        self.add_item(BotaoVoltarMestre())
+
+    def embed(self):
+        e = discord.Embed(
+            title="Os caminhos à sua frente",
+            description="Escolha é pra sempre — dá pra comparar quantas vezes precisar antes de decidir.",
+            color=discord.Color.gold(),
+        )
+        for chave, dados in mestres.ramos_da_base(self.jogador["classe"]).items():
+            e.add_field(name=dados["nome"], value=_texto_ramo(chave), inline=False)
+        return e
+
+
+class BotaoConfirmarAscensao(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Confirmar — sem volta", style=discord.ButtonStyle.danger, row=0)
+
+    async def callback(self, interaction):
+        v = self.view
+        mestres.executar_ascensao(v.jogador["user_id"], v.chave_ramo)
+        dados = ASCENSOES[v.chave_ramo]
+        e = discord.Embed(
+            title=f"Ascensão: {dados['nome']}",
+            description=f"Está feito.\n\n{_texto_ramo(v.chave_ramo)}\n\nÉ sua — pra sempre.",
+            color=discord.Color.gold(),
+        )
+        for item in v.children:
+            item.disabled = True
+        v.stop()
+        await interaction.response.edit_message(embed=e, view=v)
+
+
+class ViewConfirmarAscensao(ViewMestreBase):
+    def __init__(self, autor_id, pronome, jogador, chave_ramo, view_anterior, embed_anterior):
+        super().__init__(autor_id, pronome)
+        self.jogador = jogador
+        self.chave_ramo = chave_ramo
+        self.view_anterior = view_anterior
+        self.embed_anterior = embed_anterior
+        self.add_item(BotaoConfirmarAscensao())
+        self.add_item(BotaoVoltarMestre())
+
+    def embed(self):
+        dados = ASCENSOES[self.chave_ramo]
+        e = discord.Embed(
+            title=f"Confirmar {dados['nome']}?",
+            description=(
+                f"{_texto_ramo(self.chave_ramo)}\n\n"
+                "**Isso não tem volta.** Escolhido, é pra sempre — sem trocar de ramo depois."
+            ),
+            color=discord.Color.gold(),
+        )
+        return e
+
+
 @bot.command(name="falar", aliases=["conversar", "talk"])
 @travas.fora_de_luta()
 async def falar(ctx, *, quem: str = ""):
@@ -1323,7 +1487,45 @@ async def falar(ctx, *, quem: str = ""):
         e = discord.Embed(description=f"*{abertura}*", color=ANDARES[j["andar"]]["cor"])
         e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
         saida = dado.get("saida") or dialogos.SAIDA_PADRAO
-        view = DialogoView(ctx.author.id, j["pronome"], opcoes, saida)
+
+        mestre_de = n.get("mestre_de")
+        oferece_ascensao = False
+        if n["dialogo"] == "arvin":
+            # rouba/devolve com QUALQUER classe, sempre -- só o texto muda
+            # se quem fala for ladino (ver decisoes.md § Step 4).
+            resultado, valor = mestres.arvin_interagir(j["user_id"])
+            if resultado == "roubou":
+                if valor <= 0:
+                    texto_arvin = "Ele passa a mão pelos seus bolsos e não acha nada. \"Da próxima eu volto.\""
+                elif j["classe"] == "ladino":
+                    texto_arvin = (
+                        f"Ele tira **{valor}** 🪙 sem você sentir a mão — nem um ladino percebeu. "
+                        "\"Relaxa, eu devolvo. Só queria ver se você notava.\""
+                    )
+                else:
+                    texto_arvin = f"Ele tira **{valor}** 🪙 do seu bolso sem esconder. \"Relaxa, eu devolvo.\""
+            else:
+                texto_arvin = f"Ele te devolve **{valor}** 🪙, exatos. \"Falei que devolvia.\""
+            e.add_field(name="🖐️ Mãos Rápidas", value=texto_arvin, inline=False)
+
+        if mestre_de:
+            if mestre_de == j["classe"]:
+                ok, motivo = mestres.pode_ascender(j)
+                if ok:
+                    oferece_ascensao = True
+                elif motivo == "nivel_baixo":
+                    e.add_field(name="Ainda não", value=mestres.TEXTO_NIVEL_BAIXO, inline=False)
+                elif motivo == "sem_orbe":
+                    e.add_field(name="Ainda não", value=mestres.TEXTO_SEM_ORBE, inline=False)
+                elif motivo == "ja_ascendeu":
+                    e.add_field(name="Já ascendeu", value=mestres.TEXTO_JA_ASCENDEU, inline=False)
+            else:
+                e.add_field(name="Não é o seu mestre", value=mestres.RECUSA_CLASSE_ERRADA[n["dialogo"]], inline=False)
+
+        if mestre_de:
+            view = ViewConversaMestre(ctx.author.id, j["pronome"], j, opcoes, saida, oferece_ascensao)
+        else:
+            view = DialogoView(ctx.author.id, j["pronome"], opcoes, saida)
         view.mensagem = await ctx.send(embed=e, view=view)
         return
 
@@ -1849,17 +2051,17 @@ def campo_ascensao(chave_base, nivel_jogador=None):
     niveis = {a["nivel"] for a in ramos}
     menor_nivel = min(niveis)
     if len(niveis) == 1:
-        titulo = f"Ascensão — nível {menor_nivel} (ainda não jogável)"
+        titulo = f"Ascensão — nível {menor_nivel}"
         valor = ", ".join(a["nome"] for a in ramos)
     else:
-        titulo = "Ascensão (ainda não jogável)"
+        titulo = "Ascensão"
         valor = "\n".join(f"{a['nome']} — nível {a['nivel']}" for a in ramos)
     if nivel_jogador is not None:
         distancia = _texto_distancia_nivel(menor_nivel, nivel_jogador)
         if distancia:
             valor += f"\nVocê está no nível {nivel_jogador} — {distancia}."
         else:
-            valor += "\nAbre quando a ascensão entrar no jogo."
+            valor += f"\nCom o Orbe de Ascensão em mãos, fale com o mestre da sua classe no andar {ANDAR_MESTRES}."
     return titulo, valor
 
 
@@ -1950,8 +2152,9 @@ async def ascencao(ctx):
     e = discord.Embed(
         title="As 4 bases e as 12 ascensões",
         description=(
-            f"{texto_nivel} A ascensão ainda não é jogável — isso é o mapa do que vem por "
-            "aí; habilidades já existem e saem em `rpg classe`."
+            f"{texto_nivel} A escolha é irreversível: fale com o mestre da sua classe no "
+            f"andar {ANDAR_MESTRES}, com o Orbe de Ascensão em mãos, pra ver os caminhos lado "
+            "a lado e escolher de verdade."
         ),
         color=0x6A4C93,
     )
@@ -1985,7 +2188,7 @@ async def ascencao(ctx):
         if distancia:
             rodape = f"Você está no nível {nivel_jogador} — {distancia} para a primeira ascensão abrir."
         else:
-            rodape = "Você já passou do nível — abre quando a ascensão entrar no jogo."
+            rodape = f"rpg dungeon (andar 9) dá o Orbe — depois é achar o mestre certo no andar {ANDAR_MESTRES}."
     else:
         rodape = "Sem personagem ainda? `rpg comecar` bota você na torre."
     e.set_footer(text=rodape)
