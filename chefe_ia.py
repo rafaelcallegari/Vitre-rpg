@@ -91,10 +91,12 @@ def com_pouco_hp(luta, jogador_id):
     return fracao_hp(luta, jogador_id) <= LIMIAR_FRACAO_HP_BAIXO
 
 
-def condicoes_no_chefe(luta):
-    """Condições ativas no chefe agora -- duração > 0, mesmo filtro que
-    condicoes.py usa nas próprias consultas."""
-    return [c for c in luta.condicoes if c["alvo"] == "chefe" and c["duracao"] > 0]
+def condicoes_no_chefe(luta, inimigo_id="chefe"):
+    """Condições ativas no inimigo `inimigo_id` agora -- duração > 0,
+    mesmo filtro que condicoes.py usa nas próprias consultas. Default
+    "chefe" -- Step A (multi-inimigo): quem chama sem o segundo
+    argumento continua olhando só pro inimigo principal, igual sempre."""
+    return [c for c in luta.condicoes if c["alvo"] == inimigo_id and c["duracao"] > 0]
 
 
 def condicoes_no_jogador(luta, jogador_id):

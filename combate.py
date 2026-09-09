@@ -719,74 +719,29 @@ class Luta:
 
     # -------- resolucao da rodada
     def turno_do_chefe(self):
-        """O chefe age uma vez por rodada, contra a party inteira — exceto
-        na rodada 1, que é só do jogador (RODADA_1_SEM_CHEFE). Chefe com
-        "elemento" (andares 11+) também rola, de forma independente do golpe
-        carregado, pra telegrafar/aplicar uma condição elemental — os dois
-        podem acontecer na mesma rodada. Corrente (chance_erro) e Curto
-        (bloqueia_skill) são as condições que a ARMA elemental do jogador
-        pode ter amarrado no chefe (qualquer andar) — ver decisoes.md §
-        Dano elemental pros pontos de consulta novos que esses dois tipos
-        precisaram aqui (os outros quatro já eram consultados em pontos que
-        já existiam)."""
+        """Cada inimigo vivo age uma vez por rodada, contra a party inteira
+        — exceto na rodada 1, que é só do jogador (RODADA_1_SEM_CHEFE).
+        Step A: o corpo que decidia a ação de UM chefe virou
+        `_turno_de_um_inimigo`, chamado uma vez por inimigo — hoje sempre
+        um só, então o resultado é idêntico ao de antes. Inimigo com
+        "elemento" (andares 11+) também rola, de forma independente do
+        golpe carregado, pra telegrafar/aplicar uma condição elemental —
+        os dois podem acontecer na mesma rodada. Corrente (chance_erro) e
+        Curto (bloqueia_skill) são as condições que a ARMA elemental do
+        jogador pode ter amarrado no inimigo (qualquer andar) — ver
+        decisoes.md § Dano elemental pros pontos de consulta novos que
+        esses dois tipos precisaram aqui (os outros quatro já eram
+        consultados em pontos que já existiam)."""
         alvos = self.ativos
         if not alvos:
             return
 
         if RODADA_1_SEM_CHEFE and self.rodada == 1:
             self.registrar(f"{self.chefe['nome']} ainda não reagiu à entrada de vocês.")
-        elif not condicoes.pode_agir(self, "chefe"):
-            self.registrar(f"{self.chefe['nome']} está sob efeito e perde a rodada.")
         else:
-            self._resolver_condicao_pendente()
-            if self.chefe.get("e_espelho"):
-                # Step 3, commit 3: os espelhos não carregam golpe nem
-                # atacam por RNG puro -- toda a lógica de carregado/
-                # ataque normal abaixo é só pra chefe da torre, e
-                # continua intocada pra eles. Ver espelhos.py.
-                espelhos.turno_do_espelho(self)
-            elif random.random() < condicoes.chance_de_erro(self, "chefe"):
-                self.registrar(f"🌬️ Corrente desvia o golpe de {self.chefe['nome']} — ele erra a rodada.")
-            elif self.carregando:
-                self.carregando = False
-                self.registrar(f"💥 **Golpe carregado** — {self.chefe['nome']} acerta todo mundo:")
-                for c in alvos:
-                    # Reflexos (mago de raio, Step 2b correção): chance
-                    # INDIVIDUAL de escapar ileso só deste golpe carregado
-                    # -- não cancela a carga, não protege os outros alvos
-                    # do laço, não vale pro ataque normal (ramo abaixo).
-                    if random.random() < passivas.chance_erro_carregado(c.jogador):
-                        self.registrar(f"⚡ {c.nome} lê o movimento e escapa do golpe carregado.")
-                        continue
-                    dano = dano_do_chefe(
-                        self.chefe, c.s, self.andar_num,
-                        defendendo=c.defendendo, carregado=True,
-                    )
-                    dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
-                    dano = max(1, int(dano * (1 - _reducao_dano_total(self, c))))
-                    dano_no_alvo = _aplicar_dano_do_chefe(self, c, dano)
-                    aparou = " (aparou)" if c.defendendo else ""
-                    self.registrar(f"· {c.nome} toma **{dano_no_alvo}**{aparou}")
-            # Curto (bloqueia_skill) só impede COMEÇAR a carregar -- um golpe
-            # já em preparo (ramo acima) resolve normal, ver decisoes.md
-            elif condicoes.pode_lancar_habilidade(self, "chefe") and random.random() < CHANCE_CARREGAR:
-                self.carregando = True
-                self.registrar(f"{self.chefe['nome']} recua e começa a se preparar.")
-            else:
-                alvo = condicoes.alvo_forcado(self) or random.choice(alvos)
-                des = alvo.s["atribs"]["destreza"]
-                if random.random() < at.chance_esquiva(des, at.destreza_monstro(self.andar_num)):
-                    self.registrar(f"{alvo.nome} esquivou do ataque.")
-                else:
-                    dano = dano_do_chefe(
-                        self.chefe, alvo.s, self.andar_num, defendendo=alvo.defendendo
-                    )
-                    dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
-                    dano = max(1, int(dano * (1 - _reducao_dano_total(self, alvo))))
-                    dano_no_alvo = _aplicar_dano_do_chefe(self, alvo, dano)
-                    self.registrar(f"{self.chefe['nome']} ataca **{alvo.nome}** — {dano_no_alvo} de dano")
-
-            self._talvez_telegrafar_condicao()
+            for inimigo in self.inimigos:
+                if inimigo.ativo:
+                    self._turno_de_um_inimigo(inimigo, alvos)
 
         for c in self.participantes:
             c.defendendo = False
@@ -796,39 +751,103 @@ class Luta:
         self.rodada += 1
         self.elementos_aplicados_rodada = set()
 
-    def _resolver_condicao_pendente(self):
-        """Aplica a condição que foi telegrafada na rodada anterior. Se o
-        alvo defendeu, a duração é cortada pela metade — é isso que faz
-        Defender virar decisão, não sorte."""
-        pend = self.preparando_condicao
+    def _turno_de_um_inimigo(self, inimigo, alvos):
+        """O turno de UM inimigo -- Step A. Usa o estado PRÓPRIO dele
+        (`inimigo.carregando`/`inimigo.preparando_condicao`/`inimigo.
+        dados`), nunca a ponte `self.chefe`/`self.carregando` -- exceto
+        onde a fronteira abaixo aponta pro inimigo PRINCIPAL de propósito
+        (o despacho pro espelho e a reflexão de Represália continuam
+        lendo/escrevendo por `self.hp_chefe`/`self.chefe`, que só
+        coincidem com ESTE `inimigo` quando ele é `self.inimigos[0]` --
+        única combinação que existe hoje, decisão registrada em
+        decisoes.md § Step A -- fronteiras não generalizadas)."""
+        if not condicoes.pode_agir(self, inimigo.id):
+            self.registrar(f"{inimigo.nome} está sob efeito e perde a rodada.")
+            return
+
+        self._resolver_condicao_pendente(inimigo)
+        if inimigo.dados.get("e_espelho"):
+            # Step 3, commit 3: os espelhos não carregam golpe nem
+            # atacam por RNG puro -- toda a lógica de carregado/
+            # ataque normal abaixo é só pra chefe da torre, e
+            # continua intocada pra eles. Ver espelhos.py.
+            espelhos.turno_do_espelho(self)
+        elif random.random() < condicoes.chance_de_erro(self, inimigo.id):
+            self.registrar(f"🌬️ Corrente desvia o golpe de {inimigo.nome} — ele erra a rodada.")
+        elif inimigo.carregando:
+            inimigo.carregando = False
+            self.registrar(f"💥 **Golpe carregado** — {inimigo.nome} acerta todo mundo:")
+            for c in alvos:
+                # Reflexos (mago de raio, Step 2b correção): chance
+                # INDIVIDUAL de escapar ileso só deste golpe carregado
+                # -- não cancela a carga, não protege os outros alvos
+                # do laço, não vale pro ataque normal (ramo abaixo).
+                if random.random() < passivas.chance_erro_carregado(c.jogador):
+                    self.registrar(f"⚡ {c.nome} lê o movimento e escapa do golpe carregado.")
+                    continue
+                dano = dano_do_chefe(
+                    inimigo.dados, c.s, self.andar_num,
+                    defendendo=c.defendendo, carregado=True,
+                )
+                dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
+                dano = max(1, int(dano * (1 - _reducao_dano_total(self, c))))
+                dano_no_alvo = _aplicar_dano_do_chefe(self, c, dano)
+                aparou = " (aparou)" if c.defendendo else ""
+                self.registrar(f"· {c.nome} toma **{dano_no_alvo}**{aparou}")
+        # Curto (bloqueia_skill) só impede COMEÇAR a carregar -- um golpe
+        # já em preparo (ramo acima) resolve normal, ver decisoes.md
+        elif condicoes.pode_lancar_habilidade(self, inimigo.id) and random.random() < CHANCE_CARREGAR:
+            inimigo.carregando = True
+            self.registrar(f"{inimigo.nome} recua e começa a se preparar.")
+        else:
+            alvo = condicoes.alvo_forcado(self, inimigo.id) or random.choice(alvos)
+            des = alvo.s["atribs"]["destreza"]
+            if random.random() < at.chance_esquiva(des, at.destreza_monstro(self.andar_num)):
+                self.registrar(f"{alvo.nome} esquivou do ataque.")
+            else:
+                dano = dano_do_chefe(
+                    inimigo.dados, alvo.s, self.andar_num, defendendo=alvo.defendendo
+                )
+                dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
+                dano = max(1, int(dano * (1 - _reducao_dano_total(self, alvo))))
+                dano_no_alvo = _aplicar_dano_do_chefe(self, alvo, dano)
+                self.registrar(f"{inimigo.nome} ataca **{alvo.nome}** — {dano_no_alvo} de dano")
+
+        self._talvez_telegrafar_condicao(inimigo)
+
+    def _resolver_condicao_pendente(self, inimigo):
+        """Aplica a condição que ESTE inimigo telegrafou na rodada
+        anterior. Se o alvo defendeu, a duração é cortada pela metade —
+        é isso que faz Defender virar decisão, não sorte."""
+        pend = inimigo.preparando_condicao
         if not pend:
             return
-        self.preparando_condicao = None
+        inimigo.preparando_condicao = None
         alvo = self.por_id(pend["alvo_id"])
         if not alvo or not alvo.ativo:
-            self.registrar(f"{pend['emoji']} O alvo de {self.chefe['nome']} já não está mais na luta.")
+            self.registrar(f"{pend['emoji']} O alvo de {inimigo.nome} já não está mais na luta.")
             return
         duracao = pend["duracao"]
         if alvo.defendendo:
             duracao = max(1, duracao // 2)
         condicoes.aplicar(
             self, alvo.id, pend["tipo"], pend["nome"], pend["emoji"],
-            duracao, pend["valor"], origem="chefe",
+            duracao, pend["valor"], origem=inimigo.id,
         )
 
-    def _talvez_telegrafar_condicao(self):
-        """Roll independente do golpe carregado — só chefes com "elemento"
-        (andares 11+) participam."""
-        elemento = self.chefe.get("elemento")
-        if not elemento or self.preparando_condicao is not None:
+    def _talvez_telegrafar_condicao(self, inimigo):
+        """Roll independente do golpe carregado — só inimigos com
+        "elemento" (andares 11+) participam."""
+        elemento = inimigo.dados.get("elemento")
+        if not elemento or inimigo.preparando_condicao is not None:
             return
         if random.random() >= CHANCE_TELEGRAFAR_CONDICAO:
             return
         dados = CONDICOES_ELEMENTO[elemento]
         alvo = random.choice(self.ativos)
-        self.preparando_condicao = {**dados, "alvo_id": alvo.id}
+        inimigo.preparando_condicao = {**dados, "alvo_id": alvo.id}
         self.registrar(
-            f"{dados['emoji']} {self.chefe['nome']} está reunindo **{dados['nome']}** contra {alvo.nome}."
+            f"{dados['emoji']} {inimigo.nome} está reunindo **{dados['nome']}** contra {alvo.nome}."
         )
 
     def verificar_fase2(self):

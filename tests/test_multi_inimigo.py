@@ -253,3 +253,66 @@ def test_alvo_de_habilidade_escolhido_pelo_jogador_acerta_quem_ele_escolheu(monk
 
     assert luta.inimigos[1].hp == hp_b_antes - 10   # só quem foi escolhido tomou dano
     assert luta.inimigos[0].hp == hp_a_antes        # o outro, intacto
+
+
+# ==================================================================
+# Commit 4 -- o turno roda por inimigo
+# ==================================================================
+
+def test_dois_inimigos_com_condicao_independente_agem_na_mesma_rodada():
+    """`condicoes.pode_agir(luta, inimigo.id)` -- travar um por pula_turno
+    não trava o outro."""
+    c = _combatente(1, classe="guerreiro", forca=20)
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    luta.rodada = 2   # pula RODADA_1_SEM_CHEFE
+    condicoes.aplicar(luta, "chefe", "pula_turno", "Atordoado", "💥", duracao=1, valor=0)
+
+    luta.turno_do_chefe()
+
+    assert any("Inimigo A" in linha and "sob efeito" in linha for linha in luta.log)
+    assert not any("Inimigo B" in linha and "sob efeito" in linha for linha in luta.log)
+
+
+def test_dois_inimigos_carregando_ao_mesmo_tempo_cada_carga_resolve_sozinha(monkeypatch):
+    """"Cada carga é de quem carregou e resolve sozinha" -- os dois
+    liberam o golpe carregado na mesma rodada, cada um contra a party
+    inteira, sem se misturar."""
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 0.99)   # nunca erra Corrente/Reflexos/crítico
+    c1 = _combatente(1, classe="guerreiro", forca=20)
+    c2 = _combatente(2, classe="guerreiro", forca=20)
+    luta = combate.Luta([c1, c2], [{**CHEFE_A, "atk": 50}, {**CHEFE_B, "atk": 30}], andar_num=1)
+    luta.rodada = 2
+    luta.inimigos[0].carregando = True
+    luta.inimigos[1].carregando = True
+    hp1_antes, hp2_antes = c1.hp, c2.hp
+
+    luta.turno_do_chefe()
+
+    assert luta.inimigos[0].carregando is False
+    assert luta.inimigos[1].carregando is False
+    # os dois golpes carregados acertaram os dois jogadores -- dano total
+    # de ambos, não só do primeiro inimigo
+    assert c1.hp < hp1_antes
+    assert c2.hp < hp2_antes
+    log = "\n".join(luta.log)
+    assert "Inimigo A" in log and "Inimigo B" in log
+
+
+def test_interrupcao_cancela_a_carga_so_do_inimigo_atacado(monkeypatch):
+    """Fronteira registrada em decisoes.md: Interrupção sempre mira
+    `luta.inimigos[0]` (a ponte "chefe") -- o mesmo que `luta.hp_chefe -=
+    dano` já atinge. Com um segundo inimigo carregando, a carga dele não
+    é afetada."""
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 1.0)
+    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    dados = game_data.HABILIDADES["interrupcao"]
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    luta.inimigos[0].carregando = True
+    luta.inimigos[1].carregando = True
+
+    combate._efeito_interrupcao(luta, c, dados)
+
+    assert luta.inimigos[0].carregando is False   # o principal, cancelado
+    assert luta.inimigos[1].carregando is True    # o segundo, intocado

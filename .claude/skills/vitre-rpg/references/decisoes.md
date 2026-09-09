@@ -7712,3 +7712,84 @@ escolhido...`); (2) fazer `_alvos_possiveis` devolver `[]` pra
 de_inimigo_escolhido...`. Em ambos os casos, exatamente os testes
 esperados caem. Suíte completa: 3 testes novos em `test_multi_inimigo.py`
 (mais os 10 dos commits 1-2), 820 passando + 1 xfail antigo.
+
+### Commit 4 — o turno roda por inimigo
+
+`turno_do_chefe` virou uma casca fina: resolve a rodada 1 (igual sempre,
+uma linha só) e, fora dela, `for inimigo in self.inimigos: if inimigo.
+ativo: self._turno_de_um_inimigo(inimigo, alvos)` -- o corpo inteiro que
+decidia a ação de "o chefe" virou `_turno_de_um_inimigo(self, inimigo,
+alvos)`, usando `inimigo.dados`/`inimigo.id`/`inimigo.carregando`/
+`inimigo.preparando_condicao` em vez da ponte `self.chefe`/`self.
+carregando`/etc. Como só existe `inimigos[0]` hoje, e ele É a ponte
+(mesma memória), o resultado é byte a byte idêntico ao de antes —
+confirmado pela suíte inteira passando sem um teste alterado, inclusive
+`test_mago_raio.py` (o mais sensível a isso: manipula `luta.carregando`/
+`luta.preparando_condicao` direto).
+
+`_resolver_condicao_pendente`/`_talvez_telegrafar_condicao` ganharam
+`inimigo` como parâmetro obrigatório (só chamados de dentro de
+`_turno_de_um_inimigo`, nenhum teste chama os dois direto) e passaram a
+ler/escrever o estado DELE, não mais da luta. `_resolver_condicao_
+pendente` também trocou `origem="chefe"` fixo por `origem=inimigo.id` --
+mesmo valor pra `inimigos[0]`, mais correto se um segundo inimigo
+telegrafar uma condição um dia.
+
+`chefe_ia.condicoes_no_chefe(luta, inimigo_id="chefe")` ganhou o mesmo
+parâmetro com default de `alvo_forcado` (commit 2) -- única função de
+`chefe_ia.py` que hardcodava "chefe"; as outras já eram genéricas por
+`jogador_id`.
+
+**Duas fronteiras que o cartão pedia pra decidir, decididas e testadas:**
+
+- **Cargas simultâneas**: "comece pelo mais simples: cada carga é de
+  quem carregou e resolve sozinha" — é exatamente o que sai de graça da
+  estrutura acima: o loop chama `_turno_de_um_inimigo` pra cada inimigo
+  vivo, em sequência, e cada um resolve o próprio golpe carregado contra
+  a party inteira de forma independente (sem tentar fundir dois
+  carregados num só, sem coordenar). Testado em `test_dois_inimigos_
+  carregando_ao_mesmo_tempo_cada_carga_resolve_sozinha`: os dois liberam
+  o golpe na mesma rodada, os dois jogadores tomam dano dos dois, e os
+  dois `carregando` voltam a `False` -- nenhum estado vazando de um
+  inimigo pro outro.
+- **Interrupção (Mago de Raio) com mais de um inimigo carregando**:
+  continua cancelando só `luta.carregando` — a ponte pro inimigo
+  PRINCIPAL (`inimigos[0]`), NUNCA generalizada pra "cancela a carga de
+  qualquer inimigo". Decisão: é o mesmo inimigo que `luta.hp_chefe -=
+  dano`, na mesma função, já atinge — Interrupção sempre interrompe quem
+  ela também danifica, nunca um terceiro. Zero mudança em `_efeito_
+  interrupcao` (não sabia nada sobre inimigo além do principal antes, e
+  continua assim); testado em `test_interrupcao_cancela_a_carga_so_do_
+  inimigo_atacado` com um segundo inimigo carregando ao lado — a carga
+  dele fica intocada.
+
+**Fronteiras que ficaram DE PROPÓSITO na ponte pro principal, sem
+generalizar** (documentado aqui pra não virar bug silencioso quando
+alguém adicionar conteúdo multi-inimigo de verdade, mesmo aviso que o
+cartão deu pra escala de HP no commit 1): o despacho pro espelho
+(`inimigo.dados.get("e_espelho")` só é checado pra cada inimigo da vez,
+mas `espelhos.turno_do_espelho(self)` em si só sabe operar em `self.
+chefe`/`self.hp_chefe`, ou seja, só funciona certo quando quem chamou é
+`inimigos[0]` — verdade hoje, sempre) e a reflexão de Represália
+(`_refletir_se_paladino` devolve dano SEMPRE pra `luta.hp_chefe`,
+independente de qual inimigo causou o dano original). As duas só
+importam quando uma carta futura puser um espelho ou um paladino lutando
+contra um SEGUNDO inimigo de verdade — nenhuma hoje.
+
+Validado revertendo, um de cada vez: (1) trocar `condicoes.pode_agir(self,
+inimigo.id)` por `condicoes.pode_agir(self, "chefe")` fixo em
+`_turno_de_um_inimigo` — cai só `test_dois_inimigos_com_condicao_
+independente_agem_na_mesma_rodada`; (2) trocar `inimigo.carregando` por
+`self.carregando` (a ponte) nos dois pontos do ramo de golpe carregado —
+cai só `test_dois_inimigos_carregando_ao_mesmo_tempo_cada_carga_resolve_
+sozinha`. Em ambos os casos, exatamente o teste esperado cai, e a suíte
+inteira (testes antigos inclusive) continua verde. Suíte completa: 3
+testes novos em `test_multi_inimigo.py` (mais os 13 dos commits 1-3), 823
+passando + 1 xfail antigo — o total do cartão inteiro.
+
+## DoD do Step A
+
+Suíte verde sem nenhum teste alterado (807 → 823, só crescimento) ·
+decisoes.md com a decisão sobre escala de HP (commit 1) e sobre carga
+simultânea + fronteiras não generalizadas (commit 4) · push. Sem deploy
+— faz parte do pacote 0.4, que sobe inteiro no fim do próximo step.
