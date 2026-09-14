@@ -880,14 +880,16 @@ async def recompensar(luta, combatente):
     `chefes_derrotados` por jogador em vez da chance fixa do dict: 100% na
     primeira vitória da conta contra aquele chefe, 15% nas repetições —
     senão entrar só de ajuda (ou morrer de propósito) virava o jeito mais
-    eficiente de farmar material (ver decisoes.md). Derrotar o chefe do
-    andar 15 é roguelike: reseta andar/andar_max pro 10 pra todo mundo que
-    recebe, igual à morte lá em cima. `chefes_derrotados` NÃO reseta em
-    nenhum dos dois casos — os 100% de chance são únicos na vida da conta,
-    por chefe; sem isso os 15% de repetição nunca seriam alcançados (ver
-    decisoes.md § Roguelike acima do Selo)."""
+    eficiente de farmar material (ver decisoes.md). Morte acima do andar
+    10 continua resetando andar/andar_max pro 10 (processar_morte, bot.py)
+    -- só a VITÓRIA no andar 15 parou de fazer isso (Step B): o jogador
+    fica parado lá em cima, e a porta atrás do trono (ver
+    `_talvez_oferecer_porta`) é quem decide se ele desce (`rpg viajar`,
+    livre) ou atravessa. `chefes_derrotados` não reseta nunca -- os 100%
+    de chance são únicos na vida da conta, por chefe; sem isso os 15% de
+    repetição nunca seriam alcançados (ver decisoes.md § Roguelike acima
+    do Selo)."""
     j, s, chefe = combatente.jogador, combatente.s, luta.chefe
-    completou_torre = luta.andar_num == ANDAR_MAXIMO
 
     itens_dropados = []
     if luta.andar_num > ANDAR_ACIMA_DO_SELO:
@@ -910,12 +912,8 @@ async def recompensar(luta, combatente):
     nivel, xp, subiu = H["aplicar_xp"](j, xp_ganho)
     hp_cheio = at.hp_maximo(nivel, s["atribs"]["constituicao"])
 
-    if completou_torre:
-        novo_andar = ANDAR_ACIMA_DO_SELO
-        novo_max = ANDAR_ACIMA_DO_SELO
-    else:
-        novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
-        novo_max = max(j["andar_max"], novo_andar)
+    novo_andar = min(luta.andar_num + 1, ANDAR_MAXIMO)
+    novo_max = max(j["andar_max"], novo_andar)
 
     await db.a_atualizar_jogador(
         j["user_id"], hp=hp_cheio, mana=s["mana_max"], xp=xp, nivel=nivel,
@@ -1008,9 +1006,8 @@ async def finalizar_vitoria(luta):
             value=(
                 f"Vocês bateram o último andar. A torre guarda cada chefe que já caiu — não é "
                 f"a primeira vez pra nenhum deles, então o material de todos agora cai na "
-                f"chance baixa, não garantido. O que ela não guarda é onde vocês pararam: quem "
-                f"estava na luta volta pro andar {ANDAR_ACIMA_DO_SELO}. Pra tentar de novo, "
-                f"começa pelo `rpg viajar {ANDAR_ACIMA_DO_SELO + 1}`."
+                f"chance baixa, não garantido. Atrás do trono vazio, uma porta que não estava "
+                f"lá antes."
             ),
             inline=False,
         )
@@ -1027,6 +1024,114 @@ async def finalizar_vitoria(luta):
                 inline=False,
             )
     return e
+
+
+# ---------------------------------------------------------- a porta (Step B)
+# Fala da Guia, só na PRIMEIRA vitória de cada jogador contra o chefe do
+# andar 15 (`db.vezes_derrotado_chefe` -- ver decisoes.md § Step B, "o
+# gatilho é ter vencido, não estar vencendo"). Ela era escudeira do Herói;
+# ele saiu por aquela porta e não voltou -- ver andares_altos.
+# FALA_SOBRE_VOCE[7] pro resto da história.
+TEXTO_PLEA_GUIA = (
+    "Ela já está ali quando a poeira do chefe assenta — não subiu correndo, estava esperando. "
+    "\"Não vou pedir bonito dessa vez. Eu subi a torre inteira só pra chegar antes de alguém "
+    "abrir essa porta de novo.\"\n\n"
+    "\"Ele passou por ali achando que voltava. Eu fiquei esperando do lado de fora porque foi "
+    "o que ele pediu — a única ordem dele que cumpri até o fim. Ainda estou esperando.\"\n\n"
+    "\"Fica. Não custa nada ficar.\""
+)
+
+
+class BotaoEscolhaPorta(discord.ui.Button):
+    """Um par (Ficar/Sair) por vencedor -- botão em View compartilhada
+    precisa de estado por jogador (mesma lição da Mortalha, ver
+    decisoes.md § Step B): só o dono do par pode clicar, e clicar só
+    desabilita OS DOIS BOTÕES DELE, nunca a view inteira -- o resto da
+    party continua livre pra escolher, mesmo depois."""
+
+    def __init__(self, vencedor_id, nome, sair):
+        estilo = discord.ButtonStyle.primary if sair else discord.ButtonStyle.secondary
+        label = f"Sair — {nome}" if sair else f"Ficar — {nome}"
+        super().__init__(label=label, style=estilo)
+        self.vencedor_id = vencedor_id
+        self.sair = sair
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.vencedor_id:
+            await interaction.response.send_message("Essa escolha não é sua.", ephemeral=True)
+            return
+        if self.sair:
+            mundo.sair_pela_porta(self.vencedor_id)
+            texto = "Você atravessa a porta. O ar muda antes mesmo de você terminar o passo."
+        else:
+            mundo.ficar_na_torre(self.vencedor_id)
+            texto = f"Você dá as costas pra porta e desce. De volta ao andar {ANDAR_ACIMA_DO_SELO}."
+        for item in self.view.children:
+            if getattr(item, "vencedor_id", None) == self.vencedor_id:
+                item.disabled = True
+        await interaction.response.edit_message(view=self.view)
+        await interaction.followup.send(texto, ephemeral=True)
+
+
+class ViewEscolhaPorta(discord.ui.View):
+    """Um par de botões por jogador -- cada um escolhe por si, mesmo tendo
+    matado o chefe em party (ver decisoes.md § Step B). Timeout comprido
+    (é decisão narrativa, não rodada de combate); ninguém escolher não
+    trava nada -- dá pra decidir depois, `rpg falar` na porta (ver
+    npcs.py, "porta": True -- reaproveita esta mesma view fora de
+    qualquer luta, só com um jogador)."""
+
+    def __init__(self, jogadores):
+        """`jogadores`: lista de (user_id, nome) -- não precisa ser
+        Combatente/luta de verdade."""
+        super().__init__(timeout=300)
+        self.mensagem = None
+        for user_id, nome in jogadores:
+            self.add_item(BotaoEscolhaPorta(user_id, nome, sair=False))
+            self.add_item(BotaoEscolhaPorta(user_id, nome, sair=True))
+
+    async def on_timeout(self):
+        if self.mensagem is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        await self.mensagem.edit(view=self)
+
+
+async def _talvez_oferecer_porta(luta, enviar):
+    """Depois de vencer o chefe do andar 15 (nunca antes -- só chamada
+    quando a luta já terminou em vitória de verdade), cada vencedor
+    escolhe: ficar (desce pro andar 10, o mesmo destino que a vitória
+    fazia sozinha antes deste cartão) ou sair pela porta atrás do trono.
+    `enviar` é quem manda a mensagem nova -- `interaction.followup.send`
+    (clique) ou `self.mensagem.channel.send` (timeout, sem interaction).
+    Nunca dispara em raide (andar de referência 7) nem no espelho da
+    dungeon (andar 9) -- os dois ficam abaixo do andar 15 sempre."""
+    if luta.andar_num != ANDAR_MAXIMO or luta.inimigos_ativos:
+        return
+    vencedores = [c for c in luta.participantes if not (c.fugiu or c.saiu)]
+    if not vencedores:
+        return
+
+    primeiros = []
+    for c in vencedores:
+        vezes = await db.a_vezes_derrotado_chefe(c.id, ANDAR_MAXIMO)
+        if vezes == 1:
+            primeiros.append(c.nome)
+
+    e = discord.Embed(
+        title="Atrás do trono, uma porta",
+        description=(
+            "O trono está vazio, como sempre esteve. A porta que não devia estar ali "
+            "continua ali. Cada um decide por si."
+        ),
+        color=discord.Color.dark_gold(),
+    )
+    for nome in primeiros:
+        e.add_field(name=f"🕯️ A Guia detém {nome}", value=TEXTO_PLEA_GUIA, inline=False)
+
+    view = ViewEscolhaPorta([(c.id, c.nome) for c in vencedores])
+    view.mensagem = await enviar(embed=e, view=view)
 
 
 async def finalizar_derrota(luta):
@@ -1911,6 +2016,7 @@ class PainelLuta(discord.ui.View):
         self.travar()
         travas.destravar_todos([c.id for c in self.luta.participantes])
         await responder(interaction, embed, self)
+        await _talvez_oferecer_porta(self.luta, interaction.followup.send)
 
     def _continuar(self, luta):
         """Painel novo pra quando sobra gente depois de um timeout — método
@@ -2108,6 +2214,7 @@ class PainelLuta(discord.ui.View):
         self.travar()
         travas.destravar_todos([c.id for c in luta.participantes])
         await self.mensagem.edit(embed=embed, view=self)
+        await _talvez_oferecer_porta(luta, self.mensagem.channel.send)
 
 
 # ------------------------------------------------------------ sala de espera

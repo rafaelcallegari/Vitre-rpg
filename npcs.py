@@ -216,6 +216,15 @@ NPCS = {
     15: [
         {"nome": "A Guia", "titulo": "", "tipo": "guia",
          "fala": "Essa cadeira não é sua. Não é de ninguém. Senta lá embaixo, onde as coisas ainda cabem."},
+        # A porta atrás do trono (Step B, commit 2) -- "porta": True é o
+        # marcador que bot.falar() usa pra desviar do fluxo comum de
+        # conversa. Só responde de verdade (abre a escolha Ficar/Sair)
+        # pra quem já venceu o chefe do andar 15 alguma vez
+        # (db.vezes_derrotado_chefe) -- pra todo o resto, é só a fala
+        # abaixo, via DialogoView normal. Ver decisoes.md § Step B.
+        {"nome": "A Porta", "titulo": "atrás do trono", "tipo": "conversa", "dialogo": "porta_do_trono",
+         "porta": True,
+         "fala": "Madeira escura, num vão que não devia existir atrás do trono. Ela não se abre, não importa o quanto você empurre."},
     ],
 }
 

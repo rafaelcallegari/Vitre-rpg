@@ -84,7 +84,7 @@ def test_opcoes_por_estado_soma_conforme_o_estado_da_quest(monkeypatch):
 
 
 def test_todo_npc_conversa_tem_chave_de_dialogo_valida():
-    assert len(NPCS_CONVERSA) == 12   # +3 do Step 4: augustiel, merlin, arvin
+    assert len(NPCS_CONVERSA) == 13   # +3 do Step 4 (augustiel, merlin, arvin) +1 do Step B (a porta)
     for n in NPCS_CONVERSA:
         assert "dialogo" in n, f"{n['nome']} é tipo conversa mas não tem campo 'dialogo'"
         assert n["dialogo"] in dialogos.DIALOGOS, f"{n['nome']} aponta pra uma chave inexistente"

@@ -120,6 +120,22 @@ DIALOGOS = {
         ],
         "saida": "Ele sorri e enfia as mãos nos bolsos — os dele, dessa vez.",
     },
+    # A porta atrás do trono (andar 15, Step B) -- este diálogo só aparece
+    # pra quem NUNCA venceu o chefe do andar 15 (npcs.py: "porta": True,
+    # bot.falar() desvia quem já venceu pro fluxo de escolha Ficar/Sair).
+    "porta_do_trono": {
+        "abertura": (
+            "Madeira escura, num vão que não devia existir atrás do trono. "
+            "Ela não se abre, não importa o quanto você empurre."
+        ),
+        "opcoes": [
+            {"label": "Encostar o ouvido na porta",
+             "resposta": "(Nada. Nem vento, nem passo, nem silêncio de verdade — só a ausência de qualquer som, o que é pior.)"},
+            {"label": "Procurar uma fechadura",
+             "resposta": "Não tem. Não tem dobradiça, nem maçaneta, nem fresta. Só existe o suficiente pra ser uma porta."},
+        ],
+        "saida": "Você desiste de empurrar. Ela nunca ia ceder pra quem não tem o direito ainda.",
+    },
     "corista": {
         "abertura": "(Ela move os lábios. O som chega três segundos depois, de outro lugar.)",
         "opcoes": [

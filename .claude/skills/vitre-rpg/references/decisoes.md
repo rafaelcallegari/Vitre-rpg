@@ -7847,3 +7847,67 @@ propósito —, `test_dungeon_recusa_fora_da_torre`,
 `test_npcs_recusa_fora_da_torre`, `test_falar_recusa_fora_da_torre`), e
 nenhum teste antigo se move. Suíte completa: 12 testes novos em
 `test_mundo.py`, 835 passando + 1 xfail antigo.
+
+### Commit 2 — a porta e a Guia
+
+**A regra que morria era mecânica, não só texto do Guia** — confirmado
+lendo `combate.recompensar`: `completou_torre` forçava
+`andar = andar_max = ANDAR_ACIMA_DO_SELO` pra todo vencedor, incondicional,
+todo kill do chefe 15. Removida — a fórmula do ramo normal
+(`novo_andar = min(andar_num + 1, ANDAR_MAXIMO)`) já dá o resultado certo
+sozinha pro andar 15 (fica em 15, `andar_max` também) assim que o `if`
+especial sai, sem precisar de nenhuma lógica nova ali. Morte acima do
+andar 10 continua resetando pro 10 (`bot.processar_morte`) — intocado,
+só a VITÓRIA parou de forçar.
+
+**O gatilho é `db.vezes_derrotado_chefe`, não campo novo** — exatamente
+o que o cartão pediu pra conferir antes de inventar. `recompensar()` já
+registra a vitória ali (100%/15% de material); "primeira vez" é só
+`vezes == 1` no MESMO instante em que `_talvez_oferecer_porta` roda
+(depois de `recompensar` já ter incrementado) — "ter vencido", nunca
+"estar vencendo": um jogador que venceu antes e só está revisitando o
+andar 15 sem lutar de novo tem `vezes > 0` do mesmo jeito.
+
+**Dois caminhos pra mesma escolha, uma `ViewEscolhaPorta` só.** Logo
+depois da vitória, `combate._talvez_oferecer_porta` manda uma mensagem
+nova (não reaproveita a mensagem da luta — o Discord só permite uma View
+por mensagem, e a final da luta já usa a dela pra mostrar os botões de
+combate desabilitados) com um par Ficar/Sair por vencedor — SEMPRE, não
+só na primeira vez; só a fala da Guia (`TEXTO_PLEA_GUIA`) é que aparece
+uma vez só, como field extra por jogador que acabou de vencer pela
+PRIMEIRA vez. Separadamente, "A Porta" (NPC novo em `npcs.NPCS[15]`,
+`"porta": True`) deixa qualquer jogador com `vezes_derrotado_chefe > 0`
+reabrir a MESMA escolha via `rpg falar porta`, sem lutar de novo e sem a
+fala da Guia (ela só fala uma vez, na cena — depois é só passagem). Quem
+nunca venceu esbarra num diálogo comum (flavor-only, `dialogos.py`
+`"porta_do_trono"`) — a porta existe pra todo mundo ver, só não abre.
+`ViewEscolhaPorta` recebe `[(user_id, nome), ...]` em vez de Combatente
+de luta de propósito — o mesmo código atende a vitória em party (N
+pares) e a conversa solo com a porta (1 par), sem duplicar nada.
+
+**A lição da Mortalha, aplicada de novo**: cada `BotaoEscolhaPorta`
+carrega o próprio `vencedor_id`; o callback só desabilita os itens da
+View cujo `vencedor_id` bate com quem clicou — nunca `self.view.stop()`
+nem "desabilita tudo". Numa vitória em party, um jogador escolhendo
+Ficar não trava a escolha de quem ainda não decidiu; a party pode se
+separar ali, exatamente como o cartão pediu.
+
+**"Ficar" grava exatamente o que a vitória fazia sozinha antes** —
+`mundo.ficar_na_torre` seta `andar = andar_max = ANDAR_ACIMA_DO_SELO`,
+byte a byte o mesmo destino do reset removido, só que agora por escolha.
+**"Sair"** (`mundo.sair_pela_porta`) só troca `mundo` pra `"fora"` —
+`andar`/`andar_max` ficam como estavam (sempre 15, já que a vitória não
+força mais nada) — é pra onde a escada (commit 3) devolve.
+
+Validado revertendo, um de cada vez: (1) devolver o `if completou_torre`
+em `recompensar` — cai só `test_vencer_o_15_nao_reseta_fica_no_proprio_
+andar`; (2) tirar o `andar_num != ANDAR_MAXIMO` de `_talvez_oferecer_
+porta` — cai só `test_nao_oferece_porta_fora_do_andar_15`; (3) desabilitar
+TODOS os botões da view em vez de só os do `vencedor_id` — cai só
+`test_escolha_de_um_vencedor_nao_desabilita_o_par_do_outro` (a mesma
+lição da Mortalha, provada quebrando); (4) tirar o gate de
+`vezes_derrotado_chefe > 0` em `rpg falar porta` — cai só
+`test_falar_na_porta_sem_nunca_ter_vencido_e_so_flavor`. Em todos os
+casos, exatamente o teste esperado cai, e o resto da suíte (testes
+antigos inclusive) continua verde. Suíte completa: 13 testes novos em
+`test_porta_do_trono.py`, 848 passando + 1 xfail antigo.

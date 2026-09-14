@@ -7,9 +7,10 @@
 # saiu -- deixa de significar "onde o jogador está" e vira só "pra onde a
 # escada devolve" (ver decisoes.md § Step B).
 #
-# Função pura, sem discord/database no topo -- mesmo padrão de
-# andares_altos.py -- qualquer módulo (bot.py, combate.py, dungeon.py)
-# importa sem risco de ciclo.
+# Função pura, sem discord no topo -- qualquer módulo (bot.py, combate.py,
+# dungeon.py) importa sem risco de ciclo.
+import database as db
+from andares_altos import ANDAR_ACIMA_DO_SELO
 
 TORRE = "torre"
 FORA = "fora"   # o alto da torre, do lado de fora da porta -- step C acrescenta o vilarejo
@@ -35,3 +36,18 @@ async def exigir_torre(ctx, jogador):
         return True
     await ctx.send(MENSAGEM_FORA_DA_TORRE)
     return False
+
+
+# ---------------- a porta atrás do trono (Step B, commit 2) ----------------
+def ficar_na_torre(user_id):
+    """Escolha "Ficar" -- exatamente o reset que a vitória do andar 15
+    fazia sozinha antes deste cartão (ver combate.recompensar), só que
+    agora é decisão do jogador, não automático."""
+    db.atualizar_jogador(user_id, andar=ANDAR_ACIMA_DO_SELO, andar_max=ANDAR_ACIMA_DO_SELO)
+
+
+def sair_pela_porta(user_id):
+    """Escolha "Sair" -- `andar`/`andar_max` ficam exatamente como
+    estavam (sempre 15, a vitória contra o chefe do topo já deixou eles
+    lá) -- é pra onde a escada (commit 3) devolve."""
+    db.atualizar_jogador(user_id, mundo=FORA)

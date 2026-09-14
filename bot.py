@@ -1489,6 +1489,22 @@ async def falar(ctx, *, quem: str = ""):
         view.mensagem = await ctx.send(embed=e, view=view)
         return
 
+    if n.get("porta"):
+        # a porta atrás do trono (Step B) -- só responde de verdade pra
+        # quem já venceu o chefe do andar 15 alguma vez; "ter vencido, não
+        # estar vencendo" (decisoes.md § Step B) -- não exige rematar.
+        # Sem nunca ter vencido, cai no fluxo comum abaixo (flavor-only,
+        # dialogos.py "porta_do_trono").
+        if db.vezes_derrotado_chefe(j["user_id"], ANDAR_MAXIMO) > 0:
+            e = discord.Embed(
+                title="A porta cede",
+                description="Ela sempre esteve destrancada pra você — só nunca tinha pedido.",
+                color=discord.Color.dark_gold(),
+            )
+            view = combate.ViewEscolhaPorta([(j["user_id"], j["nome"])])
+            view.mensagem = await ctx.send(embed=e, view=view)
+            return
+
     if n["tipo"] == "conversa" and n.get("dialogo"):
         dado = dialogos.DIALOGOS[n["dialogo"]]
         opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
