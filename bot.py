@@ -911,12 +911,42 @@ def aviso_flor_do_andar_1(user_id, andar_atual):
     return "Tem uma flor diferente aqui. `rpg colher`."
 
 
+async def _viajar_fora(ctx, j, destino):
+    """`rpg viajar` do lado de fora -- Step B, commit 3. Só existe um
+    lugar lá fora por enquanto (o Mirante); a única transição de verdade
+    é a escada, de volta pro andar 15, sempre de graça -- sem ela o
+    jogador fica preso (ver decisoes.md § Step B). As três cidades da
+    vista não são destino nenhum ainda -- isso é step F."""
+    if not destino:
+        e = discord.Embed(
+            title=mundo.TITULO_MIRANTE, description=mundo.DESCRICAO_MIRANTE, color=0x87CEEB,
+        )
+        e.set_footer(text="rpg viajar 15 — sobe de volta pra torre, sempre de graça.")
+        await ctx.send(embed=e)
+        return
+    if destino != 15:
+        await ctx.send(
+            "Só dá pra ver as cidades daqui — ainda não tem como chegar lá. "
+            "`rpg viajar 15` sobe a escada de volta pra torre."
+        )
+        return
+    mundo.subir_a_escada(j["user_id"])
+    a = ANDARES[15]
+    e = discord.Embed(title=f"Andar {15} — {a['nome']}", description=a["descricao"], color=a["cor"])
+    e.set_footer(text="A escada sobe de volta — de graça, sempre.")
+    await ctx.send(embed=e)
+
+
 @bot.command(name="viajar", aliases=["ir", "travel"])
 @travas.fora_de_luta()
 @travas.fora_de_dungeon()
 async def viajar(ctx, destino: int = 0):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+
+    if not mundo.na_torre(j):
+        await _viajar_fora(ctx, j, destino)
         return
 
     ativa, parte_em = carroca_ativa()

@@ -7911,3 +7911,56 @@ lição da Mortalha, provada quebrando); (4) tirar o gate de
 casos, exatamente o teste esperado cai, e o resto da suíte (testes
 antigos inclusive) continua verde. Suíte completa: 13 testes novos em
 `test_porta_do_trono.py`, 848 passando + 1 xfail antigo.
+
+### Commit 3 — o mirante, a escada e o `rpg viajar` bimundo
+
+**Só um lugar existe do lado de fora por enquanto** — o Mirante, sem
+nome de destino nenhum pra viajar (as três cidades são só paisagem, step
+F é quem constrói de verdade). Por isso `mundo.py` não precisou de
+nenhum campo novo de "onde exatamente fora" — `mundo == FORA` já é
+suficiente pra saber que o jogador está lá, porque não tem outro lugar
+lá fora ainda pra confundir.
+
+**`rpg viajar` vira um roteador de dois mundos, sem tocar no corpo do
+caminho da torre.** `mundo.na_torre(j)` decide logo no topo do comando:
+dentro da torre, cai direto no código de sempre (zero linha mudada);
+fora, desvia pra `_viajar_fora` (função nova), que entende só dois
+casos: sem destino (mostra o Mirante — sol, nuvens, montanhas, as três
+cidades ao longe, a escada) e `destino == 15` (sobe a escada, `mundo.
+subir_a_escada` — só troca `mundo` pra `TORRE`, nunca mexe em
+`andar`/`andar_max`, que já são 15 desde que o jogador saiu). Qualquer
+outro destino numérico recusa em personagem ("só dá pra ver as cidades
+daqui").
+
+**`andar` sobrevive à ida e volta por construção, não por código
+extra** — como a vitória do commit 2 já para de resetar `andar`/
+`andar_max` na saída, e a escada do commit 3 só toca `mundo` (nunca
+`andar`), o valor congelado em 15 atravessa o ciclo inteiro sozinho. Não
+precisou nenhuma lógica de "lembrar de onde saiu" — já estava lá.
+
+A porta (commit 2) ganhou a MESMA descrição do Mirante na escolha
+"Sair" — antes um texto genérico de uma linha, agora o embed completo
+(`mundo.TITULO_MIRANTE`/`DESCRICAO_MIRANTE`, texto puro sem discord no
+módulo — `mundo.py` continua sem import de discord; quem monta o embed
+é sempre quem chama), pra atravessar a porta e olhar pela primeira vez
+mostrarem exatamente a mesma coisa.
+
+Validado revertendo, um de cada vez: (1) desligar o `if not mundo.
+na_torre(j)` no topo de `viajar()` — caem os três testes de `_viajar_
+fora` (mostrar Mirante, subir a escada, recusar cidade) de uma vez, o
+resto da suíte intacto; (2) tirar a checagem `destino != 15` de
+`_viajar_fora` — cai só `test_viajar_outro_destino_fora_recusa_as_
+cidades_ainda_nao_existem`. Migração validada contra uma cópia real do
+`aincrad.db` (14 jogadores de produção): `mundo` aparece uma vez só, a
+segunda passada de `init_db()` fica muda, e os 14 continuam com
+`mundo="torre"`. Suíte completa: 4 testes novos em `test_mundo.py`
+(commit 1 e 3 no mesmo arquivo), 852 passando + 1 xfail antigo.
+
+## DoD do Step B
+
+Suíte verde (807 → 852) · `decisoes.md` com o estado de mundo (commit
+1), a regra da porta livre — "ter vencido, não estar vencendo" — e o
+fim do reset automático do andar 15 (commit 2), e o mirante/escada
+bimundo (commit 3) · migração validada contra os 14 jogadores reais ·
+push · sem deploy — Step B faz parte do pacote 0.4, que sobe inteiro no
+fim do step C.

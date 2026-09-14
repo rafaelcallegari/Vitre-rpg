@@ -140,3 +140,46 @@ def test_dungeon_recusa_fora_da_torre():
     asyncio.run(dungeon._executar_entrar_ou_continuar(ctx, db.get_jogador(1)))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
     assert dungeon.obter_run(1) is None   # não criou run nenhuma
+
+
+# ==================================================================
+# commit 3 -- o mirante, a escada e o `rpg viajar` bimundo
+# ==================================================================
+
+def test_viajar_fora_sem_destino_mostra_o_mirante():
+    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=0))
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert embed.title == mundo.TITULO_MIRANTE
+    assert "escada" in embed.description.lower()
+    assert db.get_jogador(1)["mundo"] == "fora"   # só olhou, não viajou
+
+
+def test_viajar_15_fora_sobe_a_escada_de_volta_pra_torre():
+    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=15))
+    depois = db.get_jogador(1)
+    assert depois["mundo"] == "torre"
+    assert depois["andar"] == 15        # o andar de antes sobrevive à ida e volta
+    assert depois["andar_max"] == 15
+
+
+def test_viajar_outro_destino_fora_recusa_as_cidades_ainda_nao_existem():
+    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=3))
+    assert db.get_jogador(1)["mundo"] == "fora"   # continua fora -- não viajou
+    assert "cidades" in _msg(ctx).lower()
+
+
+def test_viajar_dentro_da_torre_continua_igual_regressao(monkeypatch):
+    """O jogador dentro da torre não pode sentir nada do Step B -- viajar
+    numérico comum continua funcionando exatamente como sempre."""
+    _jogador(1, andar=1, andar_max=5, moedas=10000)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=3))
+    depois = db.get_jogador(1)
+    assert depois["andar"] == 3
+    assert depois["mundo"] == "torre"

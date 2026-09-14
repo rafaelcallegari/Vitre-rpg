@@ -1060,17 +1060,22 @@ class BotaoEscolhaPorta(discord.ui.Button):
         if interaction.user.id != self.vencedor_id:
             await interaction.response.send_message("Essa escolha não é sua.", ephemeral=True)
             return
-        if self.sair:
-            mundo.sair_pela_porta(self.vencedor_id)
-            texto = "Você atravessa a porta. O ar muda antes mesmo de você terminar o passo."
-        else:
-            mundo.ficar_na_torre(self.vencedor_id)
-            texto = f"Você dá as costas pra porta e desce. De volta ao andar {ANDAR_ACIMA_DO_SELO}."
         for item in self.view.children:
             if getattr(item, "vencedor_id", None) == self.vencedor_id:
                 item.disabled = True
         await interaction.response.edit_message(view=self.view)
-        await interaction.followup.send(texto, ephemeral=True)
+        if self.sair:
+            mundo.sair_pela_porta(self.vencedor_id)
+            e = discord.Embed(
+                title=mundo.TITULO_MIRANTE, description=mundo.DESCRICAO_MIRANTE,
+                color=discord.Color.blue(),
+            )
+            e.set_footer(text="`rpg viajar 15` sobe de volta pra torre, sempre de graça.")
+            await interaction.followup.send(embed=e, ephemeral=True)
+        else:
+            mundo.ficar_na_torre(self.vencedor_id)
+            texto = f"Você dá as costas pra porta e desce. De volta ao andar {ANDAR_ACIMA_DO_SELO}."
+            await interaction.followup.send(texto, ephemeral=True)
 
 
 class ViewEscolhaPorta(discord.ui.View):

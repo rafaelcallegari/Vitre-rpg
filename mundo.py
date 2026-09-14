@@ -22,7 +22,7 @@ def na_torre(jogador):
 
 MENSAGEM_FORA_DA_TORRE = (
     "Você não está na torre agora — ficou pra trás, do outro lado da porta. "
-    "Não tem caçada, chefe, dungeon nem ninguém de lá daqui. A escada desce de volta quando quiser."
+    "Não tem caçada, chefe, dungeon nem ninguém de lá daqui. `rpg viajar 15` sobe a escada de volta."
 )
 
 
@@ -49,5 +49,26 @@ def ficar_na_torre(user_id):
 def sair_pela_porta(user_id):
     """Escolha "Sair" -- `andar`/`andar_max` ficam exatamente como
     estavam (sempre 15, a vitória contra o chefe do topo já deixou eles
-    lá) -- é pra onde a escada (commit 3) devolve."""
+    lá) -- é pra onde a escada devolve (commit 3)."""
     db.atualizar_jogador(user_id, mundo=FORA)
+
+
+def subir_a_escada(user_id):
+    """A escada sobe de volta pro andar 15, sempre de graça -- sem ela o
+    jogador fica preso do lado de fora pra sempre. `andar`/`andar_max` já
+    são 15 (congelados desde que saiu), só `mundo` volta pra TORRE."""
+    db.atualizar_jogador(user_id, mundo=TORRE)
+
+
+# ---------------- o mirante (Step B, commit 3) ----------------
+# Só isto existe do lado de fora por enquanto -- um único lugar, sem nome
+# de destino nenhum pra viajar (as "três cidades" são só paisagem; step F
+# é quem constrói elas de verdade). Texto puro aqui, sem discord.Embed --
+# quem chama (bot.py, combate.py) monta o embed com a cor/rodapé que
+# fizer sentido pro próprio contexto.
+TITULO_MIRANTE = "O Mirante"
+DESCRICAO_MIRANTE = (
+    "Sol, nuvens, montanhas verdejantes até onde a vista alcança. Ao longe, três "
+    "cidades — perto demais pra ignorar, longe demais pra chegar a pé. Uma escada "
+    "desce logo atrás de você."
+)
