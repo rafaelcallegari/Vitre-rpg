@@ -22,6 +22,7 @@ import atributos as at
 import combate
 import database as db
 import game_data
+import mundo
 import passivas
 
 H = {}
@@ -653,6 +654,8 @@ class _BotaoEvento(discord.ui.Button):
 # ------------------------------------------------------------- comando
 
 async def _executar_entrar_ou_continuar(ctx, j):
+    if not await mundo.exigir_torre(ctx, j):
+        return
     run = obter_run(j["user_id"])
     if run is None:
         if j["andar"] != 9:

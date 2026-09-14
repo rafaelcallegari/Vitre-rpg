@@ -19,6 +19,7 @@ import despertar
 import dialogos
 import habilidades as hab
 import mestres
+import mundo
 import paginacao
 import passivas
 import pronomes
@@ -725,6 +726,8 @@ async def cacar(ctx):
     j = await pegar_jogador(ctx)
     if not j:
         return
+    if not await mundo.exigir_torre(ctx, j):
+        return
     if await bloqueado_por_cooldown(ctx, "cacar", COOLDOWN_CACAR):
         return
 
@@ -785,6 +788,8 @@ async def cacar(ctx):
 async def explorar(ctx):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+    if not await mundo.exigir_torre(ctx, j):
         return
     if await bloqueado_por_cooldown(ctx, "explorar", COOLDOWN_EXPLORAR):
         return
@@ -1053,6 +1058,8 @@ async def colher(ctx):
 async def listar_npcs(ctx):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+    if not await mundo.exigir_torre(ctx, j):
         return
     pessoas = npcs_do_andar(j["andar"])
     if not pessoas:
@@ -1446,6 +1453,8 @@ class ViewConfirmarAscensao(ViewMestreBase):
 async def falar(ctx, *, quem: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
+        return
+    if not await mundo.exigir_torre(ctx, j):
         return
     n = encontrar_npc(j["andar"], quem)
     if not n:

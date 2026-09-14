@@ -7793,3 +7793,57 @@ Suíte verde sem nenhum teste alterado (807 → 823, só crescimento) ·
 decisoes.md com a decisão sobre escala de HP (commit 1) e sobre carga
 simultânea + fronteiras não generalizadas (commit 4) · push. Sem deploy
 — faz parte do pacote 0.4, que sobe inteiro no fim do próximo step.
+
+## Step B — a porta atrás do trono e a saída da torre
+
+### Commit 1 — o jogador passa a ter mundo, não só andar
+
+`jogadores.mundo` (migração 21, `TEXT NOT NULL DEFAULT 'torre'`) — dois
+valores hoje, `"torre"` e `"fora"` (step C acrescenta `"vilarejo"` sem
+migração nova, o campo já é uma string livre). Default `"torre"`: os
+jogadores existentes não sentem nada, exatamente como o cartão pediu.
+
+**`mundo.py` nasce sem discord/database** (mesmo padrão de
+`andares_altos.py`) — só `mundo.na_torre(jogador)` (checagem pura) e
+`mundo.exigir_torre(ctx, jogador)` (a trava central, manda a recusa e
+devolve bool, mesmo padrão de `travas.bloqueado`). Módulo novo, não
+emenda em `andares_altos.py`, porque o conceito é maior que "andares
+11-15" — vale pra qualquer comando em qualquer andar.
+
+**Dentro da torre, `andar` continua mandando sozinho — zero mudança.**
+Fora, `andar` fica CONGELADO no valor de quando o jogador saiu (sempre
+15, único lugar com porta hoje) — não significa mais "onde", só "pra
+onde a escada devolve" (commit 3). Nenhum código de leitura de `andar`
+precisou mudar pra isso funcionar: só ninguém mais pode FICAR fora sem
+que os comandos de torre percebam.
+
+**A trava, varrida por todo comando que assume torre** (não só a lista
+literal do cartão — "não confie na memória" foi levado a sério):
+`cacar`, `explorar`, `npcs`, `falar` (bot.py) chamam `mundo.exigir_torre`
+depois de `pegar_jogador`; `checar_sala_do_chefe` (combate.py) cobre
+`boss` E `party` num lugar só (já era o chokepoint comum dos dois);
+`_executar_entrar_ou_continuar` (dungeon.py) cobre `rpg dungeon`
+entrar/continuar. `rpg raide` NÃO entrou — nunca leu `j["andar"]`
+(guild-based, `andar_max` só), não "assumia torre" pra começar.
+`rpg comprar`/`rpg descansar` também não precisaram de nada novo: os
+dois já recusam `andar > ANDAR_ACIMA_DO_SELO`, e "fora" está sempre
+congelado em 15 — o guard antigo já cobre de graça. `rpg vender`/
+`rpg carroca` nunca dependeram de andar, ficam de pé sem mudança.
+`rpg viajar` fica de fora de propósito — é o commit 3.
+
+**Mensagem única, não uma por comando** — "uma função só" no cartão
+cobria tanto a checagem quanto o texto: os seis pontos de chamada
+mostram a mesma frase ambiente (você ficou do outro lado da porta, sem
+caçada/chefe/dungeon/gente por ali). Narrativa o bastante pra não ser
+erro de sistema, genérica o bastante pra servir aos seis sem parecer
+fora de contexto em nenhum.
+
+Validado revertendo cada um dos seis pontos de chamada, um de cada vez:
+cai exatamente o teste daquele comando (`test_cacar_recusa_fora_da_torre`,
+`test_explorar_recusa_fora_da_torre`, `test_boss_recusa_fora_da_torre` +
+`test_party_recusa_fora_da_torre` juntos no revert de
+`checar_sala_do_chefe` — os dois passam pelo mesmo chokepoint, de
+propósito —, `test_dungeon_recusa_fora_da_torre`,
+`test_npcs_recusa_fora_da_torre`, `test_falar_recusa_fora_da_torre`), e
+nenhum teste antigo se move. Suíte completa: 12 testes novos em
+`test_mundo.py`, 835 passando + 1 xfail antigo.

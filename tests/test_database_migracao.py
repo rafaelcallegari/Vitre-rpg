@@ -17,6 +17,7 @@ COLUNAS_ESPERADAS = {
     "mortalha", "mortalha_instancia_id",
     "ascensao",
     "arvin_divida",
+    "mundo",
 }
 
 

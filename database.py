@@ -272,6 +272,16 @@ COLUNAS_ARVIN = {
     "arvin_divida": "INTEGER NOT NULL DEFAULT 0",
 }
 
+COLUNAS_MUNDO = {
+    # migração 21 -- Step B: o jogador passa a ter mundo, não só andar (a
+    # porta atrás do trono, ver decisoes.md § Step B). "torre" pra ninguém
+    # dos jogadores existentes sentir nada -- dentro da torre `andar`
+    # continua mandando sozinho, sem mudança nenhuma; só fora dela é que
+    # `andar` para de significar "onde" e vira só "pra onde a escada
+    # devolve". Ver mundo.py.
+    "mundo": "TEXT NOT NULL DEFAULT 'torre'",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -631,6 +641,16 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_ARVIN[coluna]}"
                 )
             print("Banco migrado: coluna arvin_divida criada -- ninguém foi roubado ainda.")
+
+        # migração 21: coluna de mundo (Step B). "torre" pra todo mundo --
+        # ninguém tinha saído dela ainda. Ver COLUNAS_MUNDO acima.
+        novas_mundo = [c for c in COLUNAS_MUNDO if c not in colunas]
+        if novas_mundo:
+            for coluna in novas_mundo:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_MUNDO[coluna]}"
+                )
+            print("Banco migrado: coluna mundo criada -- todo mundo continua dentro da torre.")
 
 
 def _migrar_upgrades_para_instancias(conn):

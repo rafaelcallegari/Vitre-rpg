@@ -11,6 +11,7 @@ import condicoes
 import database as db
 import espelhos
 import habilidades as hab
+import mundo
 import passivas
 import pronomes
 import travas
@@ -2318,6 +2319,8 @@ def instalar(bot, contexto):
         Em `rpg party`, quem não bate o requisito ainda pode ajudar a luta de
         outro andar, então a mensagem ensina isso em vez de só mandar voltar
         pro topo."""
+        if not await mundo.exigir_torre(ctx, j):
+            return False
         if j["andar"] <= ANDAR_ACIMA_DO_SELO and j["andar"] < j["andar_max"]:
             destino_sugerido = min(j["andar_max"], LIMITE_VIAJAR)
             acima = (
