@@ -1524,13 +1524,19 @@ async def falar(ctx, *, quem: str = ""):
         # quem já venceu o chefe do andar 15 alguma vez; "ter vencido, não
         # estar vencendo" (decisoes.md § Step B) -- não exige rematar.
         # Sem nunca ter vencido, cai no fluxo comum abaixo (flavor-only,
-        # dialogos.py "porta_do_trono").
+        # dialogos.py "porta_do_trono"). A fala da Guia é sobre VER a
+        # porta, não vencer o chefe (conserto) -- pode disparar aqui, não
+        # só na vitória, pra quem já zerou a torre há muito tempo e só
+        # agora esbarra na porta de novo, sem lutar.
         if db.vezes_derrotado_chefe(j["user_id"], ANDAR_MAXIMO) > 0:
             e = discord.Embed(
                 title="A porta cede",
                 description="Ela sempre esteve destrancada pra você — só nunca tinha pedido.",
                 color=discord.Color.dark_gold(),
             )
+            if not mundo.ja_viu_a_porta(j):
+                mundo.marcar_porta_vista(j["user_id"])
+                e.add_field(name=f"🕯️ A Guia detém {j['nome']}", value=combate.TEXTO_PLEA_GUIA, inline=False)
             view = combate.ViewEscolhaPorta([(j["user_id"], j["nome"])])
             view.mensagem = await ctx.send(embed=e, view=view)
             return

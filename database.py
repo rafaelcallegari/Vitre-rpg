@@ -282,6 +282,18 @@ COLUNAS_MUNDO = {
     "mundo": "TEXT NOT NULL DEFAULT 'torre'",
 }
 
+COLUNAS_PORTA_VISTA = {
+    # migração 22 -- conserto do Step B: o gatilho da fala da Guia era
+    # `vezes_derrotado_chefe == 1`, mas esse número já estava GASTO pra
+    # quem tinha zerado a torre antes deste pacote -- a mesa toda que já
+    # matou o chefe do 15 mais de uma vez nunca veria a cena, exatamente
+    # o público pra quem ela foi escrita. Estado próprio: 0 = "ainda não
+    # viu a porta" pra TODO MUNDO, veterano ou não -- é a única forma de
+    # "primeira vez vendo" valer igual pros dois. Ver mundo.py e
+    # decisoes.md § Step B (conserto).
+    "viu_porta_do_trono": "INTEGER NOT NULL DEFAULT 0",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -651,6 +663,17 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_MUNDO[coluna]}"
                 )
             print("Banco migrado: coluna mundo criada -- todo mundo continua dentro da torre.")
+
+        # migração 22: conserto do Step B -- coluna própria pra "já viu a
+        # porta", 0 pra todo mundo (inclusive quem já zerou a torre antes
+        # deste pacote). Ver COLUNAS_PORTA_VISTA acima.
+        novas_porta = [c for c in COLUNAS_PORTA_VISTA if c not in colunas]
+        if novas_porta:
+            for coluna in novas_porta:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_PORTA_VISTA[coluna]}"
+                )
+            print("Banco migrado: coluna viu_porta_do_trono criada -- ninguém viu ainda, nem quem já zerou.")
 
 
 def _migrar_upgrades_para_instancias(conn):

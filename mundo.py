@@ -60,6 +60,20 @@ def subir_a_escada(user_id):
     db.atualizar_jogador(user_id, mundo=TORRE)
 
 
+# ---------------- a fala da Guia -- gatilho é VER, não VENCER (conserto) ----------------
+# `vezes_derrotado_chefe` não serve de gatilho: pra quem já tinha zerado a
+# torre antes deste pacote, esse número já estava gasto (>= 1 desde muito
+# antes da porta existir) -- a mesa inteira, o público pra quem a cena foi
+# escrita, nunca veria ela. Coluna própria (migração 22): "já viu a porta"
+# é um evento novo, zerado pra TODO MUNDO no deploy, veterano ou não.
+def ja_viu_a_porta(jogador):
+    return bool(jogador["viu_porta_do_trono"])
+
+
+def marcar_porta_vista(user_id):
+    db.atualizar_jogador(user_id, viu_porta_do_trono=1)
+
+
 # ---------------- o mirante (Step B, commit 3) ----------------
 # Só isto existe do lado de fora por enquanto -- um único lugar, sem nome
 # de destino nenhum pra viajar (as "três cidades" são só paisagem; step F

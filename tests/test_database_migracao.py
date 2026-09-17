@@ -18,6 +18,7 @@ COLUNAS_ESPERADAS = {
     "ascensao",
     "arvin_divida",
     "mundo",
+    "viu_porta_do_trono",
 }
 
 

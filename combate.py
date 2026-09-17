@@ -1111,7 +1111,12 @@ async def _talvez_oferecer_porta(luta, enviar):
     `enviar` é quem manda a mensagem nova -- `interaction.followup.send`
     (clique) ou `self.mensagem.channel.send` (timeout, sem interaction).
     Nunca dispara em raide (andar de referência 7) nem no espelho da
-    dungeon (andar 9) -- os dois ficam abaixo do andar 15 sempre."""
+    dungeon (andar 9) -- os dois ficam abaixo do andar 15 sempre.
+
+    A fala da Guia é sobre VER a porta, não vencer o chefe (conserto,
+    ver decisoes.md § Step B) -- `mundo.ja_viu_a_porta`/`marcar_porta_
+    vista`, não `vezes_derrotado_chefe` (esse já estava gasto pra quem
+    tinha zerado a torre antes deste pacote)."""
     if luta.andar_num != ANDAR_MAXIMO or luta.inimigos_ativos:
         return
     vencedores = [c for c in luta.participantes if not (c.fugiu or c.saiu)]
@@ -1120,8 +1125,8 @@ async def _talvez_oferecer_porta(luta, enviar):
 
     primeiros = []
     for c in vencedores:
-        vezes = await db.a_vezes_derrotado_chefe(c.id, ANDAR_MAXIMO)
-        if vezes == 1:
+        if not mundo.ja_viu_a_porta(c.jogador):
+            mundo.marcar_porta_vista(c.id)
             primeiros.append(c.nome)
 
     e = discord.Embed(

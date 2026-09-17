@@ -7432,9 +7432,10 @@ xfail antigo.
 
 ## Step 4 — os mestres do andar 7 e o `rpg ascencao` jogável
 
-Último step do pacote 0.4 — o deploy (seção própria abaixo) sobe tudo desde
-`bc7621a` de uma vez: dungeon (pool + armadilha + espólio + cooldown), motor
-de decisão de chefe, os 4 espelhos, e agora os mestres + ascensão jogável.
+Cartão original dizia "o último step" — não foi: os Steps A-F vieram depois,
+e o deploy real (a seção "O DEPLOY" abaixo, tal como escrita então) nunca
+aconteceu no fim deste cartão. Ver a correção em "DoD do Step B" mais abaixo
+— o pacote 0.4 só sobe quando os seis steps do plano (A a F) terminarem.
 
 ### Commit 1 — o Orbe não duplica
 
@@ -7792,7 +7793,8 @@ passando + 1 xfail antigo — o total do cartão inteiro.
 Suíte verde sem nenhum teste alterado (807 → 823, só crescimento) ·
 decisoes.md com a decisão sobre escala de HP (commit 1) e sobre carga
 simultânea + fronteiras não generalizadas (commit 4) · push. Sem deploy
-— faz parte do pacote 0.4, que sobe inteiro no fim do próximo step.
+— faz parte do pacote 0.4, que só sobe quando os seis steps do plano (A
+a F) estiverem prontos.
 
 ## Step B — a porta atrás do trono e a saída da torre
 
@@ -7912,6 +7914,43 @@ casos, exatamente o teste esperado cai, e o resto da suíte (testes
 antigos inclusive) continua verde. Suíte completa: 13 testes novos em
 `test_porta_do_trono.py`, 848 passando + 1 xfail antigo.
 
+**Conserto (cartão reaberto): o gatilho acima era `vezes_derrotado_chefe
+== 1` — errado.** A mesa que joga este bot **já tinha zerado a torre**
+antes do pacote 0.4 existir — é por isso que o 0.4 existe. Pra quem já
+tinha `vezes_derrotado_chefe >= 1` de muito antes da porta nascer, a
+condição `== 1` nunca mais batia: exatamente o público pra quem a fala
+foi escrita (quem subiu a torre inteira, cruzou com a Guia no caminho,
+sabe quem ela é) nunca veria a cena — só o jogador novo, que chega daqui
+a meses, veria. `vezes_derrotado_chefe` mede VITÓRIA; o que a cena
+precisa medir é "já viu a porta alguma vez" — dois eventos diferentes
+que só coincidem pra quem começa a jogar depois deste pacote.
+
+Coluna própria resolve (migração 22, `jogadores.viu_porta_do_trono`,
+`INTEGER NOT NULL DEFAULT 0`) — 0 pra TODO MUNDO no deploy, veterano
+inclusive, porque "já viu a porta" é um evento que ainda não tinha
+como ter acontecido pra ninguém (a porta não existia). `mundo.
+ja_viu_a_porta(jogador)`/`mundo.marcar_porta_vista(user_id)` substituem
+a consulta a `vezes_derrotado_chefe` nos dois pontos que decidiam mostrar
+a fala: `combate._talvez_oferecer_porta` (pós-vitória) e o branch de
+`rpg falar porta` em `bot.py` — que GANHOU a possibilidade de mostrar a
+fala também (antes nunca mostrava ali; agora mostra pra quem chega na
+porta sem lutar e ainda não tinha visto, exatamente o caso do veterano
+que já tinha andar_max 15 antes do deploy). Fora isso nada muda: a porta
+continua livre pra sempre depois da primeira vitória (`vezes_derrotado_
+chefe > 0` continua sendo o gate de "a porta abre de verdade", só a
+FALA que trocou de gatilho), e a cena continua acontecendo uma vez só —
+por jogador, pra sempre, via a coluna nova.
+
+Validado revertendo exatamente como o cartão pediu: trocar `mundo.
+ja_viu_a_porta(c.jogador)` de volta por `vezes == 1` (mantendo a escrita
+de `marcar_porta_vista` pra não confundir a comparação) — cai só
+`test_veterano_com_vezes_derrotado_alto_e_porta_nunca_vista_ve_a_cena`,
+o teste que existe exatamente pra provar o bug original. Migração
+validada de novo contra os 14 jogadores reais: todos ficam com
+`viu_porta_do_trono = 0`, ou seja, todos ainda vão ver a cena. Suíte
+completa: 5 testes líquidos novos em `test_porta_do_trono.py`, 857
+passando + 1 xfail antigo.
+
 ### Commit 3 — o mirante, a escada e o `rpg viajar` bimundo
 
 **Só um lugar existe do lado de fora por enquanto** — o Mirante, sem
@@ -7962,5 +8001,6 @@ Suíte verde (807 → 852) · `decisoes.md` com o estado de mundo (commit
 1), a regra da porta livre — "ter vencido, não estar vencendo" — e o
 fim do reset automático do andar 15 (commit 2), e o mirante/escada
 bimundo (commit 3) · migração validada contra os 14 jogadores reais ·
-push · sem deploy — Step B faz parte do pacote 0.4, que sobe inteiro no
-fim do step C.
+push · sem deploy — Step B faz parte do pacote 0.4, que sobe inteiro só
+quando os seis steps do plano (A a F) estiverem prontos, não no fim de
+nenhum step isolado.

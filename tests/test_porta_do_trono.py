@@ -117,24 +117,72 @@ def test_oferece_porta_na_vitoria_de_verdade_do_15_um_botao_ficar_e_sair_por_ven
     }
 
 
-def test_primeira_vitoria_no_15_traz_a_fala_da_guia_repeticao_nao():
-    c1 = _combatente(1)   # primeira vez
-    c2 = _combatente(2)   # já venceu antes
-    db.registrar_vitoria_chefe(2, ANDAR_MAXIMO)
-    luta = combate.Luta([c1, c2], dict(BOSS), andar_num=15)
+def test_jogador_que_vence_pela_primeira_vez_ve_a_cena_como_ja_era():
+    c1 = _combatente(1)
+    luta = combate.Luta([c1], dict(BOSS), andar_num=15)
     luta.hp_chefe = 0
-    # mesma ordem do fluxo de verdade: finalizar_vitoria roda recompensar()
-    # (que registra a vitória em chefes_derrotados) ANTES de
-    # _talvez_oferecer_porta ver quem está na primeira vez.
     asyncio.run(combate.recompensar(luta, c1))
-    asyncio.run(combate.recompensar(luta, c2))
     enviar = AsyncMock(return_value=MagicMock())
 
     asyncio.run(combate._talvez_oferecer_porta(luta, enviar))
 
     e = enviar.call_args.kwargs["embed"]
     assert _campo(e, f"🕯️ A Guia detém {c1.nome}") is not None
-    assert _campo(e, f"🕯️ A Guia detém {c2.nome}") is None
+
+
+def test_ver_a_porta_marca_a_coluna_como_vista():
+    """Faceta nova, separada da condição de mostrar a cena -- o conserto
+    introduz `viu_porta_do_trono` como estado próprio."""
+    c1 = _combatente(1)
+    luta = combate.Luta([c1], dict(BOSS), andar_num=15)
+    luta.hp_chefe = 0
+    asyncio.run(combate.recompensar(luta, c1))
+
+    asyncio.run(combate._talvez_oferecer_porta(luta, AsyncMock(return_value=MagicMock())))
+
+    assert db.get_jogador(1)["viu_porta_do_trono"] == 1
+
+
+def test_veterano_com_vezes_derrotado_alto_e_porta_nunca_vista_ve_a_cena():
+    """O conserto: `vezes_derrotado_chefe` já está gasto pra quem zerou a
+    torre antes deste pacote -- o gatilho de verdade é `viu_porta_do_
+    trono`, coluna própria, 0 pra todo mundo no deploy (veterano
+    inclusive)."""
+    c = _combatente(1)
+    for _ in range(5):
+        db.registrar_vitoria_chefe(1, ANDAR_MAXIMO)
+    assert db.vezes_derrotado_chefe(1, ANDAR_MAXIMO) == 5   # sanity -- já bem gasto
+    assert db.get_jogador(1)["viu_porta_do_trono"] == 0      # mas nunca viu a porta
+    luta = combate.Luta([c], dict(BOSS), andar_num=15)
+    luta.hp_chefe = 0
+    asyncio.run(combate.recompensar(luta, c))
+    enviar = AsyncMock(return_value=MagicMock())
+
+    asyncio.run(combate._talvez_oferecer_porta(luta, enviar))
+
+    e = enviar.call_args.kwargs["embed"]
+    assert _campo(e, f"🕯️ A Guia detém {c.nome}") is not None
+
+
+def test_mesmo_jogador_segunda_vez_na_porta_nao_ve_mais():
+    c1 = _combatente(1)
+    for _ in range(5):
+        db.registrar_vitoria_chefe(1, ANDAR_MAXIMO)
+    luta1 = combate.Luta([c1], dict(BOSS), andar_num=15)
+    luta1.hp_chefe = 0
+    asyncio.run(combate.recompensar(luta1, c1))
+    asyncio.run(combate._talvez_oferecer_porta(luta1, AsyncMock(return_value=MagicMock())))
+
+    c2 = _combatente(1)   # o mesmo jogador, recarregado do banco pra segunda luta
+    luta2 = combate.Luta([c2], dict(BOSS), andar_num=15)
+    luta2.hp_chefe = 0
+    asyncio.run(combate.recompensar(luta2, c2))
+    enviar2 = AsyncMock(return_value=MagicMock())
+
+    asyncio.run(combate._talvez_oferecer_porta(luta2, enviar2))
+
+    e2 = enviar2.call_args.kwargs["embed"]
+    assert _campo(e2, f"🕯️ A Guia detém {c2.nome}") is None
 
 
 def test_quem_fugiu_ou_saiu_nao_recebe_escolha():
@@ -243,5 +291,28 @@ def test_falar_na_porta_depois_de_ja_ter_vencido_abre_a_escolha_sem_lutar():
     view = ctx.send.call_args.kwargs["view"]
     labels = {c.label for c in view.children}
     assert "Ficar — J1" in labels and "Sair — J1" in labels
+
+
+def test_falar_na_porta_veterano_que_nunca_viu_ela_antes_ve_a_cena():
+    """O conserto: `rpg falar porta` também é "a primeira vez que vê a
+    porta" pra quem zerou a torre há muito tempo e só agora esbarra nela
+    de novo, sem lutar -- não só na vitória."""
+    _jogador_falar(1, ja_venceu=True)
+    ctx = _ctx(1)
+
+    asyncio.run(bot.falar.callback(ctx, quem="porta"))
+
     e = ctx.send.call_args.kwargs["embed"]
-    assert "Guia" not in (e.description or "") and not e.fields   # sem a fala -- não é a primeira vez
+    assert any("Guia" in f.name for f in e.fields)
+    assert db.get_jogador(1)["viu_porta_do_trono"] == 1
+
+
+def test_falar_na_porta_segunda_vez_de_verdade_nao_mostra_a_fala_de_novo():
+    _jogador_falar(1, ja_venceu=True)
+    db.atualizar_jogador(1, viu_porta_do_trono=1)   # já viu, de um encontro anterior
+    ctx = _ctx(1)
+
+    asyncio.run(bot.falar.callback(ctx, quem="porta"))
+
+    e = ctx.send.call_args.kwargs["embed"]
+    assert not e.fields   # sem a fala -- não é mais a primeira vez
