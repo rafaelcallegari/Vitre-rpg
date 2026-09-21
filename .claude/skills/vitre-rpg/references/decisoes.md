@@ -8164,3 +8164,56 @@ resto revertido). Nenhum teste antigo se move. Suíte completa: 23
 testes novos (2 em `test_database_migracao.py`/`test_mundo.py` viraram
 testes reescritos, não contam como novos; 21 em `test_vilarejo.py`),
 885 passando + 1 xfail antigo.
+
+### Commit 3 — as pessoas
+
+**Dois NPCs de conversa, nada de mecânica nova.** `NPCS[mundo.VILAREJO]`
+ganhou mais dois: Ivo ("o Que Aponta pro Norte", o gancho) e Nara ("a
+Que Não Entrou", o contraponto) — os dois `tipo: "conversa"`, mesmo
+mecanismo de sempre (`dialogos.py` + `DialogoView`), zero código novo em
+`bot.py`/`comercio.py` pra isso.
+
+**Colisão de chave pega na hora — "mira" já existia.** A primeira versão
+do contraponto se chamava Mira, mas `dialogos.py` já tinha uma chave
+`"mira"` (a joalheira "do Trilho Morto", andar 2) — um dict literal em
+Python não avisa de chave duplicada, só a última sobrescreve a primeira
+silenciosamente. A suíte pegou (`test_abertura_e_sempre_reaproveitada_
+da_fala_de_npcs_py` comparou a abertura errada com a fala errada) antes
+de qualquer jogador ver o bug. Renomeado pra Nara, chave `"nara_
+vilarejo"` — sufixo de propósito, não só pra desempatar: deixa claro que
+é uma chave de LUGAR, não de identidade, útil se outra "Nara" nascer
+noutro lugar no futuro.
+
+**Ivo entrega o gancho, não a resposta.** "Um saiu daqui, faz tempo. Foi
+pro norte" — não nomeia o Herói, não diz o que tem lá, só planta que
+alguém já saiu e ninguém foi atrás. É a informação mais importante do
+vilarejo por isso: é a primeira prova, pro jogador, de que ele não é o
+primeiro a sair da torre.
+
+**Nara é o contraponto, mas não entrega o inimigo maior — "ainda não foi
+decidido" (cartão).** A fala dela resume a torre como "cerca" que
+"guarda gente" sem dizer do quê, nem nomear ameaça nenhuma; o jogador
+sai sabendo que entendeu a torre errado o tempo todo, sem saber ainda o
+que está do lado de fora dela. Testado direto (`test_falar_com_nara_
+nao_entrega_o_inimigo_maior`): nenhuma linha de `dialogos.DIALOGOS
+["nara_vilarejo"]` (abertura, opções, saída) contém a palavra "inimigo".
+
+Validado revertendo o commit inteiro (stash de `npcs.py`/`dialogos.py`/
+`test_dialogo.py`): caem exatamente os 3 testes novos de `test_vilarejo.py`
+sobre Ivo/Nara (`test_ivo_e_nara_estao_no_vilarejo_com_dialogo_valido`,
+`test_falar_com_ivo_menciona_o_norte`, `test_falar_com_nara_nao_entrega_
+o_inimigo_maior`), o resto da suíte (Commits 1 e 2 inclusive) continua
+verde. `test_dialogo.py::test_todo_npc_conversa_tem_chave_de_dialogo_
+valida` também precisou de ajuste (13 → 15 NPCs de conversa) — contagem
+fixa, não achismo, quebra de propósito quando alguém esquece de somar um
+NPC novo. Suíte completa: 4 testes novos (3 em `test_vilarejo.py`, 1
+ajuste de contagem em `test_dialogo.py`), 889 passando + 1 xfail antigo.
+
+## DoD do Step C
+
+Suíte verde (858 → 889) · `decisoes.md` com a exceção comercial do
+alquimista (commit 2), o tratamento da trava do Selo fora da torre
+(commit 2, `comprar`/`descansar` mundo-aware) e onde o efeito da cerveja
+mora — coluna, não condição de `Luta`, porque nasce fora de combate
+(commit 2) · push · **sem deploy** — Step C faz parte do pacote 0.4, que
+sobe inteiro só quando os seis steps do plano (A a F) estiverem prontos.

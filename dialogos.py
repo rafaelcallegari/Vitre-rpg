@@ -454,6 +454,26 @@ DIALOGOS = {
         ],
         "saida": "Ela já está limpando outra mesa, de costas pra porta.",
     },
+    "ivo": {
+        "abertura": "Um saiu daqui, faz tempo. Foi pro norte. Nunca mais soube dele — mas também nunca soube de ninguém que tenha ido atrás.",
+        "opcoes": [
+            {"label": "Perguntar quem foi pro norte",
+             "resposta": "Um guerreiro, ou o que sobrou de um depois da torre. Não perguntei o nome — só vi as costas dele ficando pequenas na estrada."},
+            {"label": "Perguntar o que tem no norte",
+             "resposta": "Não sei. Ninguém daqui sabe. É pra lá que vai quem decide que aqui não é o bastante."},
+        ],
+        "saida": "Ele volta a olhar pro norte, como se ainda esperasse ver alguém voltando.",
+    },
+    "nara_vilarejo": {
+        "abertura": "Vocês entram lá pensando que é desafio. Eu cresci vendo ela de fora. Sei pra que ela serve — e não é pra isso.",
+        "opcoes": [
+            {"label": "Perguntar pra que ela serve, então",
+             "resposta": "Serve pra guardar gente. Só isso. Quem tá dentro não sabe — acha que é prova, é escada, é glória. É cerca."},
+            {"label": "Perguntar por que ela nunca entrou",
+             "resposta": "Porque quem entra esquece de perguntar por quê. Eu prefiro lembrar."},
+        ],
+        "saida": "Ela não se despede — só volta o olhar pra torre, longe, como quem vigia.",
+    },
 }
 
 # ---- despertar (patch 0.3 -- `rpg comecar`) --------------------------------

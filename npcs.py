@@ -239,6 +239,15 @@ NPCS = {
         {"nome": "Ohanna", "titulo": "da Taverna do Poço", "tipo": "taverneiro", "dialogo": "ohanna",
          "cerveja": True,
          "fala": "Descansa, come, bebe. Nessa ordem se quiser acordar."},
+        # Commit 3 -- "as pessoas". Ivo é o gancho (o Herói saiu e foi pro
+        # norte -- o primeiro sinal de que o jogador não é o primeiro);
+        # Mira é o contraponto que a lore pede (a torre é abrigo, e quem
+        # está dentro não sabe -- ela sabe e escolheu não entrar). Nenhum
+        # dos dois entrega o inimigo maior -- isso ainda não foi decidido.
+        {"nome": "Ivo", "titulo": "o Que Aponta pro Norte", "tipo": "conversa", "dialogo": "ivo",
+         "fala": "Um saiu daqui, faz tempo. Foi pro norte. Nunca mais soube dele — mas também nunca soube de ninguém que tenha ido atrás."},
+        {"nome": "Nara", "titulo": "a Que Não Entrou", "tipo": "conversa", "dialogo": "nara_vilarejo",
+         "fala": "Vocês entram lá pensando que é desafio. Eu cresci vendo ela de fora. Sei pra que ela serve — e não é pra isso."},
     ],
 }
 

@@ -1,7 +1,9 @@
 # tests/test_vilarejo.py
 # Step C, commit 2: o alquimista (única exceção comercial do vilarejo) e a
-# taverna (rpg descansar + a cerveja, que atravessa pra qualquer luta). Ver
-# decisoes.md § Step C.
+# taverna (rpg descansar + a cerveja, que atravessa pra qualquer luta).
+# Commit 3: as pessoas -- Ivo (o gancho, o Herói foi pro norte) e Nara (o
+# contraponto -- a torre é abrigo, e quem está fora sabe). Ver decisoes.md
+# § Step C.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,7 +12,9 @@ import pytest
 import bot  # noqa: F401 -- popula combate.H via bot.instalar()
 import combate
 import database as db
+import dialogos
 import mundo
+import npcs
 import vilarejo
 
 CHEFE_TESTE = {"nome": "Testinho", "hp": 999999, "atk": 1, "def": 0, "xp": 0, "moedas": 0}
@@ -267,3 +271,49 @@ def test_jogador_na_torre_sem_cerveja_npcs_e_comprar_e_descansar_iguais_a_sempre
     ctx2 = _ctx(1)
     asyncio.run(bot.comprar.callback(ctx2, argumento="pocao pequena 1"))
     assert db.tem_item(1, "pocao_p", 1)   # loja da torre intocada
+
+
+# ==================================================================
+# commit 3 -- as pessoas (Ivo: o gancho / Nara: o contraponto)
+# ==================================================================
+
+def test_ivo_e_nara_estao_no_vilarejo_com_dialogo_valido():
+    pessoas = {n["nome"]: n for n in npcs.NPCS[mundo.VILAREJO]}
+    assert "Ivo" in pessoas and "Nara" in pessoas
+    for nome in ("Ivo", "Nara"):
+        n = pessoas[nome]
+        assert n["tipo"] == "conversa"
+        assert n["dialogo"] in dialogos.DIALOGOS
+
+
+def test_falar_com_ivo_menciona_o_norte():
+    """O fio do Herói -- a informação mais importante do vilarejo, o
+    gancho que puxa o jogador pro resto do mundo."""
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.falar.callback(ctx, quem="ivo"))
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "norte" in embed.description.lower()
+
+
+def test_falar_com_nara_nao_entrega_o_inimigo_maior():
+    """Contraponto: a torre é abrigo, quem está fora sabe (ou escolheu
+    não entrar). O cartão foi explícito -- 'ainda não foi decidido' --
+    então NENHUMA linha da Nara (abertura ou opções) pode nomear um
+    inimigo maior."""
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.falar.callback(ctx, quem="nara"))
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "desafio" in embed.description.lower()
+
+    dado = dialogos.DIALOGOS["nara_vilarejo"]
+    todas_as_falas = " ".join([dado["abertura"], dado.get("saida", "")] + [o["resposta"] for o in dado.get("opcoes", [])])
+    assert "inimigo" not in todas_as_falas.lower()
+
+
+def test_ivo_e_nara_nao_aparecem_dentro_da_torre():
+    """Regressão: são gente do vilarejo, não da torre -- nenhum andar
+    numérico ganha eles de brinde."""
+    for n in npcs.npcs_do_andar(1):
+        assert n["nome"] not in ("Ivo", "Nara")
