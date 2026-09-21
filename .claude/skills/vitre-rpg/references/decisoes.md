@@ -8217,3 +8217,55 @@ alquimista (commit 2), o tratamento da trava do Selo fora da torre
 mora — coluna, não condição de `Luta`, porque nasce fora de combate
 (commit 2) · push · **sem deploy** — Step C faz parte do pacote 0.4, que
 sobe inteiro só quando os seis steps do plano (A a F) estiverem prontos.
+
+## Step D — incursões de trevas + efeitos em acessório
+
+A lore que manda no desenho inteiro: o Herói selou a torre **de dentro**
+pra proteger quem estava lá do que havia fora; os jogadores atravessaram
+a porta atrás do trono (Step B) e deixaram ela aberta. A incursão é a
+CONSEQUÊNCIA disso — coisas de fora entrando num abrigo. Todo texto do
+step carrega essa ideia (o prefixo "Sombra de", a cor 0x2B1B3D do embed,
+etc.) em vez de ser só "monstro mais forte hoje".
+
+### Commit 1 — o andar corrompido
+
+**Sorteio sem estado nenhum — `incursao.andar_do_dia()` é uma função
+pura da data.** `random.Random(semente_string).randint(...)` com a
+semente sendo a data em ISO (fuso `America/Sao_Paulo`, mesmo fuso que
+`npcs.py` já usa pra carroça/flor): o CPython converte uma seed string
+de forma determinística (sha512 por baixo, documentado e estável entre
+processos) — a MESMA string sempre dá o MESMO `randint`, em qualquer
+processo, sem precisar salvar nada em banco. Isso resolve os dois
+requisitos do cartão de graça: "o mesmo pra todo mundo" (é uma função
+pura, todo processo calcula igual) e "sobrevive a restart" (não existe
+"sortear de novo" — reiniciar o bot só recalcula o mesmo número, porque
+não tem estado nenhum pra perder). Zero migração nova, zero tabela nova
+— mais simples que o padrão `estado_temporada` (linha única com CHECK
+id=1) que o resto do projeto usa pra estado de servidor, porque aqui nem
+UMA linha precisa existir.
+
+**"Vira de sombra" é a MESMA criatura, não uma troca de espécie** —
+`incursao.nome_sombrio(nome)` só prefixa `"Sombra de "`; commit 1 não
+mexe em hp/atk/def/xp/moedas (isso é commit 2), só no nome e num flag
+`"corrompido": True` no dict do mob (usado pelo commit 4 pra reconhecer
+uma luta de incursão sem precisar de outro parâmetro em cada call site).
+Chefe não muda — `rpg boss`/`rpg party` continuam chamando `iniciar_luta`
+com o `andar_num` de sempre, sem nenhum desvio; `incursao.py` nunca é
+importado por `combate.py`.
+
+**`rpg incursao` (novo comando) não estava explícito no cartão, mas é
+necessário pra a feature ser jogável** — sem ele, a única forma de achar
+o andar corrompido seria visitar os nove manualmente todo dia. É consulta
+pura (lê `incursao.andar_do_dia()`, não muda nada no banco), então o
+risco de ter adicionado é baixo; registrado aqui pra não parecer scope
+creep silencioso.
+
+Validado revertendo o commit inteiro (stash de `bot.py`, mantendo
+`incursao.py` e os testes): caem exatamente os 3 testes que dependem da
+integração (`test_cacar_no_andar_corrompido_mostra_criatura_de_sombra`,
+`test_explorar_no_andar_corrompido_mostra_criaturas_de_sombra`,
+`test_rpg_incursao_mostra_o_andar_de_hoje`) — os 9 que sobram testam
+`incursao.py` isolado (sorteio, intervalo, flag de corrompido) e a
+regressão do chefe, que não dependem da integração em `bot.py`. Suíte
+completa: 12 testes novos em `test_incursao.py`, 901 passando + 1 xfail
+antigo.

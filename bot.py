@@ -18,6 +18,7 @@ import database as db
 import despertar
 import dialogos
 import habilidades as hab
+import incursao
 import mestres
 import mundo
 import paginacao
@@ -751,6 +752,8 @@ async def cacar(ctx):
 
     andar = ANDARES[j["andar"]]
     mob = random.choice(andar["monstros"])
+    if incursao.andar_esta_corrompido(j["andar"]):
+        mob = {**mob, "nome": incursao.nome_sombrio(mob["nome"]), "corrompido": True}
     mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
     hp_final, venceu, log = simular_combate(
         s, j["hp"], mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
@@ -819,8 +822,11 @@ async def explorar(ctx):
     caiu = False
 
     mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
+    corrompido = incursao.andar_esta_corrompido(j["andar"])
     for _ in range(3):
         mob = random.choice(andar["monstros"])
+        if corrompido:
+            mob = {**mob, "nome": incursao.nome_sombrio(mob["nome"]), "corrompido": True}
         hp, venceu, _log = simular_combate(
             s, hp, mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
         )
@@ -868,6 +874,22 @@ async def explorar(ctx):
     aviso_flor = aviso_flor_do_andar_1(j["user_id"], j["andar"])
     if aviso_flor:
         e.add_field(name="🌸 Na grama", value=aviso_flor, inline=False)
+    await ctx.send(embed=e)
+
+
+@bot.command(name="incursao", aliases=["incursão", "trevas"])
+async def incursao_do_dia(ctx):
+    """Sem isso não tem como saber onde a incursão está sem visitar os
+    nove andares um por um -- a torre inteira já sabe (o sorteio é do
+    servidor, não do jogador), só falta um jeito de perguntar."""
+    n = incursao.andar_do_dia()
+    a = ANDARES[n]
+    e = discord.Embed(
+        title="🌑 Incursão de hoje",
+        description=f"O andar **{n} — {a['nome']}** está corrompido. Toda criatura de `rpg cacar`/`rpg explorar` lá virou sombra.",
+        color=0x2B1B3D,
+    )
+    e.set_footer(text="Troca no dia seguinte — a mesma torre, pra todo mundo.")
     await ctx.send(embed=e)
 
 
