@@ -751,12 +751,12 @@ async def cacar(ctx):
         j["hp"] = int(s["hp_max"] * 0.3)
 
     andar = ANDARES[j["andar"]]
-    mob = random.choice(andar["monstros"])
-    if incursao.andar_esta_corrompido(j["andar"]):
-        mob = {**mob, "nome": incursao.nome_sombrio(mob["nome"]), "corrompido": True}
+    corrompido = incursao.andar_esta_corrompido(j["andar"])
+    mob = incursao.sortear_criatura(j) if corrompido else random.choice(andar["monstros"])
+    andar_num_combate = incursao.andar_referencia(j) if corrompido else j["andar"]
     mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
     hp_final, venceu, log = simular_combate(
-        s, j["hp"], mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
+        s, j["hp"], mob, andar_num_combate, multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
     )
 
     e = discord.Embed(title=f"Andar {j['andar']} — {mob['nome']}", color=andar["cor"])
@@ -823,12 +823,11 @@ async def explorar(ctx):
 
     mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
     corrompido = incursao.andar_esta_corrompido(j["andar"])
+    andar_num_combate = incursao.andar_referencia(j) if corrompido else j["andar"]
     for _ in range(3):
-        mob = random.choice(andar["monstros"])
-        if corrompido:
-            mob = {**mob, "nome": incursao.nome_sombrio(mob["nome"]), "corrompido": True}
+        mob = incursao.sortear_criatura(j) if corrompido else random.choice(andar["monstros"])
         hp, venceu, _log = simular_combate(
-            s, hp, mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
+            s, hp, mob, andar_num_combate, multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
         )
         if not venceu:
             linhas.append(f"❌ Derrotado por **{mob['nome']}**.")

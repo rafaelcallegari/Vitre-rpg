@@ -50,3 +50,48 @@ def nome_sombrio(nome_original):
     commit 4) pra reconhecer que um mob é de incursão sem precisar de um
     campo à parte em todo call site."""
     return f"Sombra de {nome_original}"
+
+
+# ---------------- commit 2: as criaturas escalam por inteiro ----------------
+BONUS_XP_MOEDAS_INCURSAO = 2   # "XP e dinheiro dobram" -- decisão firme, não é ajuste fino
+
+
+def andar_referencia(jogador):
+    """O andar que representa o PRÓPRIO progresso do jogador (`andar_max`,
+    travado em [1, ANDAR_MAXIMO]) -- nunca o andar corrompido em si
+    (sempre baixo, 2-10). É esse andar que empresta hp/atk/def/xp/moedas
+    pra criatura corrompida: "escalar pelo jogador que deu o comando"
+    significa escalar por QUANTO ele já progrediu, não pelo número baixo
+    do andar sorteado -- senão um jogador de andar_max 15 numa incursão
+    no andar 2 enfrentaria a mesma criatura fraca que um jogador novo, e
+    mataria em um golpe (ver decisoes.md § Step D -- o raciocínio
+    completo, com o número de XP que isso destravaria)."""
+    return max(1, min(jogador["andar_max"], game_data.ANDAR_MAXIMO))
+
+
+def sortear_criatura(jogador, momento=None):
+    """A criatura de uma incursão: nome/flavor vêm do andar corrompido (a
+    "espécie" local que virou sombra -- ver nome_sombrio); hp/atk/def/xp/
+    moedas/elemento/drops vêm do andar de REFERÊNCIA do jogador --
+    pareados pelo mesmo índice na lista de 3 monstros de cada andar (as
+    duas listas nunca têm tamanho diferente, ver game_data.ANDARES). XP e
+    moedas dobram por cima do valor emprestado.
+
+    Por que emprestar do andar de referência em vez de inventar uma
+    fórmula de escala nova: os números por andar em game_data.ANDARES já
+    SÃO a curva de balanceamento do jogo inteiro, andar a andar --
+    reaproveitar é mais simples e não corre o risco de destoar dela.
+    Efeito colateral aceito (o cartão foi explícito): pro MESMO jogador,
+    andar 2 corrompido e andar 9 corrompido viram o mesmo desafio -- o
+    sorteio decide onde ir, a referência decide o que enfrentar."""
+    andar_corrompido = andar_do_dia(momento)
+    locais = game_data.ANDARES[andar_corrompido]["monstros"]
+    indice = random.randrange(len(locais))
+    nome_local = locais[indice]["nome"]
+    referencia = game_data.ANDARES[andar_referencia(jogador)]["monstros"][indice]
+    mob = dict(referencia)
+    mob["nome"] = nome_sombrio(nome_local)
+    mob["xp"] = referencia["xp"] * BONUS_XP_MOEDAS_INCURSAO
+    mob["moedas"] = referencia["moedas"] * BONUS_XP_MOEDAS_INCURSAO
+    mob["corrompido"] = True
+    return mob

@@ -8269,3 +8269,66 @@ integração (`test_cacar_no_andar_corrompido_mostra_criatura_de_sombra`,
 regressão do chefe, que não dependem da integração em `bot.py`. Suíte
 completa: 12 testes novos em `test_incursao.py`, 901 passando + 1 xfail
 antigo.
+
+### Commit 2 — as criaturas escalam por inteiro
+
+**Por que vida e defesa têm que escalar junto com o dano — o raciocínio
+que o cartão pediu pra registrar.** O sorteio é sempre entre o andar 2 e
+o Selo (10) — baixo, por definição, mesmo pra quem já destrancou o 15.
+Se SÓ o dano escalasse pelo jogador, a vida da criatura continuaria a do
+andar sorteado (baixa) e a defesa também — um jogador de andar_max 15
+mataria a criatura corrompida do andar 2 num golpe só, do jeito que já
+mata um monstro comum do andar 2 hoje. Com XP dobrado (a metade deste
+commit) e a criatura morrendo igual de rápido, isso vira o melhor XP por
+hora do jogo, na luta mais fácil do jogo, todo santo dia — sem risco
+nenhum, sem decisão nenhuma, só repetir `rpg cacar` no andar errado de
+propósito. Escalar os três juntos (vida, defesa E dano) é o que faz a
+incursão continuar sendo uma LUTA pra quem já é forte, não um cupom de
+XP disfarçado.
+
+**De onde vêm os números: o andar de REFERÊNCIA do jogador
+(`incursao.andar_referencia`, = `andar_max` travado em [1,
+ANDAR_MAXIMO]), não uma fórmula nova.** `game_data.ANDARES` já é a curva
+de balanceamento do jogo inteiro, andar a andar, testada — inventar uma
+fórmula paralela de "força de monstro por nível de jogador" duplicaria
+esse trabalho e podia destoar dela sem ninguém perceber até alguém
+reclamar. Em vez disso, `incursao.sortear_criatura` pega o NOME/flavor
+do andar corrompido (a espécie local que "virou de sombra") e empresta
+hp/atk/def/xp/moedas/elemento/drops do andar de referência, pareados
+pelo mesmo índice (as duas listas sempre têm exatamente 3 monstros, ver
+`game_data.ANDARES`) — reaproveitar em vez de recalcular.
+
+**"Efeito colateral aceito" (o cartão foi explícito) — testado, não só
+aceito de boca**: `test_criatura_do_mesmo_jogador_e_o_mesmo_desafio_em_
+qualquer_andar_corrompido` prova que hp/atk/def/xp são idênticos pro
+MESMO jogador não importa qual andar (2 ou 9) esteja corrompido hoje —
+só o nome muda. O sorteio decide PRA ONDE ir, a referência decide O QUE
+enfrentar.
+
+**XP e moedas dobram — decisão firme, número fixo (`BONUS_XP_MOEDAS_
+INCURSAO = 2`), não ajuste fino.** O dobro entra POR CIMA do valor já
+emprestado do andar de referência (que já é "o XP certo pro nível desse
+jogador") — não dobra o XP baixo do andar sorteado, então "XP escala
+pelo nível de quem mata" e "XP dobra no andar corrompido" acontecem no
+mesmo número, sem se cancelar nem se confundir.
+
+**`simular_combate` recebe o `andar_num` de referência, não o andar
+corrompido, quando a luta é de incursão.** `andar_num` alimenta
+`at.destreza_monstro` (iniciativa/esquiva) — deixar isso no andar baixo
+enquanto hp/atk/def já vieram do andar alto criaria uma criatura forte
+mas lenta/fácil de acertar, inconsistente com o resto do escalonamento.
+Os dois motores (`cacar`/`explorar`, que rodam em `simular_combate`, não
+em `combate.Luta`) recebem o mesmo tratamento — nada disso depende de
+estado que só `Luta` tem, confirmado lendo `simular_combate` antes de
+mexer (é uma função pura: `s`, `hp`, `mob`, `andar_num`, dois kwargs de
+cerveja desde o Step C).
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`incursao.py`,
+mantendo os testes): caem exatamente os 10 testes novos de escala/dobro
+(`test_andar_referencia_*` × 3, `test_sortear_criatura_*` × 4,
+`test_criatura_do_mesmo_jogador_e_o_mesmo_desafio_em_qualquer_andar_
+corrompido`, `test_cacar_no_andar_corrompido_usa_sortear_criatura`,
+`test_xp_e_dinheiro_dobram_so_no_andar_corrompido`) — os 12 do commit 1
+e o resto da suíte continuam verdes. Suíte completa: 11 testes novos em
+`test_incursao.py` (10 de escala + 1 de regressão fora da incursão),
+912 passando + 1 xfail antigo.
