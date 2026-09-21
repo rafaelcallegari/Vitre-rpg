@@ -24,6 +24,7 @@ import paginacao
 import passivas
 import pronomes
 import travas
+import vilarejo
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, ANDAR_MESTRES,
     NIVEL_ASCENSAO_PADRAO, xp_necessario, multiplicador_elemento,
@@ -55,6 +56,7 @@ LIMITE_VIAJAR = andares_altos.LIMITE_VIAJAR
 ICONES_NPC = {
     "mercador": "🧺", "ferreiro": "🔨", "carroceiro": "🐎", "conversa": "💬",
     "taverneiro": "🍺", "guia": "🕯️", "encantador": "🔯", "joalheiro": "💎",
+    "alquimista": "🧪",
 }
 
 # Papel exibido em `rpg npcs` por tipo. Acesso sempre via .get() com padrão —
@@ -68,6 +70,7 @@ PAPEL_NPC = {
     "guia": f"leva de volta pro andar {andares_altos.ANDAR_ACIMA_DO_SELO} de graça",
     "encantador": "encanta equipamento com um atributo extra",
     "joalheiro": "lapida anel e colar do zero",
+    "alquimista": "vende os elixires",
 }
 
 # categoria onde `rpg priv` cria as salas. Se não existir, o bot cria.
@@ -389,7 +392,13 @@ def calcular_dano(atk, defesa, critico=at.CRITICO_BASE, critico_forcado=False, m
     return at.aplicar_defesa(bruto, defesa), foi_critico
 
 
-def simular_combate(s, hp, mob, andar_num):
+def simular_combate(s, hp, mob, andar_num, *, multiplicador_dano=1.0, chance_erro=0.0):
+    """`multiplicador_dano`/`chance_erro` -- Step C: a cerveja do vilarejo
+    também vale aqui, não só nas lutas de verdade (`combate.Luta`). Sem
+    objeto Luta/condicoes.py nesse loop, então quem chama (`cacar`/
+    `explorar`/dungeon de sala) já consome `vilarejo.consumir_cerveja_
+    pendente` antes e passa os dois valores prontos -- defaults (1.0, 0.0)
+    deixam esta função idêntica a antes pra quem não passa nada."""
     hp_mob = mob["hp"]
     des = s["atribs"]["destreza"]
     des_mob = at.destreza_monstro(andar_num)
@@ -411,18 +420,22 @@ def simular_combate(s, hp, mob, andar_num):
             return hp, False, log[-4:]
 
     for _ in range(60):
-        d, _ = calcular_dano(s["atk"], mob["def"], s["critico"])
-        d = max(1, int(d * fator_elemento))
-        hp_mob -= d
-        if hp_mob <= 0:
-            log.append(f"Você acerta **{d}** e derruba o alvo.")
-            return hp, True, log[-4:]
+        errou = chance_erro > 0 and random.random() < chance_erro
+        if errou:
+            log.append("Você erra o golpe completamente.")
+        else:
+            d, _ = calcular_dano(s["atk"], mob["def"], s["critico"])
+            d = max(1, int(d * fator_elemento * multiplicador_dano))
+            hp_mob -= d
+            if hp_mob <= 0:
+                log.append(f"Você acerta **{d}** e derruba o alvo.")
+                return hp, True, log[-4:]
         if random.random() < at.chance_esquiva(des, des_mob):
-            log.append(f"Você **{d}** ▸ esquivou do contra-ataque")
+            log.append("▸ esquivou do contra-ataque" if errou else f"Você **{d}** ▸ esquivou do contra-ataque")
             continue
         dm, _ = calcular_dano(mob["atk"], s["def"])
         hp -= dm
-        log.append(f"Você **{d}** ▸ inimigo **{dm}**")
+        log.append(f"Erro ▸ inimigo **{dm}**" if errou else f"Você **{d}** ▸ inimigo **{dm}**")
         if hp <= 0:
             return hp, False, log[-4:]
     return hp, False, log[-4:]
@@ -738,7 +751,10 @@ async def cacar(ctx):
 
     andar = ANDARES[j["andar"]]
     mob = random.choice(andar["monstros"])
-    hp_final, venceu, log = simular_combate(s, j["hp"], mob, j["andar"])
+    mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
+    hp_final, venceu, log = simular_combate(
+        s, j["hp"], mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
+    )
 
     e = discord.Embed(title=f"Andar {j['andar']} — {mob['nome']}", color=andar["cor"])
     e.description = "\n".join(log)
@@ -802,9 +818,12 @@ async def explorar(ctx):
     linhas = []
     caiu = False
 
+    mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
     for _ in range(3):
         mob = random.choice(andar["monstros"])
-        hp, venceu, _log = simular_combate(s, hp, mob, j["andar"])
+        hp, venceu, _log = simular_combate(
+            s, hp, mob, j["andar"], multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
+        )
         if not venceu:
             linhas.append(f"❌ Derrotado por **{mob['nome']}**.")
             caiu = True
@@ -1138,25 +1157,28 @@ async def colher(ctx):
 
 @bot.command(name="npcs", aliases=["gente", "moradores"])
 async def listar_npcs(ctx):
+    """Mundo-aware desde o Step C, não mais torre-only: o vilarejo também
+    tem gente (o alquimista, a taverneira) -- `mundo.exigir_torre` virou a
+    trava errada aqui. O Mirante segue sem ninguém, mas isso já cai
+    sozinho no "não tem ninguém vivo" de baixo, sem gate nenhum -- não
+    tem lista vazia especial pra ele."""
     j = await pegar_jogador(ctx)
     if not j:
         return
-    if not await mundo.exigir_torre(ctx, j):
-        return
-    pessoas = npcs_do_andar(j["andar"])
+    chave, nome_lugar, cor = mundo.info_do_lugar(j)
+    pessoas = npcs_do_andar(chave)
     if not pessoas:
-        await ctx.send("Não tem ninguém vivo neste andar.")
+        await ctx.send("Não tem ninguém vivo neste andar." if mundo.na_torre(j) else "Não tem ninguém vivo por aqui.")
         return
-    a = ANDARES[j["andar"]]
     linhas = []
     for n in pessoas:
         papel = PAPEL_NPC.get(n["tipo"], "")
         nome = f"{n['nome']} {n['titulo']}".strip()
         linhas.append(f"{ICONES_NPC.get(n['tipo'], '•')} **{nome}**" + (f" — {papel}" if papel else ""))
     e = discord.Embed(
-        title=f"Quem está no andar {j['andar']}",
+        title=f"Quem está no andar {j['andar']}" if mundo.na_torre(j) else f"Quem está em {nome_lugar}",
         description="\n".join(linhas),
-        color=a["cor"],
+        color=cor,
     )
     e.set_footer(text="rpg falar <nome>")
     await ctx.send(embed=e)
@@ -1533,14 +1555,17 @@ class ViewConfirmarAscensao(ViewMestreBase):
 @bot.command(name="falar", aliases=["conversar", "talk"])
 @travas.fora_de_luta()
 async def falar(ctx, *, quem: str = ""):
+    """Mundo-aware desde o Step C -- ver listar_npcs logo acima."""
     j = await pegar_jogador(ctx)
     if not j:
         return
-    if not await mundo.exigir_torre(ctx, j):
-        return
-    n = encontrar_npc(j["andar"], quem)
+    chave, _nome_lugar, cor_lugar = mundo.info_do_lugar(j)
+    n = encontrar_npc(chave, quem)
     if not n:
-        await ctx.send("Não tem ninguém com esse nome neste andar. Confere `rpg npcs`.")
+        await ctx.send(
+            "Não tem ninguém com esse nome neste andar. Confere `rpg npcs`." if mundo.na_torre(j)
+            else "Não tem ninguém com esse nome por aqui. Confere `rpg npcs`."
+        )
         return
     nome = f"{n['nome']} {n['titulo']}".strip()
 
@@ -1597,7 +1622,7 @@ async def falar(ctx, *, quem: str = ""):
         dado = dialogos.DIALOGOS[n["dialogo"]]
         opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
         abertura = pronomes.concordar(dado["abertura"], j["pronome"])
-        e = discord.Embed(description=f"*{abertura}*", color=ANDARES[j["andar"]]["cor"])
+        e = discord.Embed(description=f"*{abertura}*", color=cor_lugar)
         e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
         saida = dado.get("saida") or dialogos.SAIDA_PADRAO
 
@@ -1653,20 +1678,29 @@ async def falar(ctx, *, quem: str = ""):
 
 @bot.command(name="descansar", aliases=["rest", "descanso"])
 async def descansar(ctx):
-    """Cura HP e mana cheios em qualquer andar até o Selo (10) — sem NPC
-    físico exigido, só as duas tavernas (andares 1 e 10) têm um taverneiro
-    de verdade pra dar a fala. Acima do Selo não tem descanso pago, mesma
-    regra de "sem comércio" do resto dos andares 11-15. Preço fixo travado
-    por cooldown (ver decisoes.md) — sem o cooldown, preço fixo ficaria mais
+    """Cura HP e mana cheios em qualquer andar até o Selo (10), e agora
+    também no vilarejo (Step C) — sem NPC físico exigido, mas os andares
+    1/10 (torre) e o vilarejo têm um taverneiro de verdade pra dar a fala.
+    Acima do Selo (torre) e no Mirante não tem descanso pago, mesma regra
+    de "sem comércio". **Cuidado (Step C):** a trava velha comparava
+    `andar > ANDAR_ACIMA_DO_SELO` cru — fora da torre isso é lixo (o
+    vilarejo tem `andar` sempre 15, congelado, que É maior que o Selo).
+    Tratar o mundo primeiro, o número depois. Preço fixo travado por
+    cooldown (ver decisoes.md) — sem o cooldown, preço fixo ficaria mais
     barato que poção pra quem está bem machucado."""
     j = await pegar_jogador(ctx)
     if not j:
         return
-    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
-        await ctx.send("Não tem descanso pago acima do Selo. Sobe abastecido ou não sobe.")
+    if mundo.na_torre(j):
+        if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+            await ctx.send("Não tem descanso pago acima do Selo. Sobe abastecido ou não sobe.")
+            return
+    elif j["mundo"] != mundo.VILAREJO:
+        await ctx.send("Não tem onde descansar aqui. `rpg viajar vilarejo` tem taverna.")
         return
 
-    npc = taverneiro_do_andar(j["andar"])
+    chave_lugar, _nome_lugar, cor_lugar = mundo.info_do_lugar(j)
+    npc = taverneiro_do_andar(chave_lugar)
     nome_npc = f"{npc['nome']} {npc['titulo']}".strip() if npc else None
 
     s = stats(j)
@@ -1699,13 +1733,41 @@ async def descansar(ctx):
         else "*Você monta acampamento, cuida dos ferimentos e descansa até se sentir inteir{o|a} de novo.*",
         j["pronome"],
     )
-    e = discord.Embed(title="🛏️ Descanso", description=descricao, color=ANDARES[j["andar"]]["cor"])
+    e = discord.Embed(title="🛏️ Descanso", description=descricao, color=cor_lugar)
     e.add_field(name="Recuperado", value=f"HP +{falta_hp} · Mana +{falta_mana}", inline=False)
     e.set_footer(
         text=f"Custou {CUSTO_DESCANSAR} 🪙 · restam {j['moedas'] - CUSTO_DESCANSAR} · "
              f"próximo em {fmt_tempo(COOLDOWN_DESCANSAR)}"
     )
     await ctx.send(embed=e)
+
+
+@bot.command(name="cerveja", aliases=["beer"])
+@travas.fora_de_luta()
+async def cerveja(ctx):
+    """Só a taverna do vilarejo vende (Step C) -- coragem líquida: mais
+    dano causado, mais chance de errar, na PRÓXIMA luta, seja ela onde
+    for. Recusa uma segunda compra em cima de uma pendente -- sem isso o
+    jogador paga duas vezes por um efeito que só existe uma flag pra
+    guardar (vilarejo.consumir_cerveja_pendente devolve tudo ou nada, não
+    empilha)."""
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if j["mundo"] != mundo.VILAREJO:
+        await ctx.send("Só a taverna do vilarejo vende essa cerveja. `rpg viajar vilarejo`.")
+        return
+    if j["cerveja_pendente"]:
+        await ctx.send("Você já tem uma cerveja pra próxima luta. Vai lutar primeiro.")
+        return
+    if j["moedas"] < vilarejo.PRECO_CERVEJA:
+        await ctx.send(f"A cerveja sai por **{vilarejo.PRECO_CERVEJA}** 🪙. Você tem {j['moedas']}.")
+        return
+    db.atualizar_jogador(j["user_id"], moedas=j["moedas"] - vilarejo.PRECO_CERVEJA)
+    vilarejo.comprar_cerveja(j["user_id"])
+    await ctx.send(
+        f"🍺 Cerveja comprada por {vilarejo.PRECO_CERVEJA} 🪙 — vale pra próxima luta, seja onde for."
+    )
 
 
 # ==================== economia ====================
@@ -1747,18 +1809,32 @@ async def loja(ctx):
 @bot.command(name="comprar", aliases=["buy"])
 @travas.fora_de_luta()
 async def comprar(ctx, *, argumento: str = ""):
+    """Mundo-aware desde o Step C: dentro da torre, catálogo de sempre
+    (poção/elixir nunca entram aqui, "loja": False cuida disso sozinho);
+    no vilarejo, só os quatro elixires do alquimista (`vilarejo.
+    elixires_a_venda` -- ele é a ÚNICA exceção comercial de lá, sem
+    ferreiro nem mercador de equipamento). **Cuidado:** a trava velha
+    comparava `andar > ANDAR_ACIMA_DO_SELO` cru -- fora da torre isso é
+    lixo (o vilarejo tem `andar` sempre 15, congelado). Tratar o mundo
+    antes do número."""
     j = await pegar_jogador(ctx)
     if not j:
         return
-    if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
-        await ctx.send("Não tem ninguém vendendo nada acima do Selo.")
+    if mundo.na_torre(j):
+        if j["andar"] > andares_altos.ANDAR_ACIMA_DO_SELO:
+            await ctx.send("Não tem ninguém vendendo nada acima do Selo.")
+            return
+        disponiveis = a_venda({**consumiveis_disponiveis(j["andar_max"]),
+                               **equipamentos_do_andar(j["andar"])})
+    elif j["mundo"] == mundo.VILAREJO:
+        disponiveis = vilarejo.elixires_a_venda()
+    else:
+        await ctx.send("Não tem ninguém vendendo nada aqui.")
         return
     if not argumento:
         await ctx.send("Uso: `rpg comprar <item> <quantidade>`. Ex: `rpg comprar pocao pequena 3`")
         return
     texto, qtd = separar_quantidade(argumento)
-    disponiveis = a_venda({**consumiveis_disponiveis(j["andar_max"]),
-                           **equipamentos_do_andar(j["andar"])})
     item = encontrar_item(texto, disponiveis.keys())
 
     if not item:
@@ -1768,6 +1844,8 @@ async def comprar(ctx, *, argumento: str = ""):
                 f"**{ITENS[pista]['nome']}** não se compra nem se vende — só cai de chefe (andares 1-10) "
                 f"e vai pro Salão da guilda. `rpg guilda depositar {ITENS[pista]['nome']}`."
             )
+        elif pista in vilarejo.ELIXIRES:
+            await ctx.send(f"**{ITENS[pista]['nome']}** só o alquimista do vilarejo vende. `rpg viajar vilarejo`.")
         elif pista and not ITENS[pista].get("loja", True):
             await ctx.send(
                 f"**{ITENS[pista]['nome']}** não se compra: é item de fabricação. "

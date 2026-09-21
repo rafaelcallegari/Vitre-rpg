@@ -14,14 +14,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import bot
 import database as db
+import mundo
 import npcs
 
 TIPOS_NO_BANCO = {n["tipo"] for lista in npcs.NPCS.values() for n in lista}
 
 
-def _jogador(andar):
+def _jogador(chave):
+    """`chave` é um andar da torre (int) ou um lugar de fora (string,
+    Step C) -- `npcs.NPCS` mistura os dois tipos de chave desde que o
+    vilarejo entrou. Pra chave de fora, `andar` fica congelado em 15
+    (como qualquer jogador que já saiu pela porta) e é `mundo` quem
+    aponta pro lugar de verdade -- ver mundo.chave_do_lugar."""
     db.criar_jogador(1, "Alice")
-    db.atualizar_jogador(1, andar=andar, andar_max=andar, pronome="elu")
+    if isinstance(chave, int):
+        db.atualizar_jogador(1, andar=chave, andar_max=chave, pronome="elu")
+    else:
+        db.atualizar_jogador(1, andar=15, andar_max=15, mundo=chave, pronome="elu")
     return db.get_jogador(1)
 
 

@@ -15,6 +15,7 @@ import mundo
 import passivas
 import pronomes
 import travas
+import vilarejo
 from andares_altos import ANDAR_ACIMA_DO_SELO, LIMITE_VIAJAR
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO,
@@ -582,6 +583,28 @@ class Luta:
         # Vazio e nunca consultado pelos chefes da torre nesta passada
         # (ver decisoes.md § Step 3) -- só os espelhos (commit 3) leem.
         self.historico_ia = {}
+
+        # Step C, commit 2: a cerveja da taverna do vilarejo aplica o
+        # próprio efeito assim que a luta começa, não importa qual luta
+        # seja (boss/party/dungeon-espelho/raide -- toda Luta de verdade
+        # passa por aqui; cacar/explorar/dungeon de sala usam
+        # simular_combate, que recebe o valor à parte, ver bot.py).
+        # Reaproveita duas condições que já existiam: vulneravel no chefe
+        # (mais dano causado) e chance_erro no próprio jogador (mais
+        # chance de errar) -- "coragem líquida". Duração fixa e grande
+        # porque condicoes.py só entende rodadas, não "a luta inteira".
+        for c in self.participantes:
+            mult, erro = vilarejo.consumir_cerveja_pendente(c.id)
+            if mult > 1.0:
+                condicoes.aplicar(
+                    self, "chefe", "vulneravel", "Coragem de Taverna", "🍺",
+                    vilarejo.DURACAO_CERVEJA_RODADAS, mult - 1.0,
+                )
+            if erro > 0.0:
+                condicoes.aplicar(
+                    self, c.id, "chance_erro", "Cerveja na Cabeça", "🍺",
+                    vilarejo.DURACAO_CERVEJA_RODADAS, erro,
+                )
 
     # -------- ponte pro inimigo principal (Step A) --------
     # Explícita e temporária: todo código escrito antes do Step A (e a

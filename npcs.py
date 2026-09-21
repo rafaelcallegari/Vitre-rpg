@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import database as db
+import mundo
 from dialogos import DIALOGOS
 from game_data import ITENS
 
@@ -225,6 +226,19 @@ NPCS = {
         {"nome": "A Porta", "titulo": "atrás do trono", "tipo": "conversa", "dialogo": "porta_do_trono",
          "porta": True,
          "fala": "Madeira escura, num vão que não devia existir atrás do trono. Ela não se abre, não importa o quanto você empurre."},
+    ],
+    # ---- vilarejo (Step C) ----
+    # O alquimista é a ÚNICA exceção comercial do vilarejo -- sem ferreiro,
+    # sem mercador de equipamento, sem encantador (isso fica pras cidades
+    # do step F). "tipo": "alquimista" é um tipo novo (ver comercio.py,
+    # AlquimistaView) porque o catálogo dele não é andar-based feito o do
+    # mercador -- é sempre os quatro elixires, ponto.
+    mundo.VILAREJO: [
+        {"nome": "Ren", "titulo": "o Alquimista de Beira de Estrada", "tipo": "alquimista", "dialogo": "ren",
+         "fala": "Elixir de verdade não se compra na torre. Compra aqui, onde tem sol pra secar a erva."},
+        {"nome": "Ohanna", "titulo": "da Taverna do Poço", "tipo": "taverneiro", "dialogo": "ohanna",
+         "cerveja": True,
+         "fala": "Descansa, come, bebe. Nessa ordem se quiser acordar."},
     ],
 }
 

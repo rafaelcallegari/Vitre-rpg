@@ -8070,3 +8070,97 @@ pra_torre`, `test_viajar_ida_e_volta_vilarejo_andar_sobrevive`, `test_
 viajar_sem_destino_no_vilarejo_mostra_o_vilarejo`), o resto da suíte
 (testes antigos do Step B inclusive) continua verde. Suíte completa: 862
 passando + 1 xfail antigo.
+
+### Commit 2 — o alquimista e a taverna
+
+**O alquimista é a única exceção comercial do vilarejo, por construção,
+não por uma trava extra.** `vilarejo.py` (módulo novo, mesmo padrão de
+`mundo.py`) só expõe `elixires_a_venda()` — os quatro elixires que já
+existiam em `game_data.ITENS` (`"loja": False`, preço e `andar_min`
+intocados, "não rebalanceie nada aqui" foi levado ao pé da letra). Sem
+ferreiro nem mercador de equipamento no vilarejo: `NPCS[mundo.VILAREJO]`
+só tem dois NPCs (Ren, tipo `"alquimista"`; Ohanna, tipo `"taverneiro"`)
+— não existe peça de equipamento nem `"mercador"` pra confundir. `rpg
+comprar` dentro do vilarejo usa `vilarejo.elixires_a_venda()` como
+catálogo inteiro, sem filtro de `andar_max` — na prática nunca importa:
+ninguém chega no vilarejo sem já ter `andar_max >= 15` (só se chega lá
+depois de vencer o chefe do 15 e atravessar a porta), e o maior
+`andar_min` dos quatro elixires é 7.
+
+**`comprar`/`descansar` viraram mundo-aware, não emendaram um terceiro
+`if`.** Os dois tinham a MESMA trava cega (`j["andar"] > ANDAR_ACIMA_DO_
+SELO`) que o cartão avisou: fora da torre `andar` é só "pra onde a
+escada devolve" (congelado, sempre 15 hoje — ver Step B), comparar ele
+cru ou recusa o vilarejo por engano ou libera acima do Selo por
+acidente, dependendo de qual lado o acaso cai. Os dois comandos agora
+checam `mundo.na_torre(j)` PRIMEIRO: dentro, a trava de sempre
+(`andar > ANDAR_ACIMA_DO_SELO`) sem mudança nenhuma; fora, só o vilarejo
+libera (`j["mundo"] == mundo.VILAREJO`), Mirante e qualquer lugar futuro
+recusam. `taverneiro_do_andar` também trocou `j["andar"]` por
+`mundo.chave_do_lugar(j)` — sem isso, `descansar` no vilarejo acharia o
+taverneiro do andar 15 de verdade (não existe um, mas a chave errada já
+seria suficiente pra nunca achar a Ohanna).
+
+**`rpg npcs`/`rpg falar` pararam de ser torre-only.** Do jeito que o
+Step B deixou, os dois passavam por `mundo.exigir_torre` igual a
+cacar/explorar/boss/dungeon — mas o vilarejo TEM gente, e a trava
+recusaria mesmo assim. A trava saiu dos dois (continua intacta pros
+quatro comandos de verdade torre-only); no lugar, `mundo.chave_do_lugar`/
+`info_do_lugar` resolvem "onde" pros dois mundos. Efeito colateral
+correto: o Mirante (sem NPC nenhum) deixou de mostrar a recusa de porta
+e passou a cair no "não tem ninguém vivo por aqui" comum — o Mirante É
+um lugar de verdade agora, só que vazio, não mais "fora da torre" num
+sentido que bloqueia comando. Os dois testes do Step B que assumiam a
+recusa de porta pra QUALQUER lugar fora (`test_npcs_recusa_fora_da_
+torre`/`test_falar_recusa_fora_da_torre`) viraram `test_npcs_no_mirante_
+diz_que_nao_tem_ninguem`/`test_falar_no_mirante_diz_que_nao_tem_ninguem`
+— mudança de contrato deliberada, não regressão despercebida.
+
+**A cerveja nasce fora de combate, então mora numa coluna, não numa
+condição de `Luta`.** `jogadores.cerveja_pendente` (migração 24,
+`INTEGER NOT NULL DEFAULT 0`) guarda "tem efeito esperando" entre o
+momento da compra (`rpg cerveja`, novo comando avulso, mesmo padrão de
+comprar/vender/descansar — a taverna também ganhou um botão que chama
+ele) e o início de QUALQUER luta seguinte. `vilarejo.consumir_cerveja_
+pendente(user_id)` devolve `(multiplicador_dano, chance_erro)` — `(1.0,
+0.0)` neutro se não tem nada pendente — e limpa a flag no mesmo golpe,
+pra nunca aplicar duas vezes. Recusa comprar em cima de uma pendente
+(`rpg cerveja` de novo antes de lutar): sem isso o jogador pagaria duas
+vezes por um efeito que só existe UMA flag pra guardar.
+
+**Escopo da cerveja: qualquer luta, não só `combate.Luta`** — decisão
+explícita do Rafael (perguntado antes de implementar, ver o card).
+Isso forçou `simular_combate(s, hp, mob, andar_num)` a ganhar dois
+kwargs novos, `multiplicador_dano=1.0`/`chance_erro=0.0`, com default
+que deixa a função IDÊNTICA a antes pra quem não passa nada — os três
+call sites reais (`cacar`, `explorar`, `dungeon._resolver_combate` via
+`H["simular_combate"]`) já usavam só posicional, sem kwargs, então o
+default é seguro. `explorar` consome a cerveja UMA vez, antes do loop de
+3 mobs — não por mob; `cacar`/dungeon consomem uma vez por chamada do
+comando, que é exatamente uma luta cada. Reaproveita duas condições que
+já existiam e já eram testadas (`condicoes.py`): "mais dano causado" via
+`vulneravel` no chefe (mesmo mecanismo da Ruptura), "mais chance de
+errar" via `chance_erro` no PRÓPRIO jogador (teto real 0.6) — coragem
+líquida, de propósito assimétrica. Pra `combate.Luta`, as duas entram no
+fim de `Luta.__init__` (depois de `self.historico_ia = {}`), iterando
+`self.participantes` e chamando `condicoes.aplicar` com uma duração
+fixa grande (`vilarejo.DURACAO_CERVEJA_RODADAS = 999`) — `condicoes.py`
+só entende rodadas, não "a luta inteira", e uma luta de chefe nunca
+chega perto de 999 rodadas. Pra `simular_combate` (sem Luta, sem
+`condicoes.py`), o multiplicador entra direto na conta do dano
+(`d * fator_elemento * multiplicador_dano`) e a chance de erro veta o
+golpe do jogador ANTES de rolar dano — o contra-ataque do inimigo
+continua rolando normalmente num erro (o jogador erra o PRÓPRIO golpe,
+não vira convite pro inimigo também errar).
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`combate.py`/
+`comercio.py`/`database.py`/`dialogos.py`/`dungeon.py`/`npcs.py`,
+mantendo `vilarejo.py` e os testes): caem exatamente os 2 testes de
+`test_database_migracao.py` (coluna nova ausente), os 4 testes de
+`test_mundo.py` sobre npcs/falar mundo-aware, e 14 dos 21 testes novos
+de `test_vilarejo.py` (os 7 que sobram testam `vilarejo.py` isolado ou
+regressão pura de torre — corretamente continuam verdes mesmo com o
+resto revertido). Nenhum teste antigo se move. Suíte completa: 23
+testes novos (2 em `test_database_migracao.py`/`test_mundo.py` viraram
+testes reescritos, não contam como novos; 21 em `test_vilarejo.py`),
+885 passando + 1 xfail antigo.

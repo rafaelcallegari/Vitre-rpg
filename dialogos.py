@@ -436,6 +436,24 @@ DIALOGOS = {
         ],
         "saida": "Ela já está arrumando um lugar vazio, como se mais alguém fosse chegar.",
     },
+
+    # ---- vilarejo (Step C) ----
+    "ren": {
+        "abertura": "Elixir de verdade não se compra na torre. Compra aqui, onde tem sol pra secar a erva.",
+        "opcoes": [
+            {"label": "Por que a torre não vende elixir",
+             "resposta": "Porque lá dentro ninguém planta nada. Poção é química de emergência. Elixir precisa de tempo, e lá dentro tempo é a única coisa que falta."},
+        ],
+        "saida": "Ele volta a mexer o frasco no fogo baixo, sem levantar os olhos.",
+    },
+    "ohanna": {
+        "abertura": "Descansa, come, bebe. Nessa ordem se quiser acordar.",
+        "opcoes": [
+            {"label": "Por que a ordem importa",
+             "resposta": "Bebe antes de comer e a cerveja resolve sozinha. Come antes de descansar e o sono não presta. Eu já vi as três ordens erradas."},
+        ],
+        "saida": "Ela já está limpando outra mesa, de costas pra porta.",
+    },
 }
 
 # ---- despertar (patch 0.3 -- `rpg comecar`) --------------------------------

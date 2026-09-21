@@ -24,6 +24,7 @@ import database as db
 import game_data
 import mundo
 import passivas
+import vilarejo
 
 H = {}
 
@@ -237,7 +238,10 @@ async def _resolver_combate(enviar, j, s, run, sala, condicao, linhas_extra):
     mob = random.choice(andar["monstros"])
     s_luta, mob_luta = _aplicar_condicao_no_combate(condicao, s, mob)
     hp = _hp_atual(j, s)
-    hp_final, venceu, log = H["simular_combate"](s_luta, hp, mob_luta, 9)
+    mult_cerveja, erro_cerveja = vilarejo.consumir_cerveja_pendente(j["user_id"])
+    hp_final, venceu, log = H["simular_combate"](
+        s_luta, hp, mob_luta, 9, multiplicador_dano=mult_cerveja, chance_erro=erro_cerveja,
+    )
 
     e = discord.Embed(title=f"{sala['nome']} — {mob['nome']}", color=COR_DUNGEON)
     e.description = _montar_descricao(sala, linhas_extra, log)

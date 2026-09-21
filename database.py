@@ -294,6 +294,18 @@ COLUNAS_PORTA_VISTA = {
     "viu_porta_do_trono": "INTEGER NOT NULL DEFAULT 0",
 }
 
+COLUNAS_CERVEJA = {
+    # migração 24 -- Step C, commit 2: a cerveja da taverna do vilarejo
+    # aplica um efeito na PRÓXIMA luta, e essa luta pode ser em qualquer
+    # lugar (`rpg cacar`/`explorar`/`boss`/`party`/dungeon) -- não é
+    # condição de `Luta`, porque nasce fora de combate nenhum. Coluna
+    # própria é o jeito mais simples de guardar "efeito pendente" que
+    # sobrevive entre o momento da compra e o início da luta. 0 pra todo
+    # mundo -- ninguém tinha comprado cerveja antes disso existir. Ver
+    # vilarejo.py e decisoes.md § Step C.
+    "cerveja_pendente": "INTEGER NOT NULL DEFAULT 0",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -686,6 +698,17 @@ def init_db():
         ).rowcount
         if migrados_fora:
             print(f"Banco migrado: {migrados_fora} jogador(es) com mundo='fora' viraram mundo='mirante'.")
+
+        # migração 24: Step C, commit 2 -- coluna pra cerveja pendente
+        # (efeito da taverna do vilarejo, aplicado na próxima luta). Ver
+        # COLUNAS_CERVEJA acima.
+        novas_cerveja = [c for c in COLUNAS_CERVEJA if c not in colunas]
+        if novas_cerveja:
+            for coluna in novas_cerveja:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_CERVEJA[coluna]}"
+                )
+            print("Banco migrado: coluna cerveja_pendente criada -- ninguém comprou cerveja ainda.")
 
 
 def _migrar_upgrades_para_instancias(conn):

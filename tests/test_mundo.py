@@ -1,8 +1,10 @@
 # tests/test_mundo.py
 # Step B, commit 1: o jogador passa a ter mundo, não só andar. `mundo.
 # na_torre`/`mundo.exigir_torre` são a trava central -- todo comando que
-# assume torre (cacar/explorar/boss/party/dungeon/npcs/falar) passa por
-# ela. Ver decisoes.md § Step B.
+# assume torre (cacar/explorar/boss/party/dungeon) passa por ela. `npcs`/
+# `falar` passaram por ela até o Step B -- o Step C tirou os dois da
+# trava (o vilarejo também tem gente) e os tornou mundo-aware direto
+# (mundo.chave_do_lugar/info_do_lugar). Ver decisoes.md § Step B e § Step C.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -102,18 +104,40 @@ def test_explorar_recusa_fora_da_torre():
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
 
 
-def test_npcs_recusa_fora_da_torre():
+def test_npcs_no_mirante_diz_que_nao_tem_ninguem():
+    """Step C: `rpg npcs` deixou de ser torre-only -- o Mirante segue sem
+    gente nenhuma, mas cai no "não tem ninguém" comum, não mais na recusa
+    de porta (essa é só pra cacar/explorar/boss/party/dungeon agora)."""
     _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.listar_npcs.callback(ctx))
-    assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
+    assert "ninguém" in _msg(ctx).lower()
+    assert "porta" not in _msg(ctx).lower()
 
 
-def test_falar_recusa_fora_da_torre():
+def test_falar_no_mirante_diz_que_nao_tem_ninguem():
     _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.falar.callback(ctx, quem="qualquer"))
-    assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
+    assert "ninguém" in _msg(ctx).lower()
+    assert "porta" not in _msg(ctx).lower()
+
+
+def test_npcs_no_vilarejo_mostra_o_alquimista_e_a_taverneira():
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.listar_npcs.callback(ctx))
+    texto = ctx.send.call_args.kwargs["embed"].description.lower()
+    assert "ren" in texto
+    assert "ohanna" in texto
+
+
+def test_falar_com_ren_no_vilarejo_abre_o_balcao_do_alquimista():
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.falar.callback(ctx, quem="ren"))
+    ctx.send.assert_awaited_once()
+    assert "embed" in ctx.send.call_args.kwargs
 
 
 def test_boss_recusa_fora_da_torre(monkeypatch):

@@ -277,7 +277,7 @@ def _ctx(user_id=1):
 
 
 def _forcar_vitoria(monkeypatch):
-    monkeypatch.setattr(bot, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+    monkeypatch.setattr(bot, "simular_combate", lambda s, hp, mob, andar_num, **kw: (hp, True, ["vitória"]))
 
 
 def _jogador_ladino(user_id=1, **campos):

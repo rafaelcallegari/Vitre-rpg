@@ -32,7 +32,7 @@ def _ctx(user_id=1):
 
 
 def _sempre_vitoria(monkeypatch):
-    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num, **kw: (hp, True, ["vitória"]))
 
 
 # ==================================================================

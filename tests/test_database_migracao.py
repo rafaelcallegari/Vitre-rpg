@@ -19,6 +19,7 @@ COLUNAS_ESPERADAS = {
     "arvin_divida",
     "mundo",
     "viu_porta_do_trono",
+    "cerveja_pendente",
 }
 
 

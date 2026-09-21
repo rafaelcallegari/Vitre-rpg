@@ -47,7 +47,7 @@ def _sempre_vitoria(monkeypatch):
     """Nenhuma sala de combate mata ninguém -- pra testes que só querem
     exercitar o motor (sorteio/avanço/persistência), não o resultado de uma
     luta de verdade."""
-    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num, **kw: (hp, True, ["vitória"]))
 
 
 # ==================================================================
@@ -146,7 +146,7 @@ def test_morte_na_dungeon_apaga_a_run_e_chama_a_processar_morte(monkeypatch):
 
     monkeypatch.setitem(
         dungeon.H, "simular_combate",
-        lambda s, hp, mob, andar_num: (0, False, ["log de derrota"]),
+        lambda s, hp, mob, andar_num, **kw: (0, False, ["log de derrota"]),
     )
     spy = AsyncMock(wraps=bot.a_processar_morte)
     monkeypatch.setitem(dungeon.H, "a_processar_morte", spy)
@@ -171,7 +171,7 @@ def test_morte_na_dungeon_nao_deixa_linha_orfa_mesmo_sem_ler_a_run_de_novo(monke
 
     monkeypatch.setitem(
         dungeon.H, "simular_combate",
-        lambda s, hp, mob, andar_num: (0, False, ["derrota"]),
+        lambda s, hp, mob, andar_num, **kw: (0, False, ["derrota"]),
     )
 
     asyncio.run(dungeon.resolver_sala_atual(_ctx(1), j, run))

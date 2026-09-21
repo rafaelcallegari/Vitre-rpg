@@ -33,7 +33,7 @@ def _ctx(user_id=1):
 
 
 def _sempre_vitoria(monkeypatch):
-    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num, **kw: (hp, True, ["vitória"]))
 
 
 def _forcar_esquiva(monkeypatch):
@@ -285,7 +285,7 @@ def test_resolver_combate_de_verdade_passa_a_condicao_pro_simular_combate(monkey
     verdade."""
     capturado = {}
 
-    def _espiao(s, hp, mob, andar_num):
+    def _espiao(s, hp, mob, andar_num, **kw):
         capturado["mob_atk"] = mob["atk"]
         return hp, True, ["vitória"]
 

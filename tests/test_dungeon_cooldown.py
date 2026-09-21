@@ -36,7 +36,7 @@ def _msg(ctx):
 
 
 def _sempre_vitoria(monkeypatch):
-    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num: (hp, True, ["vitória"]))
+    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num, **kw: (hp, True, ["vitória"]))
 
 
 def test_entrar_na_dungeon_liga_o_cooldown():
@@ -95,7 +95,7 @@ def test_morrer_na_dungeon_nao_reinicia_o_cooldown(monkeypatch):
     j = _jogador(1, moedas=1000)
     db.set_cooldown(1, "dungeon", dungeon.COOLDOWN_DUNGEON)
     db.criar_dungeon_run(1, list(SALAS_DE_TESTE))   # índice 0 = "camara_dos_ecos", combate
-    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num: (0, False, ["derrota"]))
+    monkeypatch.setitem(dungeon.H, "simular_combate", lambda s, hp, mob, andar_num, **kw: (0, False, ["derrota"]))
 
     asyncio.run(dungeon.resolver_sala_atual(_ctx(1), j, dungeon.obter_run(1)))
 

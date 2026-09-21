@@ -362,7 +362,7 @@ def test_clerigo_na_dungeon_auto_ressuscita_em_vez_de_perder_a_run(monkeypatch):
     run = dungeon.obter_run(1)
     monkeypatch.setitem(
         dungeon.H, "simular_combate",
-        lambda s, hp, mob, andar_num: (0, False, ["derrota"]),
+        lambda s, hp, mob, andar_num, **kw: (0, False, ["derrota"]),
     )
     spy = AsyncMock(wraps=bot.a_processar_morte)
     monkeypatch.setitem(dungeon.H, "a_processar_morte", spy)
@@ -388,7 +388,7 @@ def test_nao_clerigo_na_dungeon_continua_perdendo_a_run_normalmente(monkeypatch)
     run = dungeon.obter_run(1)
     monkeypatch.setitem(
         dungeon.H, "simular_combate",
-        lambda s, hp, mob, andar_num: (0, False, ["derrota"]),
+        lambda s, hp, mob, andar_num, **kw: (0, False, ["derrota"]),
     )
 
     asyncio.run(dungeon.resolver_sala_atual(_ctx_dungeon(1), j, run))
@@ -422,7 +422,7 @@ def test_clerigo_reviva_na_primeira_queda_mas_morre_de_verdade_mais_adiante_na_m
     db.criar_dungeon_run(1, list(salas_com_combate_em_1_e_3))
     monkeypatch.setitem(
         dungeon.H, "simular_combate",
-        lambda s, hp, mob, andar_num: (0, False, ["derrota"]),
+        lambda s, hp, mob, andar_num, **kw: (0, False, ["derrota"]),
     )
     spy = AsyncMock(wraps=bot.a_processar_morte)
     monkeypatch.setitem(dungeon.H, "a_processar_morte", spy)

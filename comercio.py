@@ -9,9 +9,11 @@ import discord
 import atributos as at
 import database as db
 import dialogos
+import mundo
 import npcs
 import profissoes
 import pronomes
+import vilarejo
 from game_data import ITENS, ANDARES
 
 H = {}
@@ -299,7 +301,12 @@ class PainelComercioBase(discord.ui.View):
         nome = f"{self.npc['nome']} {self.npc['titulo']}".strip()
         abertura = self._dado_dialogo.get("abertura", self.npc["fala"])
         texto = pronomes.concordar(abertura, self.pronome)
-        e = discord.Embed(description=f"*{texto}*", color=ANDARES[self.andar_num]["cor"])
+        # Step C: cor do LUGAR, não mais do `andar_num` cru -- fora da
+        # torre `andar_num` é o andar congelado (sempre 15), que mostraria
+        # a cor errada (do andar 15) pro vilarejo. `mundo.info_do_lugar`
+        # já resolve torre/fora igual.
+        _, _, cor = mundo.info_do_lugar(j)
+        e = discord.Embed(description=f"*{texto}*", color=cor)
         e.set_author(name=f"{H['ICONES_NPC'][self.npc['tipo']]} {nome}")
         e.set_footer(text=f"Você tem {j['moedas']} moedas")
         return e
@@ -384,6 +391,21 @@ class BotaoSairComercio(discord.ui.Button):
             item.disabled = True
         self.view.stop()
         await interaction.response.edit_message(embed=e, view=self.view)
+
+
+class AlquimistaView(PainelComercioBase):
+    """Só o vilarejo tem um (Step C) -- catálogo fixo (os quatro
+    elixires), nunca andar-based feito o do mercador/ferreiro. Sem
+    "Vender": o alquimista não recompra nada, é a única exceção
+    comercial de lá e o cartão não pediu recompra."""
+    @discord.ui.button(label="Comprar", style=discord.ButtonStyle.success, row=0)
+    async def comprar_btn(self, interaction, button):
+        j = db.get_jogador(interaction.user.id)
+        disponiveis = vilarejo.elixires_a_venda()
+        await self.abrir_selecao(
+            interaction, _opcoes_compra(j, H["stats"](j), disponiveis),
+            "Nada à venda aqui agora.", self._pedir_quantidade_e_comprar,
+        )
 
 
 class MercadorView(PainelComercioBase):
@@ -646,7 +668,26 @@ class JoalheiroView(PainelComercioBase):
         )
 
 
+class BotaoComprarCerveja(discord.ui.Button):
+    """Só a taverna do vilarejo ganha esse botão -- `npc.get("cerveja")`
+    marca a exceção em npcs.NPCS, mesmo padrão do "porta" da Porta atrás
+    do trono. Mesmo shim de sempre: chama o `rpg cerveja` de verdade."""
+
+    def __init__(self, row):
+        super().__init__(label=f"Cerveja ({vilarejo.PRECO_CERVEJA} 🪙)", style=discord.ButtonStyle.secondary, row=row)
+
+    async def callback(self, interaction):
+        async def invocar(ctx):
+            await H["cerveja"].callback(ctx)
+        await self.view._executar(interaction, invocar)
+
+
 class TaverneiroView(PainelComercioBase):
+    def __init__(self, autor_id, npc, andar_num, pronome):
+        super().__init__(autor_id, npc, andar_num, pronome)
+        if npc.get("cerveja"):
+            self.add_item(BotaoComprarCerveja(row=0))
+
     @discord.ui.button(label="Descansar", style=discord.ButtonStyle.success, row=0)
     async def descansar_btn(self, interaction, button):
         async def invocar(ctx):
@@ -693,6 +734,7 @@ VIEW_POR_TIPO = {
     "carroceiro": CarroceiroView,
     "encantador": EncantadorView,
     "joalheiro": JoalheiroView,
+    "alquimista": AlquimistaView,
 }
 
 
