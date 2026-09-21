@@ -675,6 +675,18 @@ def init_db():
                 )
             print("Banco migrado: coluna viu_porta_do_trono criada -- ninguém viu ainda, nem quem já zerou.")
 
+        # migração 23: Step C -- "fora" deixa de ser um balde genérico e
+        # vira o nome de um lugar de verdade (o Mirante é onde a porta
+        # sempre levou, então quem estava com mundo='fora' estava lá).
+        # Sem coluna nova -- só o valor que `mundo` pode guardar cresceu
+        # (torre/mirante/vilarejo, e no step F as cidades). Idempotente:
+        # roda de novo sem achar ninguém pra migrar. Ver mundo.py.
+        migrados_fora = conn.execute(
+            "UPDATE jogadores SET mundo = 'mirante' WHERE mundo = 'fora'"
+        ).rowcount
+        if migrados_fora:
+            print(f"Banco migrado: {migrados_fora} jogador(es) com mundo='fora' viraram mundo='mirante'.")
+
 
 def _migrar_upgrades_para_instancias(conn):
     """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída

@@ -228,7 +228,7 @@ def test_botao_sair_muda_o_mundo_sem_tocar_no_andar():
     asyncio.run(botao.callback(_interacao(1)))
 
     depois = db.get_jogador(1)
-    assert depois["mundo"] == "fora"
+    assert depois["mundo"] == "mirante"   # a porta sempre dá no Mirante -- Step C
     assert depois["andar"] == 15      # preservado -- é pra onde a escada devolve
     assert depois["andar_max"] == 15
 

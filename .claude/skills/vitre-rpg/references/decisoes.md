@@ -8004,3 +8004,69 @@ bimundo (commit 3) · migração validada contra os 14 jogadores reais ·
 push · sem deploy — Step B faz parte do pacote 0.4, que sobe inteiro só
 quando os seis steps do plano (A a F) estiverem prontos, não no fim de
 nenhum step isolado.
+
+## Step C — o vilarejo ao pé da escada
+
+### Commit 1 — o lugar
+
+**`mundo` deixa de ser um balde genérico ("torre"/"fora") e passa a
+guardar o NOME do lugar direto** ("torre"/"mirante"/"vilarejo", cidades
+no step F) — exatamente o alargamento que o cartão pediu antes das duas
+cidades chegarem. Migração 23 (`database.py`) é só DADO, não schema: `UPDATE
+jogadores SET mundo = 'mirante' WHERE mundo = 'fora'` — quem estava com
+o valor antigo genérico estava, por definição, no único lugar que
+existia lá fora até agora. Roda incondicional, sem gate de coluna (todas
+as migrações anteriores guardam coluna nova; essa é a primeira só de
+dado) — é idempotente sozinha: na segunda passada não encontra ninguém
+com `mundo = 'fora'` pra migrar, então não faz nada.
+
+**`mundo.LOCAIS_FORA` nasce como registro dos lugares nomeados** — dict
+`{chave: {"nome", "cor", "descricao"}}`, Mirante e Vilarejo hoje, cidades
+do step F entram na mesma estrutura depois. `mundo.chave_do_lugar(j)` /
+`mundo.info_do_lugar(j)` são os dois helpers novos que tornam torre e
+fora uniformes pra quem monta embed ou busca NPC — `npcs.NPCS` usa a
+MESMA chave (int pro andar, string pro lugar) sem precisar de estrutura
+paralela nenhuma, já que é um dict Python comum.
+
+**A escada ganhou uma segunda perna, não um sistema novo.** `mundo.
+subir_a_escada`/`descer_para_o_vilarejo`/`subir_para_o_mirante` são três
+funções de uma linha, cada uma só troca `mundo` (nunca `andar`/
+`andar_max`, que continuam congelados em 15 desde que o jogador saiu
+pela porta) — a mesma lição do commit 3 do Step B ("`andar` sobrevive
+por construção, não por código extra"), agora provada com um segundo
+destino.
+
+**Do vilarejo, a escada só sobe até o Mirante — não pula direto pra
+torre.** Decisão deliberada, não limitação técnica: pra voltar pra torre
+a partir do vilarejo, primeiro sobe aqui, depois atravessa a porta de
+novo. Mantém a porta como o único jeito de entrar na torre, em vez de
+abrir um atalho vilarejo→torre que a esvaziaria de sentido.
+
+**`rpg viajar` trocou `destino: int = 0` por `destino: str = ""`
+(kwarg-only, `*, destino`)** pra aceitar nome de lugar
+("vilarejo"/"mirante") vindo de Discord de verdade — um `int` converter
+rejeitaria a string antes do corpo do comando rodar. `_normalizar_
+destino` faz a ponte: aceita int OU string, devolve `(número_ou_None,
+texto)`. Precisou tratar `int(0)` como caso especial ("sem destino", não
+"destino 0") pra não quebrar os quatro pontos que chamam `.callback()`
+direto com inteiro puro (`comercio.py:684`, que faz `H["viajar"].
+callback(ctx, destino=int(destino))`, e os quatro `bot.viajar.callback(ctx,
+destino=<int>)` em `test_mundo.py`) — Python não confere anotação de tipo
+em chamada direta de função, só o parser real do discord.py faz isso, e
+só na dispatch de verdade.
+
+**`_viajar_fora` virou um roteador por lugar, não por "dentro/fora"
+genérico** — cada lugar (`mundo.MIRANTE`/`mundo.VILAREJO`) sabe pra onde
+a própria escada vai; as três cidades da vista (step F) continuam sem
+ser destino em lugar nenhum, recusando com o mesmo tipo de frase nos
+dois lugares.
+
+Validado revertendo o commit inteiro (stash de `bot.py`, mantendo
+`mundo.py`/`database.py`/os testes): caem exatamente os cinco testes
+novos de transição vilarejo↔mirante↔torre em `test_mundo.py`
+(`test_viajar_vilarejo_do_mirante_desce_a_escada`, `test_viajar_mirante_
+do_vilarejo_sobe_a_escada`, `test_viajar_15_do_vilarejo_nao_pula_direto_
+pra_torre`, `test_viajar_ida_e_volta_vilarejo_andar_sobrevive`, `test_
+viajar_sem_destino_no_vilarejo_mostra_o_vilarejo`), o resto da suíte
+(testes antigos do Step B inclusive) continua verde. Suíte completa: 862
+passando + 1 xfail antigo.

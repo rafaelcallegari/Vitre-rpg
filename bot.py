@@ -911,42 +911,94 @@ def aviso_flor_do_andar_1(user_id, andar_atual):
     return "Tem uma flor diferente aqui. `rpg colher`."
 
 
+def _normalizar_destino(destino):
+    """`destino` chega como int (chamada direta -- comercio.py, testes,
+    veja `comercio.py:684`) ou string (`rpg viajar` de verdade, que
+    passou a aceitar nome de lugar no Step C). Normaliza os dois: devolve
+    (número_ou_None, texto_em_minúsculas) -- número quando dá pra
+    converter (None se não deu), texto sempre presente (vazio só quando
+    não veio destino nenhum)."""
+    if isinstance(destino, int):
+        return (0, "") if destino == 0 else (destino, str(destino))
+    texto = (destino or "").strip().lower()
+    if not texto:
+        return 0, ""
+    try:
+        return int(texto), texto
+    except ValueError:
+        return None, texto
+
+
 async def _viajar_fora(ctx, j, destino):
-    """`rpg viajar` do lado de fora -- Step B, commit 3. Só existe um
-    lugar lá fora por enquanto (o Mirante); a única transição de verdade
-    é a escada, de volta pro andar 15, sempre de graça -- sem ela o
-    jogador fica preso (ver decisoes.md § Step B). As três cidades da
-    vista não são destino nenhum ainda -- isso é step F."""
-    if not destino:
-        e = discord.Embed(
-            title=mundo.TITULO_MIRANTE, description=mundo.DESCRICAO_MIRANTE, color=0x87CEEB,
-        )
-        e.set_footer(text="rpg viajar 15 — sobe de volta pra torre, sempre de graça.")
+    """`rpg viajar` do lado de fora -- Step B trouxe só o Mirante, Step C
+    acrescenta o vilarejo. Cada lugar sabe pra onde a própria escada vai:
+    do Mirante, sobe pro andar 15 (a porta) ou desce pro vilarejo; do
+    vilarejo, só sobe de volta pro Mirante -- pra voltar pra torre a
+    partir daqui, primeiro sobe aqui, depois atravessa a porta de novo.
+    Sem a escada o jogador ficaria preso lá fora pra sempre (ver
+    decisoes.md § Step B). As três cidades da vista (step F) continuam
+    sem ser destino nenhum, em lugar nenhum."""
+    numero, texto = _normalizar_destino(destino)
+    lugar = j["mundo"]
+    dados_lugar = mundo.LOCAIS_FORA[lugar]
+
+    if not texto:
+        e = discord.Embed(title=dados_lugar["nome"], description=dados_lugar["descricao"], color=dados_lugar["cor"])
+        if lugar == mundo.MIRANTE:
+            e.set_footer(text="`rpg viajar 15` sobe de volta pra torre · `rpg viajar vilarejo` desce a escada.")
+        else:
+            e.set_footer(text="`rpg viajar mirante` sobe de volta pela escada.")
         await ctx.send(embed=e)
         return
-    if destino != 15:
+
+    if lugar == mundo.MIRANTE and (numero == 15 or texto == "torre"):
+        mundo.subir_a_escada(j["user_id"])
+        a = ANDARES[15]
+        e = discord.Embed(title=f"Andar 15 — {a['nome']}", description=a["descricao"], color=a["cor"])
+        e.set_footer(text="A escada sobe de volta — de graça, sempre.")
+        await ctx.send(embed=e)
+        return
+
+    if lugar == mundo.MIRANTE and texto == "vilarejo":
+        mundo.descer_para_o_vilarejo(j["user_id"])
+        novo = mundo.LOCAIS_FORA[mundo.VILAREJO]
+        e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
+        e.set_footer(text="A escada sobe de volta pro Mirante quando quiser.")
+        await ctx.send(embed=e)
+        return
+
+    if lugar == mundo.VILAREJO and texto == "mirante":
+        mundo.subir_para_o_mirante(j["user_id"])
+        novo = mundo.LOCAIS_FORA[mundo.MIRANTE]
+        e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
+        e.set_footer(text="`rpg viajar 15` sobe de volta pra torre a partir daqui.")
+        await ctx.send(embed=e)
+        return
+
+    if lugar == mundo.MIRANTE:
         await ctx.send(
             "Só dá pra ver as cidades daqui — ainda não tem como chegar lá. "
-            "`rpg viajar 15` sobe a escada de volta pra torre."
+            "`rpg viajar 15` sobe a escada de volta pra torre, `rpg viajar vilarejo` desce."
         )
-        return
-    mundo.subir_a_escada(j["user_id"])
-    a = ANDARES[15]
-    e = discord.Embed(title=f"Andar {15} — {a['nome']}", description=a["descricao"], color=a["cor"])
-    e.set_footer(text="A escada sobe de volta — de graça, sempre.")
-    await ctx.send(embed=e)
+    else:
+        await ctx.send("Daqui só dá pra subir de volta pro Mirante. `rpg viajar mirante`.")
 
 
 @bot.command(name="viajar", aliases=["ir", "travel"])
 @travas.fora_de_luta()
 @travas.fora_de_dungeon()
-async def viajar(ctx, destino: int = 0):
+async def viajar(ctx, *, destino: str = ""):
     j = await pegar_jogador(ctx)
     if not j:
         return
 
     if not mundo.na_torre(j):
         await _viajar_fora(ctx, j, destino)
+        return
+
+    destino, _texto = _normalizar_destino(destino)
+    if destino is None:
+        await ctx.send("Não entendi esse andar. `rpg viajar <número>`.")
         return
 
     ativa, parte_em = carroca_ativa()

@@ -44,7 +44,7 @@ def test_jogador_novo_comeca_dentro_da_torre():
 
 
 def test_na_torre_false_quando_mundo_e_fora():
-    j = _jogador(mundo_atual="fora")
+    j = _jogador(mundo_atual=mundo.MIRANTE)
     assert mundo.na_torre(j) is False
 
 
@@ -61,7 +61,7 @@ def test_exigir_torre_deixa_passar_quem_esta_na_torre():
 
 
 def test_exigir_torre_recusa_em_personagem_quem_esta_fora():
-    j = _jogador(mundo_atual="fora")
+    j = _jogador(mundo_atual=mundo.MIRANTE)
     ctx = _ctx()
     ok = asyncio.run(mundo.exigir_torre(ctx, j))
     assert ok is False
@@ -89,35 +89,35 @@ def test_cacar_funciona_normalmente_dentro_da_torre(monkeypatch):
 # ==================================================================
 
 def test_cacar_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora")
+    _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.cacar.callback(ctx))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
 
 
 def test_explorar_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora")
+    _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.explorar.callback(ctx))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
 
 
 def test_npcs_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora")
+    _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.listar_npcs.callback(ctx))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
 
 
 def test_falar_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora")
+    _jogador(1, mundo_atual=mundo.MIRANTE)
     ctx = _ctx(1)
     asyncio.run(bot.falar.callback(ctx, quem="qualquer"))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
 
 
 def test_boss_recusa_fora_da_torre(monkeypatch):
-    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     stub = AsyncMock()
     monkeypatch.setattr(combate, "iniciar_luta", stub)
@@ -127,7 +127,7 @@ def test_boss_recusa_fora_da_torre(monkeypatch):
 
 
 def test_party_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     ctx.guild = MagicMock()
     asyncio.run(bot.bot.get_command("party").callback(ctx))
@@ -135,7 +135,7 @@ def test_party_recusa_fora_da_torre():
 
 
 def test_dungeon_recusa_fora_da_torre():
-    _jogador(1, mundo_atual="fora", andar=9, andar_max=9, nivel=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=9, andar_max=9, nivel=15)
     ctx = _ctx(1)
     asyncio.run(dungeon._executar_entrar_ou_continuar(ctx, db.get_jogador(1)))
     assert "porta" in _msg(ctx).lower() or "não está na torre" in _msg(ctx).lower()
@@ -147,17 +147,17 @@ def test_dungeon_recusa_fora_da_torre():
 # ==================================================================
 
 def test_viajar_fora_sem_destino_mostra_o_mirante():
-    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino=0))
     embed = ctx.send.call_args.kwargs["embed"]
     assert embed.title == mundo.TITULO_MIRANTE
     assert "escada" in embed.description.lower()
-    assert db.get_jogador(1)["mundo"] == "fora"   # só olhou, não viajou
+    assert db.get_jogador(1)["mundo"] == mundo.MIRANTE   # só olhou, não viajou
 
 
 def test_viajar_15_fora_sobe_a_escada_de_volta_pra_torre():
-    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino=15))
     depois = db.get_jogador(1)
@@ -167,10 +167,10 @@ def test_viajar_15_fora_sobe_a_escada_de_volta_pra_torre():
 
 
 def test_viajar_outro_destino_fora_recusa_as_cidades_ainda_nao_existem():
-    _jogador(1, mundo_atual="fora", andar=15, andar_max=15)
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino=3))
-    assert db.get_jogador(1)["mundo"] == "fora"   # continua fora -- não viajou
+    assert db.get_jogador(1)["mundo"] == mundo.MIRANTE   # continua no Mirante -- não viajou
     assert "cidades" in _msg(ctx).lower()
 
 
@@ -183,3 +183,61 @@ def test_viajar_dentro_da_torre_continua_igual_regressao(monkeypatch):
     depois = db.get_jogador(1)
     assert depois["andar"] == 3
     assert depois["mundo"] == "torre"
+
+
+# ==================================================================
+# Step C, commit 1 -- a escada desce pro vilarejo
+# ==================================================================
+
+def test_viajar_vilarejo_do_mirante_desce_a_escada():
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="vilarejo"))
+    depois = db.get_jogador(1)
+    assert depois["mundo"] == mundo.VILAREJO
+    assert depois["andar"] == 15        # congelado -- é pra onde a escada devolve
+    assert depois["andar_max"] == 15
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "vilarejo" in embed.title.lower()
+
+
+def test_viajar_mirante_do_vilarejo_sobe_a_escada():
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="mirante"))
+    depois = db.get_jogador(1)
+    assert depois["mundo"] == mundo.MIRANTE
+    assert depois["andar"] == 15
+    assert depois["andar_max"] == 15
+
+
+def test_viajar_15_do_vilarejo_nao_pula_direto_pra_torre():
+    """A escada do vilarejo só sobe até o Mirante -- pra voltar pra torre
+    a partir daqui, primeiro sobe aqui, depois atravessa a porta de novo."""
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=15))
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # não subiu direto
+
+
+def test_viajar_ida_e_volta_vilarejo_andar_sobrevive():
+    _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="vilarejo"))
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO
+    asyncio.run(bot.viajar.callback(ctx, destino="mirante"))
+    assert db.get_jogador(1)["mundo"] == mundo.MIRANTE
+    asyncio.run(bot.viajar.callback(ctx, destino=15))
+    depois = db.get_jogador(1)
+    assert depois["mundo"] == "torre"
+    assert depois["andar"] == 15
+    assert depois["andar_max"] == 15
+
+
+def test_viajar_sem_destino_no_vilarejo_mostra_o_vilarejo():
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=""))
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "vilarejo" in embed.title.lower()
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # só olhou
