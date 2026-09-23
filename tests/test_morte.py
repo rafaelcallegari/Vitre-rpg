@@ -23,8 +23,9 @@ def _jogador_e_stats(andar=5, andar_max=5, moedas=1000, mortes=0):
 
 def test_penalidade_normal_tira_20_por_cento_das_moedas_e_soma_uma_morte():
     j, s = _jogador_e_stats(moedas=1000, mortes=2)
-    perda = bot.processar_morte(j, s)
+    perda, salvo_conduto = bot.processar_morte(j, s)
     assert perda == 200
+    assert salvo_conduto is False
 
     atualizado = db.get_jogador(1)
     assert atualizado["moedas"] == 800
@@ -64,8 +65,9 @@ def test_a_processar_morte_delega_pra_versao_sincrona_e_devolve_a_mesma_perda():
     """Sem pytest-asyncio na suíte -- roda a corrotina até o fim com
     asyncio.run() em vez de declarar o teste como `async def`."""
     j, s = _jogador_e_stats(moedas=500)
-    perda = asyncio.run(bot.a_processar_morte(j, s))
+    perda, salvo_conduto = asyncio.run(bot.a_processar_morte(j, s))
     assert perda == 100
+    assert salvo_conduto is False
     assert db.get_jogador(1)["moedas"] == 400
 
 
@@ -88,7 +90,7 @@ def test_morte_fora_da_dungeon_preserva_a_run_aberta_no_mesmo_indice():
     db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
     db.atualizar_dungeon_run_indice(1, 3)   # progresso: 3 salas já limpas
 
-    perda = bot.processar_morte(j, s)   # na_dungeon default False
+    perda, _salvo_conduto = bot.processar_morte(j, s)   # na_dungeon default False
 
     assert perda == 200
     run = db.get_dungeon_run(1)
@@ -100,7 +102,7 @@ def test_morte_dentro_da_dungeon_apaga_a_run_na_mesma_transacao_da_penalidade():
     j, s = _jogador_e_stats(moedas=1000)
     db.criar_dungeon_run(1, list(SALAS_DE_TESTE))
 
-    perda = bot.processar_morte(j, s, na_dungeon=True)
+    perda, _salvo_conduto = bot.processar_morte(j, s, na_dungeon=True)
 
     assert perda == 200
     assert db.get_dungeon_run(1) is None
@@ -110,7 +112,7 @@ def test_morte_dentro_da_dungeon_apaga_a_run_na_mesma_transacao_da_penalidade():
 def test_morte_fora_da_dungeon_sem_run_aberta_nao_quebra():
     j, s = _jogador_e_stats(moedas=1000)
 
-    perda = bot.processar_morte(j, s)
+    perda, _salvo_conduto = bot.processar_morte(j, s)
 
     assert perda == 200
     assert db.get_jogador(1)["moedas"] == 800

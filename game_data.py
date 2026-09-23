@@ -282,6 +282,22 @@ ITENS = {
         "vendavel": False, "loja": False, "nome": "Orbe de Ascensão", "emoji": "🔮", "tipo": "orbe",
         "descricao": "Pulsa devagar, esperando por algo que ainda não existe.",
     },
+
+    # ---------------- Essência das Trevas / Salvo-Conduto (Step D, commit 4) ----------------
+    # Tipos PRÓPRIOS (nem "material" nem "espolio" nem "consumivel") --
+    # `vendavel: False`/`loja: False` nos dois: não vende, não crafta, não
+    # equipa. Só se troca com a Entidade Sombria (entidade_sombria.py),
+    # que só aparece no andar corrompido do dia -- ela chegou com a
+    # incursão e muda de lugar junto (é coerente com a lore: ela também
+    # veio de fora). Ver decisoes.md § Step D.
+    "essencia_das_trevas": {
+        "vendavel": False, "loja": False, "nome": "Essência das Trevas", "emoji": "🌑", "tipo": "essencia",
+        "descricao": "Fria mesmo na mão fechada. Não é dela que a Entidade Sombria precisa -- é do que ela lembra.",
+    },
+    "salvo_conduto": {
+        "vendavel": False, "loja": False, "nome": "Salvo-Conduto", "emoji": "🎫", "tipo": "token",
+        "descricao": "Um uso só. Absorve a queda inteira -- as moedas, a reconquista, tudo -- em qualquer andar da torre.",
+    },
 }
 
 

@@ -273,11 +273,11 @@ async def _resolver_combate(enviar, j, s, run, sala, condicao, linhas_extra):
             )
             await enviar(embed=e)
             return
-        perda = await H["a_processar_morte"](j, s, na_dungeon=True)
+        perda, salvo_conduto = await H["a_processar_morte"](j, s, na_dungeon=True)
         e.color = COR_ARMADILHA
         e.add_field(
             name="Você caiu na dungeon",
-            value=f"Perdeu **{perda}** 🪙 e acordou no ponto de retorno com 30% de HP. A run foi encerrada.",
+            value=f"{H['texto_perda_moedas'](perda, salvo_conduto)} e acordou no ponto de retorno com 30% de HP. A run foi encerrada.",
             inline=False,
         )
         await enviar(embed=e)
@@ -547,13 +547,13 @@ async def _finalizar_derrota_espelho(luta, user_id):
     run que as cinco salas, o risco continua o mesmo até o fim."""
     luta.encerrada = True
     c = luta.participantes[0]
-    perda = await H["a_processar_morte"](c.jogador, c.s, na_dungeon=True)
+    perda, salvo_conduto = await H["a_processar_morte"](c.jogador, c.s, na_dungeon=True)
     e = luta.embed(
         titulo=f"Você cai diante do próprio reflexo — {luta.chefe['nome']}",
         cor=combate.COR_DERROTA,
         rodape=f"Caiu na rodada {luta.rodada}.",
     )
-    e.add_field(name="Derrota", value=f"Perdeu **{perda}** 🪙. A run foi encerrada.", inline=False)
+    e.add_field(name="Derrota", value=f"{H['texto_perda_moedas'](perda, salvo_conduto)}. A run foi encerrada.", inline=False)
     return e
 
 

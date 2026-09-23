@@ -1209,8 +1209,9 @@ async def finalizar_derrota(luta):
     perdas = []
     for c in luta.participantes:
         if c.caiu:
-            perda = await H["a_processar_morte"](c.jogador, c.s)
-            perdas.append(f"**{c.nome}** perdeu {perda} 🪙")
+            perda, salvo_conduto = await H["a_processar_morte"](c.jogador, c.s)
+            texto = "usou o Salvo-Conduto" if salvo_conduto else f"perdeu {perda} 🪙"
+            perdas.append(f"**{c.nome}** {texto}")
     e = luta.embed(
         titulo=f"A party caiu — {luta.chefe['nome']}",
         cor=COR_DERROTA,

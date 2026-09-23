@@ -8406,3 +8406,105 @@ exatamente os 18 testes de `test_efeitos_acessorio.py` que dependem da
 integração (schema/com_instancia/consultas de passivas/os três hooks de
 combate) — nenhum teste antigo se move. Suíte completa: 22 testes novos
 em `test_efeitos_acessorio.py`, 934 passando + 1 xfail antigo.
+
+### Commit 4 — a Essência das Trevas e a Entidade Sombria
+
+**Módulo novo (`entidade_sombria.py`), mesmo padrão de `vilarejo.py`/
+`incursao.py`.** Ela é uma loja de TOKEN, não de moeda — `PainelComercioBase`
+(comercio.py) assume moeda em toda parte (footer, descrição de preço,
+`_marca_indisponivel`), então em vez de forçar esse motor a entender uma
+segunda moeda, ela ficou de fora: `rpg selo`/`rpg salvoconduto` são
+comandos de texto de verdade, sem View de botão. `rpg falar` com ela
+mostra o preço em Essência e os dois comandos no rodapé — descoberta sem
+UI interativa.
+
+**Ela não mora em `npcs.NPCS`, ela é somada em tempo de leitura.**
+`npcs.npcs_do_andar(andar)` agora também soma `entidade_sombria.
+ENTIDADE_SOMBRIA` quando `incursao.andar_esta_corrompido(andar)` é
+True — não dá pra colocar ela numa entrada estática (não tem andar
+fixo, muda todo dia com o sorteio), e isso automaticamente alcança
+TODO caller existente de `npcs_do_andar` (`rpg npcs`, `rpg falar`,
+`ferreiro_do_andar`/`taverneiro_do_andar`/`guia_do_andar`/`mestre_do_
+andar` — os quatro últimos simplesmente não acham o tipo dela e
+ignoram, sem precisar de nenhum `if` novo).
+
+**Essência das Trevas vem do MESMO pipeline de drop que já existe —
+`rolar_drops`/`mob["drops"]` — não um mecanismo paralelo.** Mas ela NÃO
+entra na lista `drops` do mob de incursão (que já carrega os materiais
+do andar de REFERÊNCIA, Step D commit 2): é um roll separado, só em
+`cacar`/`explorar`, só quando `corrompido` é True, com a própria
+constante (`entidade_sombria.CHANCE_ESSENCIA_DROP`). Separado de
+propósito — misturar teria acoplado `incursao.py` (que não sabe nada de
+loja) a `entidade_sombria.py` (que precisa saber o dia da incursão) e
+criado um ciclo de import (`incursao` → `entidade_sombria` →
+`incursao`); a barreira ficou em `bot.py`, que já importa os dois.
+
+**Salvo-Conduto: "vale em qualquer lugar" significa dentro de
+`processar_morte`, não antes dele.** Ele intercepta a função no ponto
+mais alto — ANTES de calcular a perda de moedas ou checar `andar >
+ANDAR_ACIMA_DO_SELO` — porque "em qualquer lugar" inclui exatamente o
+caso mais duro (morrer acima do Selo, perdendo `andar_max` inteiro).
+HP ainda cai pra 30% e `mortes` ainda soma — ele absorve a
+CONSEQUÊNCIA econômica/de progresso, não apaga a queda em si (isso já
+existe, é outra coisa: a auto-ressurreição do Clérigo, que impede
+`processar_morte` de rodar). `processar_morte` passou a devolver
+`(perda, salvo_conduto_usado)` em vez de só `perda` — os cinco pontos
+que chamam essa função (bot.py×2, dungeon.py×2, combate.py×1)
+precisaram desempacotar a tupla; `bot.texto_perda_moedas` centraliza a
+frase pra nenhum dos cinco esquecer o caso do Salvo-Conduto.
+
+**"Um por jogador por vez" é limite de INVENTÁRIO, não uma coluna
+nova.** `salvo_conduto` é um item comum (`db.add_item`/`db.tem_item`/
+`db.remove_item`) — `comprar_salvo_conduto` recusa a compra se
+`db.tem_item(uid, "salvo_conduto", 1)` já for True. Sem tabela nova,
+sem estado a mais pra sincronizar com `processar_morte` (que já sabe
+consumir item).
+
+**O que ela NÃO vende, por regra explícita do cartão**: redução de
+cooldown (a torneira que a dungeon fechou de propósito) e arma pronta
+(Selen/as 24 elementais continuam o único caminho de endgame pra
+equipamento). Nenhum dos dois teve código escrito — a ausência é a
+decisão.
+
+**Medição (Monte Carlo, simulação em scratchpad — não faz parte do
+repo).** Modelo: um "dia de incursão" de farm moderado (15-20 `rpg
+cacar`, realista pra um bot de 5-10 amigos com cooldown de 60s — não um
+MMO, ninguém joga sem parar) dá, a 20% de chance por criatura de
+sombra, uma média de ~3-4 Essência das Trevas por dia (simulação com
+20.000 repetições por combinação de chance/kills, resultados na
+tabela abaixo). Preço final, arredondado pra número redondo:
+
+| kills/dia | chance | Essência média/dia |
+|-----------|--------|---------------------|
+| 15 | 20% | ~2.98 |
+| 20 | 20% | ~4.02 |
+
+`CHANCE_ESSENCIA_DROP = 0.20` · `PRECO_SELO = 10` (~3 dias de farm
+moderado — "algumas incursões", não uma) · `PRECO_SALVO_CONDUTO = 45`
+(4.5x o Selo, ~13 dias — "bem mais caro", um investimento de fim de
+jogo, não uma compra de rotina). Os três saíram juntos, como o cartão
+pediu — mexer num sem os outros dois quebra a proporção.
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`combate.py`/
+`dungeon.py`/`game_data.py`/`npcs.py`, mantendo `entidade_sombria.py` e
+os testes): caem exatamente os 10 testes de `test_entidade_sombria.py`
+que dependem da integração (NPC dinâmico, drop de verdade, `rpg selo`/
+`rpg salvoconduto`, `processar_morte` com Salvo-Conduto) e os 5 testes
+de `test_morte.py` que desempacotam a tupla nova — os 13 testes de
+`entidade_sombria.py` que só exercitam funções puras (`comprar_selo`/
+`comprar_salvo_conduto`/`encontrar_efeito` chamadas direto) continuam
+verdes mesmo com o resto revertido, porque não passam pelos cinco
+arquivos revertidos. Suíte completa: 23 testes novos em `test_entidade_
+sombria.py`, mais o ajuste de tupla em 5 testes de `test_morte.py`
+(não contam como novos), 957 passando + 1 xfail antigo.
+
+## DoD do Step D
+
+Suíte verde (890 → 957) · `decisoes.md` com o porquê do escalonamento
+completo (commit 2 — por que vida e defesa têm que escalar junto com o
+dano, não só o dano), a reutilização do `passivas.py` pra efeitos de
+acessório (commit 3 — soma por fonte, não só presença) e os tetos no
+acúmulo (0.5 de redução de dano, 0.8 de redução de cura, nenhum dos
+dois tocado pelos efeitos novos) · push · **sem deploy** — Step D faz
+parte do pacote 0.4, que sobe inteiro só quando os seis steps do plano
+(A a F) estiverem prontos.

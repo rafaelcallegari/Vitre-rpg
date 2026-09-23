@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import database as db
+import entidade_sombria
 import mundo
 from dialogos import DIALOGOS
 from game_data import ITENS
@@ -253,7 +254,13 @@ NPCS = {
 
 
 def npcs_do_andar(andar):
-    return NPCS.get(andar, [])
+    """A Entidade Sombria (Step D, commit 4) não mora em NPCS -- ela não
+    tem andar fixo, muda todo dia com a incursão. Soma dinamicamente em
+    vez de ficar em 15 entradas estáticas, uma por andar possível."""
+    pessoas = list(NPCS.get(andar, []))
+    if entidade_sombria.npc_presente(andar):
+        pessoas.append(entidade_sombria.ENTIDADE_SOMBRIA)
+    return pessoas
 
 
 def ferreiro_do_andar(andar):

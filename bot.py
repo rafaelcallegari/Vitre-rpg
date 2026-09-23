@@ -17,6 +17,7 @@ import avatar
 import database as db
 import despertar
 import dialogos
+import entidade_sombria
 import habilidades as hab
 import incursao
 import mestres
@@ -27,7 +28,7 @@ import pronomes
 import travas
 import vilarejo
 from game_data import (
-    ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, ANDAR_MESTRES,
+    ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, ANDAR_MESTRES, PASSIVAS,
     NIVEL_ASCENSAO_PADRAO, xp_necessario, multiplicador_elemento,
 )
 from npcs import (
@@ -519,7 +520,25 @@ def processar_morte(j, s, na_dungeon=False):
     Default False: um caminho de morte novo que esquecer o parâmetro
     preserva a run em vez de apagar em silêncio uma run que não tem nada a
     ver com essa morte (ver decisoes.md § Morte fora da dungeon não apaga a
-    run)."""
+    run).
+
+    Devolve (perda, salvo_conduto_usado) -- Step D, commit 4: o
+    Salvo-Conduto (item da Entidade Sombria) absorve a penalidade
+    inteira (moedas E a reconquista acima do Selo) uma vez, em qualquer
+    lugar da torre -- "vale em qualquer lugar" é o que liga a incursão
+    (lá embaixo, 2-10) à torre alta (11-15). HP ainda cai pra 30% e
+    `mortes` ainda soma -- ele suaviza a CONSEQUÊNCIA, não apaga a
+    queda. Checado ANTES de tudo: se tiver o item, a função nem calcula
+    `perda` de verdade."""
+    if db.tem_item(j["user_id"], "salvo_conduto", 1):
+        db.remove_item(j["user_id"], "salvo_conduto", 1)
+        campos = {"hp": int(s["hp_max"] * 0.3), "mortes": j["mortes"] + 1}
+        if na_dungeon:
+            db.atualizar_jogador_e_apagar_dungeon_run(j["user_id"], campos)
+        else:
+            db.atualizar_jogador(j["user_id"], **campos)
+        return 0, True
+
     perda = int(j["moedas"] * 0.20)
     campos = {
         "hp": int(s["hp_max"] * 0.3),
@@ -535,11 +554,21 @@ def processar_morte(j, s, na_dungeon=False):
         db.atualizar_jogador_e_apagar_dungeon_run(j["user_id"], campos)
     else:
         db.atualizar_jogador(j["user_id"], **campos)
-    return perda
+    return perda, False
 
 
 async def a_processar_morte(*args, **kwargs):
     return await asyncio.to_thread(processar_morte, *args, **kwargs)
+
+
+def texto_perda_moedas(perda, salvo_conduto_usado):
+    """Frase pronta pro campo "Você caiu"/"Derrota" -- os cinco pontos
+    que processam morte (cacar/explorar aqui, dungeon.py e combate.py
+    via H) usam esta função em vez de formatar "Perdeu X 🪙" cada um do
+    seu jeito, pra não esquecer o caso do Salvo-Conduto em algum deles."""
+    if salvo_conduto_usado:
+        return "🎫 O **Salvo-Conduto** absorveu a queda — nenhuma moeda perdida, nenhum andar reconquistado"
+    return f"Perdeu **{perda}** 🪙"
 
 
 def conheceu_bramm(j):
@@ -767,6 +796,8 @@ async def cacar(ctx):
     if venceu:
         nivel, xp, subiu = aplicar_xp(j, mob["xp"])
         drops = rolar_drops(mob, passivas.bonus_material(j))
+        if corrompido and random.random() < entidade_sombria.CHANCE_ESSENCIA_DROP:
+            drops.append("essencia_das_trevas")
         for item in drops:
             db.add_item(j["user_id"], item)
         hp_final = hp_depois_do_nivel(hp_final, nivel, subiu, s["atribs"])
@@ -790,11 +821,11 @@ async def cacar(ctx):
             )
         e.set_footer(text=f"HP: {max(0, hp_final)}/{at.hp_maximo(nivel, s['atribs']['constituicao'])}")
     else:
-        perda = await a_processar_morte(j, s)
+        perda, salvo_conduto = await a_processar_morte(j, s)
         e.color = 0x8B0000
         e.add_field(
             name="Você caiu",
-            value=f"Perdeu **{perda}** 🪙 e acordou no ponto de retorno com 30% de HP.",
+            value=f"{texto_perda_moedas(perda, salvo_conduto)} e acordou no ponto de retorno com 30% de HP.",
             inline=False,
         )
 
@@ -838,15 +869,21 @@ async def explorar(ctx):
         total_xp += mob["xp"]
         total_moedas += mob["moedas"]
         drops_totais += rolar_drops(mob, passivas.bonus_material(j))
+        if corrompido and random.random() < entidade_sombria.CHANCE_ESSENCIA_DROP:
+            drops_totais.append("essencia_das_trevas")
         linhas.append(f"✅ {mob['nome']} — HP restante: {max(0, hp)}")
 
     e = discord.Embed(title=f"Exploração — {andar['nome']}", color=andar["cor"])
     e.description = "\n".join(linhas)
 
     if caiu:
-        perda = await a_processar_morte(j, s)
+        perda, salvo_conduto = await a_processar_morte(j, s)
         e.color = 0x8B0000
-        e.add_field(name="Você caiu", value=f"Perdeu **{perda}** 🪙. As recompensas foram perdidas.", inline=False)
+        e.add_field(
+            name="Você caiu",
+            value=f"{texto_perda_moedas(perda, salvo_conduto)}. As recompensas foram perdidas.",
+            inline=False,
+        )
     else:
         bonus = int(total_moedas * 0.5)
         bonus_ladino = int(total_moedas * passivas.bonus_moedas(j))
@@ -892,6 +929,74 @@ async def incursao_do_dia(ctx):
     )
     e.set_footer(text="Troca no dia seguinte — a mesma torre, pra todo mundo.")
     await ctx.send(embed=e)
+
+
+def _presenca_entidade_sombria(j):
+    """A Entidade Sombria só existe fisicamente no andar corrompido de
+    hoje -- fora da torre `andar` não significa nada (Step B/C), então
+    checa mundo.na_torre ANTES do número."""
+    return mundo.na_torre(j) and entidade_sombria.npc_presente(j["andar"])
+
+
+@bot.command(name="selo", aliases=["selodeefeito"])
+@travas.fora_de_luta()
+async def selo_de_efeito(ctx, *, argumento: str = ""):
+    """A Entidade Sombria não é comércio de moeda -- não passa pelo
+    fluxo de comercio.py (PainelComercioBase assume moeda em todo
+    canto). `rpg selo <anel|colar> <efeito>` é o jeito de verdade."""
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if not _presenca_entidade_sombria(j):
+        await ctx.send(
+            "Só a Entidade Sombria vende isso, e ela só aparece no andar corrompido de hoje. "
+            "`rpg incursao` mostra qual é."
+        )
+        return
+    partes = argumento.split(maxsplit=1)
+    if len(partes) < 2 or partes[0].lower() not in ("anel", "colar"):
+        opcoes = "\n".join(
+            f"· **{PASSIVAS[c]['nome']}** ({c}) — {PASSIVAS[c]['desc']}" for c in entidade_sombria.EFEITOS_VENDIDOS
+        )
+        await ctx.send(f"Uso: `rpg selo <anel|colar> <efeito>`. Efeitos à venda:\n{opcoes}")
+        return
+    slot, texto_efeito = partes[0].lower(), partes[1]
+    efeito = entidade_sombria.encontrar_efeito(texto_efeito)
+    if not efeito:
+        await ctx.send("Não reconheço esse efeito. `rpg falar entidade` mostra as opções.")
+        return
+    ok, motivo = entidade_sombria.comprar_selo(j["user_id"], slot, efeito)
+    if not ok:
+        mensagens = {
+            "sem_peca": f"Você não tem {slot} equipado.",
+            "sem_essencia": f"Faltam Essência das Trevas — precisa de {entidade_sombria.PRECO_SELO}.",
+        }
+        await ctx.send(mensagens.get(motivo, "Não deu certo."))
+        return
+    await ctx.send(f"🩸 Selo aplicado — seu {slot} agora carrega **{PASSIVAS[efeito]['nome']}**.")
+
+
+@bot.command(name="salvoconduto", aliases=["salvo-conduto"])
+@travas.fora_de_luta()
+async def salvo_conduto(ctx):
+    j = await pegar_jogador(ctx)
+    if not j:
+        return
+    if not _presenca_entidade_sombria(j):
+        await ctx.send(
+            "Só a Entidade Sombria vende isso, e ela só aparece no andar corrompido de hoje. "
+            "`rpg incursao` mostra qual é."
+        )
+        return
+    ok, motivo = entidade_sombria.comprar_salvo_conduto(j["user_id"])
+    if not ok:
+        mensagens = {
+            "ja_tem": "Você já tem um Salvo-Conduto — só um de cada vez.",
+            "sem_essencia": f"Faltam Essência das Trevas — precisa de {entidade_sombria.PRECO_SALVO_CONDUTO}.",
+        }
+        await ctx.send(mensagens.get(motivo, "Não deu certo."))
+        return
+    await ctx.send("🎫 Salvo-Conduto guardado — absorve a próxima penalidade de morte, em qualquer lugar da torre.")
 
 
 # ==================== andares e viagem ====================
@@ -1688,6 +1793,30 @@ async def falar(ctx, *, quem: str = ""):
         else:
             view = DialogoView(ctx.author.id, j["pronome"], opcoes, saida)
         view.mensagem = await ctx.send(embed=e, view=view)
+        return
+
+    if n["tipo"] == "entidade_sombria":
+        # Loja de token, sem moeda nenhuma -- não passa por comercio.py
+        # (PainelComercioBase assume moeda em todo canto, da descrição do
+        # preço ao footer). rpg selo/rpg salvoconduto são os comandos de
+        # verdade; esta fala só explica o preço em Essência das Trevas.
+        e = discord.Embed(title=nome, description=f"*{n['fala']}*", color=0x1A1025)
+        opcoes_efeito = "\n".join(
+            f"· **{PASSIVAS[c]['nome']}** — {PASSIVAS[c]['desc']}"
+            for c in entidade_sombria.EFEITOS_VENDIDOS
+        )
+        e.add_field(
+            name=f"🩸 Selo de Efeito — {entidade_sombria.PRECO_SELO} Essência das Trevas",
+            value=f"`rpg selo <anel|colar> <efeito>`\n{opcoes_efeito}",
+            inline=False,
+        )
+        e.add_field(
+            name=f"🎫 Salvo-Conduto — {entidade_sombria.PRECO_SALVO_CONDUTO} Essência das Trevas",
+            value="`rpg salvoconduto` — absorve a próxima penalidade de morte, em qualquer lugar da torre. Um por vez.",
+            inline=False,
+        )
+        e.set_footer(text=f"Você tem {db.qtd_item(j['user_id'], 'essencia_das_trevas')} Essência das Trevas.")
+        await ctx.send(embed=e)
         return
 
     # mercador/ferreiro (rpg loja morreu) e agora taverneiro/carroceiro
