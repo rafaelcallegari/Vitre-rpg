@@ -18,6 +18,8 @@ import discord
 
 import combate
 import database as db
+import game_data
+import incursao
 import mundo
 
 H = {}
@@ -29,17 +31,57 @@ CHANCE_ENCONTRO_ESTRADA = 0.12
 
 COR_ESTRADA = 0x5A4632
 
+# ---------------- commit 2: os ladrões, de 1 a 4 ----------------
+GRUPO_MIN, GRUPO_MAX = 1, 4
+
+# Nomes e cara própria -- "bandido de estrada, não monstro. Eles falam." Cada
+# um tem uma fala mostrada na abertura do encontro (ver iniciar_encontro).
+BANDIDOS = [
+    {"nome": "Renco, o Faca Torta", "fala": "Sua bolsa, ou sua sorte — só peço uma vez."},
+    {"nome": "Ivete dos Dedos Leves", "fala": "Relaxa. Eu levo rápido, você nem sente."},
+    {"nome": "Bruno Calo", "fala": "Ninguém passa por aqui de graça, e você não é ninguém."},
+    {"nome": "A Viúva do Posto", "fala": "Chamam ela assim porque quem resiste vira viúvo."},
+    {"nome": "Tomé Sem Sombra", "fala": "Eu já andei essa estrada mais vezes do que você respirou hoje."},
+    {"nome": "Iuna, a Que Não Erra", "fala": "Não é pessoal. É só a estrada cobrando pedágio."},
+]
+
 
 def houve_encontro():
     return random.random() < CHANCE_ENCONTRO_ESTRADA
 
 
-# ---------------- o grupo (placeholder do commit 1 -- Commit 2 sorteia de verdade) ----------------
 def sortear_grupo(jogador):
-    """Commit 1: um bandido só, fixo -- só pra provar que a viagem para e a
-    luta acontece. Commit 2 substitui isto por um grupo de 1 a 4, nomeado e
-    escalado pelo andar_max do jogador (ver decisoes.md § Step E)."""
-    return [{"nome": "Bandido de Estrada", "hp": 60, "atk": 8, "def": 2, "xp": 0, "moedas": 0}]
+    """Grupo de 1 a 4, nomeado -- estatísticas escaladas pelo MESMO
+    andar de referência das incursões (`incursao.andar_referencia`,
+    andar_max travado em [1, ANDAR_MAXIMO]), não pelo andar em si (fora
+    da torre `andar` é só congelado, não significa nada -- ver Step B).
+    Reaproveita os números já tunados de `game_data.ANDARES` em vez de
+    inventar uma curva nova, mesmo raciocínio do Step D.
+
+    "Um grupo de quatro não pode ser quatro vezes um" -- hp e atk do
+    monstro de referência são DIVIDIDOS pelo tamanho do grupo (o total
+    de HP pra derrubar e o total de dano por rodada ficam calibrados
+    contra UM jogador, não multiplicam por bandido); a defesa NÃO
+    divide -- ela não soma entre bandidos do jeito que hp/atk somam, e
+    um bandido individual mais fácil de acertar não é o que o cartão
+    pediu. Ver decisoes.md § Step E pro raciocínio completo."""
+    tamanho = random.randint(GRUPO_MIN, GRUPO_MAX)
+    escolhidos = random.sample(BANDIDOS, tamanho)
+    referencia = incursao.andar_referencia(jogador)
+    monstros_referencia = game_data.ANDARES[referencia]["monstros"]
+    base = monstros_referencia[random.randrange(len(monstros_referencia))]
+    return [
+        {
+            "nome": bandido["nome"],
+            "hp": max(1, base["hp"] // tamanho),
+            "atk": max(1, base["atk"] // tamanho),
+            "def": base["def"],
+            "xp": 0,
+            "moedas": 0,
+            "fala": bandido["fala"],
+        }
+        for bandido in escolhidos
+    ]
 
 
 async def iniciar_encontro(ctx, j, destino_mundo):
@@ -49,17 +91,25 @@ async def iniciar_encontro(ctx, j, destino_mundo):
     MIRANTE) só é aplicado de verdade dentro de `_finalizar_vitoria_estrada`/
     `_finalizar_derrota_estrada` -- "vencendo, o jogador chega ao destino;
     perdendo, a viagem se resolve sem morte" (o cartão foi explícito: os
-    dois casos chegam, só fugir é que não)."""
+    dois casos chegam, só fugir é que não).
+
+    `andar_num` da Luta usa o mesmo andar de REFERÊNCIA que `sortear_
+    grupo` já usa pra escalar hp/atk (`incursao.andar_referencia`) --
+    fora da torre `j["andar"]` é só congelado (Step B), não pode
+    alimentar `at.destreza_monstro`."""
     s = H["stats"](j)
     c = combate.Combatente(j, s)
     grupo = sortear_grupo(j)
-    luta = combate.Luta([c], grupo, andar_num=j["andar"])
+    luta = combate.Luta([c], grupo, andar_num=incursao.andar_referencia(j))
     painel = PainelEstrada(luta, j["user_id"], destino_mundo)
+    falas = "\n".join(f"*“{b.get('fala')}”* — {b['nome']}" for b in grupo if b.get("fala"))
     e = luta.embed(
         titulo="Bandidos na estrada!",
         cor=COR_ESTRADA,
         rodape="A viagem para -- vença pra continuar.",
     )
+    if falas:
+        e.description = f"{e.description}\n\n{falas}" if e.description else falas
     painel.mensagem = await ctx.send(embed=e, view=painel)
 
 

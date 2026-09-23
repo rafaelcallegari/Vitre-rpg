@@ -8638,3 +8638,63 @@ sumiu). Os testes de `estrada.py` isolado (probabilidade pura,
 abandono_estrada` chamados direto) continuam verdes — não passam pelo
 `bot.py` revertido. Suíte completa: 12 testes novos em
 `test_estrada.py`, 974 passando + 1 xfail antigo.
+
+### Commit 2 — os ladrões, de 1 a 4
+
+**"Um grupo de quatro não pode ser quatro vezes um" — hp/atk dividem
+pelo tamanho do grupo, defesa não.** `sortear_grupo` pega UM monstro do
+andar de referência (mesma escolha do Step D: `game_data.ANDARES`
+já tunado, não uma curva nova) e divide `hp`/`atk` pelo tamanho do
+grupo — o HP total pra derrubar e o dano total por rodada ficam
+calibrados contra o jogador, não multiplicam por bandido. A DEFESA
+**não** divide: ela não soma entre bandidos do jeito que hp/atk somam
+(cada golpe do jogador só vê a defesa de UM alvo por vez), e um
+bandido individualmente mais fácil de acertar não é o que "calibre o
+grupo inteiro" pede — um grupo de 4 continua tão resistente por golpe
+quanto um grupo de 1, só morre em pedaços menores.
+
+**Escalonamento pelo `andar_max` (via `incursao.andar_referencia`),
+reaproveitado do Step D sem reimplementar nada** — mesma função, mesmo
+raciocínio ("ela já provou ser melhor que nível... porque equipamento
+não entra em atributo", o cartão citou de volta a decisão do Step D).
+`andar_num` passado pra `combate.Luta` usa a MESMA referência (não
+`j["andar"]`, que fora da torre é só congelado desde o Step B) — sem
+isso, `at.destreza_monstro` escalaria pelo andar errado.
+
+**Nomes e cara própria, seis bandidos com fala própria** (`BANDIDOS`,
+roster fixo) — `random.sample` garante que o mesmo grupo nunca repete
+nome. A fala de cada um entra na abertura do encontro (`iniciar_
+encontro`), não no combate em si — são só cor, não mecânica.
+
+**Fronteira descoberta no processo, corrigida no mesmo commit:
+`Luta.embed()` só mostrava o inimigo PRINCIPAL** (`self.chefe`, a ponte
+do Step A) — pra um chefe de torre (sempre um inimigo só) isso nunca
+apareceu como bug, mas um grupo de 4 bandidos ficaria com 3 barras de
+HP completamente INVISÍVEIS pro jogador. Corrigido: `embed()` agora
+itera `self.inimigos` inteiro, um field por inimigo (derrotado ou não)
+— pra qualquer luta de hoje (sempre um inimigo só) o resultado é
+BYTE A BYTE idêntico ao de antes (testado explicitamente,
+`test_embed_solo_continua_mostrando_um_campo_so_regressao`), só muda
+quando há mais de um inimigo de verdade. Não era uma das duas
+fronteiras que o cartão nomeou (Interrupção/Represália), mas "não
+descubra depois" vale igual — sem isso, o commit 2 entregaria conteúdo
+injogável.
+
+Validado revertendo o commit inteiro (stash de `combate.py`/
+`estrada.py`, mantendo os testes): caem exatamente os 8 testes que
+dependem do sorteio de verdade ou do embed multi-inimigo
+(`test_grupo_sempre_entre_um_e_quatro`, `test_bandidos_falam`,
+`test_grupo_de_um_leva_o_hp_e_atk_cheios_do_andar_de_referencia`,
+`test_grupo_de_quatro_nao_e_quatro_vezes_um`, `test_defesa_do_bandido_
+nao_divide_pelo_tamanho_do_grupo`, `test_escalonamento_usa_andar_max_
+nao_o_andar_congelado`, `test_embed_mostra_um_campo_por_bandido`,
+`test_embed_marca_bandido_derrotado_mas_continua_mostrando`) —
+`test_grupo_nunca_tem_nomes_repetidos`/`test_bandidos_nunca_dao_xp_
+nem_moedas` continuam verdes mesmo revertidos (o placeholder de um
+bandido só do commit 1 também satisfaz os dois, corretamente), e os
+testes que montam o próprio grupo à mão (`test_grupo_de_quatro_cada_
+bandido_tem_hp_independente`, `test_derrotar_um_bandido_nao_encerra_o_
+grupo_de_quatro`) não dependem do sorteio, continuam verdes — provam
+que a infra multi-inimigo do Step A já sustentava isso sozinha. Suíte
+completa: 13 testes novos em `test_estrada.py`, 987 passando + 1 xfail
+antigo.

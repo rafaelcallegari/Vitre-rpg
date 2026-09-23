@@ -11,6 +11,8 @@ import bot  # noqa: F401 -- popula combate.H via bot.instalar()
 import combate
 import database as db
 import estrada
+import game_data
+import incursao
 import mundo
 
 
@@ -182,3 +184,172 @@ def test_escada_do_mirante_pro_andar_15_nunca_tem_encontro(monkeypatch):
     asyncio.run(bot.viajar.callback(ctx, destino=15))
     assert db.get_jogador(1)["mundo"] == "torre"   # chegou, sem desvio de encontro
     assert chamou == []
+
+
+# ==================================================================
+# commit 2 -- os ladrões, de 1 a 4
+# ==================================================================
+
+def test_grupo_sempre_entre_um_e_quatro():
+    j = _jogador(1, andar_max=5)
+    for _ in range(60):
+        grupo = estrada.sortear_grupo(j)
+        assert estrada.GRUPO_MIN <= len(grupo) <= estrada.GRUPO_MAX
+
+
+def test_grupo_nunca_tem_nomes_repetidos():
+    j = _jogador(1, andar_max=5)
+    for _ in range(60):
+        grupo = estrada.sortear_grupo(j)
+        nomes = [b["nome"] for b in grupo]
+        assert len(nomes) == len(set(nomes))
+
+
+def test_bandidos_nunca_dao_xp_nem_moedas():
+    j = _jogador(1, andar_max=5)
+    for _ in range(20):
+        for bandido in estrada.sortear_grupo(j):
+            assert bandido["xp"] == 0
+            assert bandido["moedas"] == 0
+
+
+def test_bandidos_falam():
+    j = _jogador(1, andar_max=5)
+    grupo = estrada.sortear_grupo(j)
+    assert all(b.get("fala") for b in grupo)
+
+
+def test_grupo_de_um_leva_o_hp_e_atk_cheios_do_andar_de_referencia(monkeypatch):
+    """Um grupo de tamanho 1 não divide nada -- é o próprio monstro de
+    referência, hp e atk cheios."""
+    monkeypatch.setattr(estrada.random, "randint", lambda a, b: 1)
+    j = _jogador(1, andar_max=6)
+    referencia = incursao.andar_referencia(j)
+    grupo = estrada.sortear_grupo(j)
+    assert len(grupo) == 1
+    possiveis_hp = {m["hp"] for m in game_data.ANDARES[referencia]["monstros"]}
+    possiveis_atk = {m["atk"] for m in game_data.ANDARES[referencia]["monstros"]}
+    assert grupo[0]["hp"] in possiveis_hp
+    assert grupo[0]["atk"] in possiveis_atk
+
+
+def test_grupo_de_quatro_nao_e_quatro_vezes_um(monkeypatch):
+    """'Um grupo de quatro não pode ser quatro vezes um' -- hp/atk por
+    bandido ficam por volta de 1/4 do monstro de referência, calibrando
+    o TOTAL do grupo contra o jogador, não cada bandido isolado."""
+    monkeypatch.setattr(estrada.random, "randint", lambda a, b: 4)
+    j = _jogador(1, andar_max=6)
+    referencia = incursao.andar_referencia(j)
+    grupo = estrada.sortear_grupo(j)
+    assert len(grupo) == 4
+    hp_max_base = max(m["hp"] for m in game_data.ANDARES[referencia]["monstros"])
+    for bandido in grupo:
+        assert bandido["hp"] <= hp_max_base // 4 + 1
+        assert bandido["hp"] >= 1   # nunca zera
+
+
+def test_defesa_do_bandido_nao_divide_pelo_tamanho_do_grupo(monkeypatch):
+    """A defesa não soma entre bandidos do jeito que hp/atk somam --
+    fica igual à do monstro de referência não importa o tamanho do
+    grupo."""
+    j = _jogador(1, andar_max=6)
+    referencia = incursao.andar_referencia(j)
+    possiveis_def = {m["def"] for m in game_data.ANDARES[referencia]["monstros"]}
+
+    monkeypatch.setattr(estrada.random, "randint", lambda a, b: 1)
+    grupo_1 = estrada.sortear_grupo(j)
+    monkeypatch.setattr(estrada.random, "randint", lambda a, b: 4)
+    grupo_4 = estrada.sortear_grupo(j)
+
+    assert all(b["def"] in possiveis_def for b in grupo_1)
+    assert all(b["def"] in possiveis_def for b in grupo_4)
+
+
+def test_escalonamento_usa_andar_max_nao_o_andar_congelado(monkeypatch):
+    """Fora da torre `andar` é só congelado (Step B) -- escalar por ele
+    seria escalar por onde o jogador estava quando saiu, não por quanto
+    ele progrediu de verdade. Trava o grupo em tamanho 1 (sem divisão)
+    pra comparar hp bruto direto contra o andar de cada um."""
+    monkeypatch.setattr(estrada.random, "randint", lambda a, b: 1)
+    fraco = _jogador(1, andar=15, andar_max=2)
+    forte = _jogador(2, andar=15, andar_max=9)   # mesmo andar congelado, andar_max bem diferente
+
+    hp_fraco = {m["hp"] for m in game_data.ANDARES[2]["monstros"]}
+    hp_forte = {m["hp"] for m in game_data.ANDARES[9]["monstros"]}
+    assert not (hp_fraco & hp_forte)   # garantia de que os dois andares têm HP distinto
+
+    grupo_fraco = estrada.sortear_grupo(fraco)
+    grupo_forte = estrada.sortear_grupo(forte)
+    assert grupo_fraco[0]["hp"] in hp_fraco
+    assert grupo_forte[0]["hp"] in hp_forte
+
+
+# ==================================================================
+# grupo real dentro de uma Luta -- cada bandido com estado independente
+# (usa a lista de inimigos de verdade, não a ponte inimigos[0])
+# ==================================================================
+
+def test_grupo_de_quatro_cada_bandido_tem_hp_independente():
+    c = _combatente(1, classe="guerreiro", forca=20, andar_max=6)
+    grupo = [
+        {"nome": "A", "hp": 40, "atk": 5, "def": 0, "xp": 0, "moedas": 0},
+        {"nome": "B", "hp": 40, "atk": 5, "def": 0, "xp": 0, "moedas": 0},
+        {"nome": "C", "hp": 40, "atk": 5, "def": 0, "xp": 0, "moedas": 0},
+        {"nome": "D", "hp": 40, "atk": 5, "def": 0, "xp": 0, "moedas": 0},
+    ]
+    luta = combate.Luta([c], grupo, andar_num=6)
+    assert len(luta.inimigos) == 4
+
+    luta.inimigos[1].hp -= 15
+
+    assert luta.inimigos[0].hp == 40
+    assert luta.inimigos[1].hp == 25
+    assert luta.inimigos[2].hp == 40
+    assert luta.inimigos[3].hp == 40
+
+
+def test_derrotar_um_bandido_nao_encerra_o_grupo_de_quatro():
+    c = _combatente(1, classe="guerreiro", forca=20, andar_max=6)
+    grupo = [{"nome": n, "hp": 10, "atk": 1, "def": 0, "xp": 0, "moedas": 0} for n in "ABCD"]
+    luta = combate.Luta([c], grupo, andar_num=6)
+    luta.inimigos[0].hp = 0
+
+    assert luta.inimigos_ativos == luta.inimigos[1:]
+    assert len(luta.inimigos_ativos) == 3
+
+
+# ==================================================================
+# Luta.embed mostra TODOS os inimigos -- não só o principal
+# ==================================================================
+
+def test_embed_mostra_um_campo_por_bandido():
+    c = _combatente(1, classe="guerreiro", forca=20, andar_max=6)
+    grupo = [{"nome": n, "hp": 30, "atk": 1, "def": 0, "xp": 0, "moedas": 0} for n in ("Um", "Dois", "Três")]
+    luta = combate.Luta([c], grupo, andar_num=6)
+    e = luta.embed()
+    nomes_nos_fields = [f.name for f in e.fields]
+    assert "Um" in nomes_nos_fields
+    assert "Dois" in nomes_nos_fields
+    assert "Três" in nomes_nos_fields
+
+
+def test_embed_marca_bandido_derrotado_mas_continua_mostrando():
+    c = _combatente(1, classe="guerreiro", forca=20, andar_max=6)
+    grupo = [{"nome": "Vivo", "hp": 30, "atk": 1, "def": 0, "xp": 0, "moedas": 0},
+             {"nome": "Morto", "hp": 30, "atk": 1, "def": 0, "xp": 0, "moedas": 0}]
+    luta = combate.Luta([c], grupo, andar_num=6)
+    luta.inimigos[1].hp = 0
+    e = luta.embed()
+    campo_morto = next(f for f in e.fields if f.name.startswith("Morto"))
+    assert "derrotado" in campo_morto.name.lower()
+
+
+def test_embed_solo_continua_mostrando_um_campo_so_regressao():
+    """Regressão: pra qualquer luta de hoje (chefe da torre, sempre um
+    inimigo só), o embed continua mostrando exatamente um field pro
+    inimigo -- byte a byte igual ao de antes do Step E."""
+    c = _combatente(1, classe="guerreiro", forca=20, andar_max=6)
+    luta = combate.Luta([c], {"nome": "Chefinho", "hp": 100, "atk": 5, "def": 0, "xp": 10, "moedas": 10}, andar_num=1)
+    e = luta.embed()
+    nomes_de_inimigo = [f.name for f in e.fields if f.name == "Chefinho"]
+    assert len(nomes_de_inimigo) == 1

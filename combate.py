@@ -737,12 +737,20 @@ class Luta:
             title=titulo or f"Chefe do andar {self.andar_num} — {self.chefe['nome']}",
             color=cor if cor is not None else andar["cor"],
         )
-        e.add_field(
-            name=self.chefe["nome"],
-            value=f"{H['barra_hp'](self.hp_chefe, self.hp_chefe_max)} "
-                  f"{max(0, self.hp_chefe)}/{self.hp_chefe_max}",
-            inline=False,
-        )
+        # Step E: um field por inimigo, não só o principal -- antes disto,
+        # bandidos 2-4 de um grupo de estrada ficavam com o HP invisível
+        # pro jogador (a única linha mostrada era sempre `self.chefe`, a
+        # ponte pro inimigo[0]). Pra qualquer luta de hoje (sempre um
+        # inimigo só), o resultado é idêntico ao de antes -- só muda
+        # quando `self.inimigos` tem mais de um de verdade. Ver
+        # decisoes.md § Step E.
+        for inimigo in self.inimigos:
+            nome_campo = inimigo.nome if inimigo.ativo else f"{inimigo.nome} — derrotado"
+            e.add_field(
+                name=nome_campo,
+                value=f"{H['barra_hp'](inimigo.hp, inimigo.hp_max)} {max(0, inimigo.hp)}/{inimigo.hp_max}",
+                inline=False,
+            )
         for c in self.participantes:
             nome = c.nome if c.dono else f"{c.nome} (ajuda)"
             e.add_field(name=nome, value=c.barra(), inline=False)
