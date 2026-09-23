@@ -8896,3 +8896,50 @@ testes de regressão (Mirante de um trecho só, viagem dentro da torre)
 continuam verdes revertidos, prova de que o comportamento antigo não
 mudou nem um pouco pra quem não usa as cidades novas. Suíte completa:
 10 testes novos em `test_estrada.py`, 1014 passando + 1 xfail antigo.
+
+### Commit 2 — Costa Verde
+
+**Não vende nada — e isso saiu de graça, sem tocar em `bot.comprar`.**
+O comando já tinha um `if/elif` fechado (torre / vilarejo / `else:
+"Não tem ninguém vendendo nada aqui"`) — nenhum NPC de Costa Verde tem
+`tipo` comercial (`mercador`/`ferreiro`/`alquimista`/etc.), então o
+`else` já cobre a cidade inteira sem precisar de uma linha nova.
+Testado mesmo assim (`test_comprar_em_costa_verde_e_sempre_recusado`),
+pra travar a decisão contra qualquer refator futuro do `comprar`.
+
+**Suzu é o segundo elo da corrente que o Ivo (vilarejo, Step C) começou
+— ele disse "alguém saiu e foi pro norte", ela VIU esse alguém passar
+por aqui.** A fala avança quem (um viajante sem nome, mesma ambiguidade
+do Ivo — "um guerreiro, ou o que sobrou de um depois da torre"),
+quando ("antes da última colheita") e o que procurava (confirmar "o
+que dorme atrás das montanhas") — **sem nomear o inimigo maior**, que
+o cartão repetiu ainda não estar decidido. Testado explicitamente
+(`test_falar_com_suzu_avanca_o_fio_sem_nomear_o_inimigo_maior`): a
+palavra "inimigo" não pode aparecer em nenhuma fala dela, abertura,
+opções ou saída.
+
+**Osamu é o contraste com a torre, não só decoração.** "O contraste
+com a torre é o ponto" — lá dentro ninguém sabe que é abrigo, aqui
+fora vivem com os próprios mortos sem achar estranho. A fala dele diz
+isso de volta pro jogador na cara: "vocês, lá da torre, é que me
+assustam — vivem cercados de gente e não sabem nada sobre os próprios
+mortos." Testado que a palavra "torre" aparece nas respostas dele
+(`test_falar_com_osamu_menciona_a_torre_como_contraste`) — sem isso, o
+contraste vira interpretação da mesa, não fato escrito.
+
+**Zero mudança de código em `bot.py`/`npcs.py` além do dict `NPCS`
+novo — `npcs_do_andar`/`encontrar_npc`/`falar`/`listar_npcs` já eram
+mundo-aware desde o Step C** (chave por `mundo.chave_do_lugar`, que já
+devolve o nome do lugar fora da torre). Confirma a mesma lição do
+vilarejo: a estrutura de lugares nomeados aguenta cidade nova sem
+código extra, só dado.
+
+Validado revertendo o commit inteiro (stash de `npcs.py`/`dialogos.py`,
+mantendo os testes): caem exatamente os 7 testes novos de
+`test_costa_verde.py` que dependem da Suzu/Osamu existirem (a função
+`test_comprar_em_costa_verde_e_sempre_recusado` continua verde
+revertida — prova de que "não vende nada" já era um efeito colateral
+do `else` antigo, não algo que este commit introduziu) mais
+`test_todo_npc_conversa_tem_chave_de_dialogo_valida` (contagem global
+de NPCs "conversa", que subiu de 15 pra 17). Suíte completa: 9 testes
+novos em `test_costa_verde.py`, 1023 passando + 1 xfail antigo.

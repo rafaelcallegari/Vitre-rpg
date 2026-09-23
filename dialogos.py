@@ -474,6 +474,27 @@ DIALOGOS = {
         ],
         "saida": "Ela não se despede — só volta o olhar pra torre, longe, como quem vigia.",
     },
+    # ---- Costa Verde (Step F, commit 2) ----
+    "suzu": {
+        "abertura": "Ele parou bem ali, onde a névoa não sobe. Não disse o nome — só perguntou se alguém aqui já tinha visto o que dorme atrás das montanhas.",
+        "opcoes": [
+            {"label": "Perguntar quando ele passou por aqui",
+             "resposta": "Antes da última colheita. Seguiu direto pro norte, sem descansar nem uma noite — como quem tem pressa de chegar em algum lugar que não perdoa atraso."},
+            {"label": "Perguntar o que ele procurava",
+             "resposta": "Não disse um nome. Só uma pergunta: se era verdade o que os anciãos contam sobre o que dorme atrás das montanhas. Ninguém aqui soube responder."},
+        ],
+        "saida": "Ela volta a olhar pro sino, esperando ele tocar de novo sozinho.",
+    },
+    "osamu": {
+        "abertura": "Meu avô gosta do chá mais forte de manhã. Ele não bebe mais, claro. Mas eu sirvo, do jeito que ele sempre gostou.",
+        "opcoes": [
+            {"label": "Perguntar se ele ainda vê o avô",
+             "resposta": "Ver, não ver — não é isso que importa. Ele continua aqui do jeito que sempre esteve. Só mudou de forma."},
+            {"label": "Perguntar se isso não assusta ninguém aqui",
+             "resposta": "Assustar o quê? Vocês, lá da torre, é que me assustam — vivem cercados de gente e não sabem nada sobre os próprios mortos."},
+        ],
+        "saida": "Ele volta pro chá, servindo uma xícara a mais que ninguém vai beber.",
+    },
 }
 
 # ---- despertar (patch 0.3 -- `rpg comecar`) --------------------------------

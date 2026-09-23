@@ -250,6 +250,21 @@ NPCS = {
         {"nome": "Nara", "titulo": "a Que Não Entrou", "tipo": "conversa", "dialogo": "nara_vilarejo",
          "fala": "Vocês entram lá pensando que é desafio. Eu cresci vendo ela de fora. Sei pra que ela serve — e não é pra isso."},
     ],
+    # ---- Costa Verde (Step F, commit 2) ----
+    # Cidade de lore, decisão de desenho: NÃO VENDE NADA -- nenhum NPC daqui
+    # tem "tipo" comercial (bot.comprar já recusa tudo fora de torre/vilarejo
+    # sozinho, ver o `else` em bot.comprar; nada precisou mudar lá pra isso
+    # valer). Suzu é o segundo elo da corrente que o Ivo (vilarejo, Step C)
+    # começou -- ele disse que "alguém saiu e foi pro norte", ela VIU esse
+    # alguém passar por aqui. Osamu é o contraponto que dá o tom da cidade:
+    # gente que fala dos próprios mortos como quem fala do tempo, sem achar
+    # estranho -- o oposto exato da torre, onde ninguém sabe que é abrigo.
+    mundo.COSTA_VERDE: [
+        {"nome": "Suzu", "titulo": "Guardiã do Sino Parado", "tipo": "conversa", "dialogo": "suzu",
+         "fala": "Ele parou bem ali, onde a névoa não sobe. Não disse o nome — só perguntou se alguém aqui já tinha visto o que dorme atrás das montanhas."},
+        {"nome": "Osamu", "titulo": "Que Serve Chá pro Avô", "tipo": "conversa", "dialogo": "osamu",
+         "fala": "Meu avô gosta do chá mais forte de manhã. Ele não bebe mais, claro. Mas eu sirvo, do jeito que ele sempre gostou."},
+    ],
 }
 
 
