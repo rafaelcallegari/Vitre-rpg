@@ -133,6 +133,36 @@ def roubar(user_id):
     return f"Levaram **{valor}** 🪙."
 
 
+# ---------------- commit 4: o revide ----------------
+def devolver_um_roubo(user_id):
+    """Qualquer grupo de bandidos VENCIDO devolve o que a estrada levou
+    -- não precisa ser o mesmo grupo que roubou (o cartão foi
+    explícito). Mais de uma perda acumulada? Uma por vitória, a mais
+    antiga primeiro (FIFO -- `roubos_pendentes` já ordena por id) --
+    "dá mais vida à estrada" que devolver tudo de uma vez só (o cartão
+    sugeriu essa opção, escolhida e documentada aqui: voltar tudo junto
+    reduziria cada roubo a um número que zera na primeira vitória
+    seguinte; devolver aos poucos mantém um motivo pra viajar de novo).
+    None se não havia nada pendente -- `_finalizar_vitoria_estrada` só
+    mostra o campo "revide" quando tem descrição de verdade."""
+    pendentes = db.roubos_pendentes(user_id)
+    if not pendentes:
+        return None
+    roubo = pendentes[0]
+    if roubo["tipo"] == "moedas":
+        j = db.get_jogador(user_id)
+        db.atualizar_jogador(user_id, moedas=j["moedas"] + roubo["valor"])
+        db.remover_roubo(roubo["id"])
+        return f"Devolveram **{roubo['valor']}** 🪙 que a estrada tinha levado."
+    if roubo["instancia_id"]:
+        db.devolver_instancia_roubada(roubo["instancia_id"], user_id)
+    else:
+        db.add_item(user_id, roubo["item"], 1)
+    db.remover_roubo(roubo["id"])
+    dado = game_data.ITENS[roubo["item"]]
+    return f"Devolveram {dado.get('emoji', '')} **{dado['nome']}** que a estrada tinha levado.".replace("  ", " ")
+
+
 async def iniciar_encontro(ctx, j, destino_mundo):
     """Chamado por bot._viajar_fora quando `houve_encontro()` deu positivo
     -- a viagem PARA aqui: `mundo.descer_para_o_vilarejo`/`subir_para_o_
@@ -200,11 +230,14 @@ def _completar_viagem(user_id, destino_mundo):
 async def _finalizar_vitoria_estrada(luta, user_id, destino_mundo):
     """Vencendo, o jogador chega ao destino -- a estrada não pune quem
     ganhou (o cartão foi explícito). Sem recompensa de XP/moedas: os
-    bandidos não são farm (ver decisoes.md § Step E), só obstáculo."""
+    bandidos não são farm (ver decisoes.md § Step E), só obstáculo --
+    a única recompensa de vencer é `devolver_um_roubo` (commit 4), que
+    só existe se houver algo pendente."""
     luta.encerrada = True
     c = luta.participantes[0]
     c.salvar_estado()
     _completar_viagem(user_id, destino_mundo)
+    descricao_devolucao = devolver_um_roubo(user_id)
     dados_lugar = mundo.LOCAIS_FORA[destino_mundo]
     e = luta.embed(
         titulo="Os bandidos recuam",
@@ -212,6 +245,8 @@ async def _finalizar_vitoria_estrada(luta, user_id, destino_mundo):
         rodape=f"Vencido na rodada {luta.rodada}.",
     )
     e.add_field(name="Você chega", value=f"{dados_lugar['nome']} -- a estrada ficou livre dessa vez.", inline=False)
+    if descricao_devolucao:
+        e.add_field(name="🤝 O revide", value=descricao_devolucao, inline=False)
     return e
 
 

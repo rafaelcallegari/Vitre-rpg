@@ -8754,3 +8754,60 @@ commit) — nenhum teste antigo se move, `roubos_pendentes` como tabela
 nova não quebra migração nenhuma (mesma garantia de `CREATE TABLE IF
 NOT EXISTS` que toda tabela nova deste projeto já tem). Suíte completa:
 9 testes novos em `test_estrada.py`, 996 passando + 1 xfail antigo.
+
+### Commit 4 — o revide
+
+**Qualquer vitória de estrada devolve — o roubo é registrado por
+JOGADOR em `roubos_pendentes`, nunca por grupo de bandidos**, então
+"não precisa ser o mesmo que roubou" sai de graça da própria tabela:
+`devolver_um_roubo(user_id)` só olha `WHERE user_id = ?`, indiferente a
+qual grupo derrotou. Testado direto
+(`test_grupo_diferente_devolve_o_que_outro_grupo_levou`): perde pro
+grupo 1, vence o grupo 2 (uma `Luta` nova, nada em comum com a
+primeira), recupera do mesmo jeito.
+
+**"Uma por vitória" venceu "tudo de uma vez" — decisão registrada, como
+o cartão pediu.** O cartão já sugeria o motivo ("dá mais vida à
+estrada"): devolver tudo de uma vez reduziria qualquer pilha de perdas
+a um número que zera na primeira vitória seguinte — sem motivo pra
+viajar de novo depois disso. Uma por vitória mantém a estrada como
+destino, não só obstáculo. FIFO (`roubos_pendentes` já ordena por
+`id`, o roubo mais ANTIGO sai primeiro) — testado explicitamente
+(`test_devolucao_e_fifo_o_mais_antigo_primeiro`), não só "um
+qualquer".
+
+**Devolução de peça sempre vai pra MOCHILA, nunca auto-equipa.** O
+jogador pode ter comprado/equipado outra coisa no mesmo slot enquanto
+a peça original estava presa — auto-equipar sobrescreveria uma escolha
+que ele já fez depois do roubo. Peça sem instância: `db.add_item`
+(cópia comum, mesmo caminho de "desequipar sem instância" que já
+existia). Peça com instância: só `database.devolver_instancia_
+roubada` restaura `dono` — a mesma detecção "está na mochila" que já
+existia (`instancias_na_mochila`) reconhece ela de volta sozinha, sem
+nenhum `add_item` — é EXATAMENTE a mesma linha que saiu, nunca tocada
+por dentro.
+
+**Sem recompensa extra por vencer além do revide** — reafirma o commit
+1 (bandido não é farm): o campo "🤝 O revide" só aparece no embed
+quando existe alguma coisa pendente de verdade
+(`test_vitoria_sem_nada_pendente_nao_mostra_campo_de_revide`), nunca
+como enfeite vazio.
+
+Validado revertendo o commit inteiro (stash de `estrada.py`, mantendo
+`database.py`/os testes): caem exatamente os 7 testes que dependem de
+`devolver_um_roubo` (a função nem existe sem o commit) —
+`test_vitoria_sem_nada_pendente_nao_mostra_campo_de_revide` continua
+verde revertido, prova de que o caso "nada pendente" já se comportava
+certo desde o commit 1. Suíte completa: 8 testes novos em
+`test_estrada.py`, 1004 passando + 1 xfail antigo.
+
+## DoD do Step E
+
+Suíte verde (958 → 1004) · `decisoes.md` com a regra da peça e da
+instância (commit 3 — sempre equipada, nunca mochila; guarda a
+instância inteira via `dono = NULL`/restaurado, sem serializar nada), o
+que aconteceu com Interrupção e Represália (preliminar — resolvidas,
+não só reafirmadas: alvo escolhido pra uma, `inimigo_id` explícito pra
+outra) e a chance de encontro (commit 1, `CHANCE_ENCONTRO_ESTRADA =
+0.12`, ponto de partida pra playtest) · push · **sem deploy** — falta
+só o Step F pro pacote 0.4 fechar.

@@ -457,3 +457,117 @@ def test_derrota_na_estrada_chama_roubar_e_mostra_no_embed(monkeypatch):
     assert len(db.roubos_pendentes(1)) == 1
     campo_assaltado = next(f for f in e.fields if f.name == "Assaltado")
     assert "Levaram" in campo_assaltado.value
+
+
+# ==================================================================
+# commit 4 -- o revide
+# ==================================================================
+
+def test_devolver_sem_nada_pendente_devolve_none():
+    _jogador(1, moedas=1000)
+    assert estrada.devolver_um_roubo(1) is None
+
+
+def test_devolver_moedas_soma_de_volta_e_apaga_o_roubo():
+    j = _jogador(1, moedas=1000)
+    estrada.roubar(1)   # nesse jogador só há moedas pra roubar
+    perdido = j["moedas"] - db.get_jogador(1)["moedas"]
+
+    msg = estrada.devolver_um_roubo(1)
+
+    assert "Devolveram" in msg
+    assert db.get_jogador(1)["moedas"] == j["moedas"]   # voltou ao valor original
+    assert db.roubos_pendentes(1) == []
+    assert perdido > 0
+
+
+def test_devolver_item_sem_instancia_devolve_pra_mochila():
+    _jogador(1, moedas=0, arma="lamina_selo", arma_instancia_id=None)
+    estrada.roubar(1)   # sem moedas -- força peça
+
+    estrada.devolver_um_roubo(1)
+
+    assert db.tem_item(1, "lamina_selo", 1)
+    assert db.roubos_pendentes(1) == []
+
+
+def test_devolver_item_com_instancia_restaura_o_dono():
+    _jogador(1, moedas=0)
+    instancia_id = db.criar_instancia(1, "lamina_selo", nivel_melhoria=2)
+    db.definir_encantamento(instancia_id, "forca", 4)
+    db.atualizar_jogador(1, arma="lamina_selo", arma_instancia_id=instancia_id)
+    estrada.roubar(1)
+    assert db.get_instancia(instancia_id)["dono"] is None
+
+    estrada.devolver_um_roubo(1)
+
+    instancia = db.get_instancia(instancia_id)
+    assert instancia["dono"] == 1
+    assert instancia["nivel_melhoria"] == 2          # intacta
+    assert instancia["encantamento_atributo"] == "forca"
+    assert instancia["encantamento_valor"] == 4
+    assert instancia_id in [i["id"] for i in db.instancias_na_mochila(1)]
+    assert db.roubos_pendentes(1) == []
+
+
+def test_grupo_diferente_devolve_o_que_outro_grupo_levou():
+    """'Não precisa ser o mesmo que roubou' -- o roubo é registrado por
+    JOGADOR, não por grupo de bandidos. Qualquer vitória de estrada
+    posterior devolve, mesmo vindo de outro encontro."""
+    c = _combatente(1, classe="guerreiro", forca=999, moedas=1000, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
+    grupo_1 = combate.Luta([c], estrada.sortear_grupo(c.jogador), andar_num=15)
+    c.hp = 0
+    c.caiu = True
+    asyncio.run(estrada._finalizar_derrota_estrada(grupo_1, 1, mundo.VILAREJO))
+    assert len(db.roubos_pendentes(1)) == 1
+
+    j2 = db.get_jogador(1)
+    c2 = combate.Combatente(j2, bot.stats(j2))
+    grupo_2 = combate.Luta([c2], estrada.sortear_grupo(c2.jogador), andar_num=15)
+    for inimigo in grupo_2.inimigos:
+        inimigo.hp = 0
+
+    e = asyncio.run(estrada._finalizar_vitoria_estrada(grupo_2, 1, mundo.MIRANTE))
+
+    assert db.roubos_pendentes(1) == []
+    assert any(f.name == "🤝 O revide" for f in e.fields)
+
+
+def test_duas_perdas_acumuladas_uma_vitoria_devolve_so_uma():
+    """'Uma por vitória dá mais vida à estrada' -- decisão registrada e
+    testada: uma vitória nunca zera mais de um roubo pendente."""
+    _jogador(1, moedas=1000, arma="lamina_selo", arma_instancia_id=None)
+    estrada.roubar(1)   # primeira perda
+    db.atualizar_jogador(1, moedas=1000)   # garante moedas de novo pro segundo roubo
+    estrada.roubar(1)   # segunda perda
+    assert len(db.roubos_pendentes(1)) == 2
+
+    estrada.devolver_um_roubo(1)
+
+    assert len(db.roubos_pendentes(1)) == 1
+
+
+def test_devolucao_e_fifo_o_mais_antigo_primeiro():
+    _jogador(1, moedas=1000, arma="lamina_selo", arma_instancia_id=None)
+    estrada.roubar(1)
+    primeiro_roubo_id = db.roubos_pendentes(1)[0]["id"]
+    db.atualizar_jogador(1, moedas=1000, armadura="couro_batido", armadura_instancia_id=None)
+    estrada.roubar(1)
+    assert len(db.roubos_pendentes(1)) == 2
+
+    estrada.devolver_um_roubo(1)
+
+    restantes = db.roubos_pendentes(1)
+    assert len(restantes) == 1
+    assert restantes[0]["id"] != primeiro_roubo_id   # o mais antigo foi o que saiu
+
+
+def test_vitoria_sem_nada_pendente_nao_mostra_campo_de_revide():
+    c = _combatente(1, classe="guerreiro", forca=20, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
+    luta = combate.Luta([c], estrada.sortear_grupo(c.jogador), andar_num=15)
+    for inimigo in luta.inimigos:
+        inimigo.hp = 0
+
+    e = asyncio.run(estrada._finalizar_vitoria_estrada(luta, 1, mundo.VILAREJO))
+
+    assert not any(f.name == "🤝 O revide" for f in e.fields)
