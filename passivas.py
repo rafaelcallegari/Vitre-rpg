@@ -19,6 +19,7 @@
 # passiva específica. Nunca `ASCENSOES[jogador["ascensao"]]` direto --
 # sempre confirma que a chave existe antes de indexar.
 import atributos as at
+import database as db
 from game_data import ASCENSOES, PASSIVAS
 
 
@@ -27,9 +28,43 @@ def _ramo(jogador):
     return ascensao if ascensao in ASCENSOES else None
 
 
-def _tem_passiva(jogador, chave):
+def _efeitos_acessorios(jogador):
+    """Chaves de efeito equipadas em anel/colar (Step D, commit 3) -- lê
+    a instância DIRETO do banco (não passa por bot.com_instancia, que é
+    de bot.py e resolveria bônus de atributo que não interessam aqui; só
+    o campo `efeito` importa). Uma entrada por peça que tiver -- se
+    anel E colar carregarem o MESMO efeito, a chave aparece duas vezes,
+    de propósito (é o que faz as duas fontes somarem, ver
+    _fontes_do_efeito)."""
+    jogador = jogador or {}
+    chaves = []
+    for campo in ("anel_instancia_id", "colar_instancia_id"):
+        instancia_id = jogador.get(campo)
+        if not instancia_id:
+            continue
+        instancia = db.get_instancia(instancia_id)
+        if instancia and instancia.get("efeito"):
+            chaves.append(instancia["efeito"])
+    return chaves
+
+
+def _fontes_do_efeito(jogador, chave):
+    """Quantas fontes concedem esta passiva a este jogador -- a ascensão
+    conta no máximo 1 (um jogador só tem um ramo), cada acessório
+    equipado com o efeito conta mais 1. Efeitos NUMÉRICOS somam por
+    fonte (o cartão foi explícito: "um jogador com ascensão e dois
+    acessórios pode somar três fontes" -- os tetos que já existem no
+    motor, cura reduzida em 0.8/dano reduzido em 0.5, continuam valendo
+    pro TOTAL, não por fonte). Efeitos booleanos (`_tem_passiva`) só
+    perguntam se o total é > 0."""
     ramo = _ramo(jogador)
-    return ramo is not None and chave in ASCENSOES[ramo]["passivas"]
+    contagem = 1 if (ramo is not None and chave in ASCENSOES[ramo]["passivas"]) else 0
+    contagem += _efeitos_acessorios(jogador).count(chave)
+    return contagem
+
+
+def _tem_passiva(jogador, chave):
+    return _fontes_do_efeito(jogador, chave) > 0
 
 
 def critico_garantido(jogador, rodada):
@@ -176,3 +211,35 @@ def fracao_absorcao_aliado(jogador):
     if _tem_passiva(jogador, "juramento"):
         return PASSIVAS["juramento"]["valor"]
     return 0.0
+
+
+# ---------------- efeitos de acessório (Step D, commit 3) ----------------
+# Mesmas regras do resto do motor, só que a fonte pode ser anel/colar em vez
+# de ascensão -- e por isso os três somam por FONTE (_fontes_do_efeito), não
+# só "tem ou não tem": dois acessórios com o mesmo efeito valem o dobro.
+
+def cura_fracao_ao_critico(jogador):
+    """Fio Vermelho: fração do HP MÁXIMO curada quando um ataque NORMAL
+    do jogador critica -- 0.0 = nenhuma fonte concede isto. Só ataque
+    normal (não skill) -- mesmo escopo de `ganhar_furia`/`_recuperar_
+    mana_por_golpe` nos dois call sites de `_rolar_ataque_normal`."""
+    return PASSIVAS["cura_ao_critico"]["valor"] * _fontes_do_efeito(jogador, "cura_ao_critico")
+
+
+def chance_ignora_condicao(jogador):
+    """Véu Cinza: chance de ignorar por completo uma condição que o
+    chefe telegrafar (Vendaval/Choque/Congelamento/Queimadura/Ferida
+    Sombria/Marca, andares 11+) -- 0.0 = nenhuma fonte concede isto.
+    Consultada em `combate.Luta._resolver_condicao_pendente`, antes de
+    `condicoes.aplicar` -- ignorar cancela a aplicação inteira, não
+    reduz duração nem valor."""
+    return PASSIVAS["ignora_condicao"]["valor"] * _fontes_do_efeito(jogador, "ignora_condicao")
+
+
+def bonus_furia_ao_apanhar(jogador):
+    """Fervor Contido: Fúria FIXA adicional sempre que o jogador toma
+    dano de verdade do chefe -- 0 = nenhuma fonte concede isto. Só
+    Guerreiro tem Fúria (quem chama já filtra a classe, mesmo padrão de
+    `ganhar_furia`/`ganhar_furia_defesa`); diferente dos dois, este
+    dispara em QUALQUER dano recebido, não só ao escolher Defender."""
+    return PASSIVAS["furia_extra_ao_apanhar"]["valor"] * _fontes_do_efeito(jogador, "furia_extra_ao_apanhar")

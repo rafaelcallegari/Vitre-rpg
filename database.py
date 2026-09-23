@@ -318,6 +318,18 @@ COLUNAS_INSTANCIA_JOIA = {
     "joia_valor": "INTEGER",
 }
 
+COLUNAS_INSTANCIA_EFEITO = {
+    # migração 25 -- Step D, commit 3: o acessório passa a poder carregar
+    # um efeito de combate (chave de game_data.PASSIVAS, o mesmo catálogo
+    # que as ascensões já usam). Coluna nova em `instancias`, não em
+    # `jogadores` -- mesmo motivo de COLUNAS_INSTANCIA_JOIA: é a peça
+    # FÍSICA que carrega o efeito, não o jogador. NULL = nenhum efeito
+    # (todo acessório existente continua exatamente como está). Quem
+    # escreve aqui é o Selo de Efeito (Step D, commit 4) -- este commit só
+    # cria o lugar pra guardar.
+    "efeito": "TEXT",
+}
+
 COLUNAS_DUNGEON_RUN = {
     # migração 18 -- Step 2, fechamento. A auto-ressurreição do clérigo na
     # dungeon precisa valer UMA POR RUN, não uma por sala: a dungeon resolve
@@ -709,6 +721,18 @@ def init_db():
                     f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_CERVEJA[coluna]}"
                 )
             print("Banco migrado: coluna cerveja_pendente criada -- ninguém comprou cerveja ainda.")
+
+        # migração 25: Step D, commit 3 -- coluna de efeito em `instancias`
+        # (anel/colar). Ver COLUNAS_INSTANCIA_EFEITO acima -- mesmo padrão
+        # da migração 14 (joia_*), checa PRAGMA table_info de `instancias`.
+        colunas_instancias_efeito = [r["name"] for r in conn.execute("PRAGMA table_info(instancias)")]
+        novas_efeito = [c for c in COLUNAS_INSTANCIA_EFEITO if c not in colunas_instancias_efeito]
+        if novas_efeito:
+            for coluna in novas_efeito:
+                conn.execute(
+                    f"ALTER TABLE instancias ADD COLUMN {coluna} {COLUNAS_INSTANCIA_EFEITO[coluna]}"
+                )
+            print("Banco migrado: coluna efeito criada em instancias -- nenhum acessório tem efeito ainda.")
 
 
 def _migrar_upgrades_para_instancias(conn):
@@ -1572,6 +1596,20 @@ def remover_encantamento(instancia_id):
         conn.execute(
             "UPDATE instancias SET encantamento_atributo = NULL, encantamento_valor = NULL WHERE id = ?",
             (instancia_id,),
+        )
+
+
+def definir_efeito_instancia(instancia_id, efeito):
+    """O Selo de Efeito (Step D, commit 4) chama isto -- `efeito` é uma
+    chave de `game_data.PASSIVAS`. Convive com joia_*/encantamento_*/
+    nivel_melhoria na mesma linha, independente das outras três camadas
+    (mesmo padrão de `definir_encantamento`). Só entra em anel/colar --
+    quem garante isso é o call site (a loja da Entidade Sombria), não
+    esta função."""
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE instancias SET efeito = ? WHERE id = ?",
+            (efeito, instancia_id),
         )
 
 

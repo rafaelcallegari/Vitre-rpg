@@ -192,6 +192,21 @@ def _recuperar_mana_por_golpe(c):
     c.mana = min(c.s["mana_max"], c.mana + passivas.mana_recuperada_por_golpe(c.jogador))
 
 
+def _curar_por_critico(c, critico):
+    """Fio Vermelho (efeito de acessório, Step D commit 3): cura uma
+    fração do HP MÁXIMO quando um ataque NORMAL crítica. 0.0 de
+    passivas.cura_fracao_ao_critico reproduz sempre igual pra quem não
+    tem o efeito equipado -- mesmo padrão de segurança de
+    `_recuperar_mana_por_golpe`."""
+    if not critico:
+        return
+    fracao = passivas.cura_fracao_ao_critico(c.jogador)
+    if fracao <= 0:
+        return
+    cura = max(1, int(c.s["hp_max"] * fracao))
+    c.hp = min(c.s["hp_max"], c.hp + cura)
+
+
 def _talvez_auto_ressuscitar(luta):
     """Auto-ressurreição (clérigo, SOLO, Step 2d): quando o único
     combatente cai e ainda não usou a auto-ressurreição desta luta, ele
@@ -290,12 +305,14 @@ def _aplicar_dano_do_chefe(luta, alvo, dano):
     alvo.hp -= dano_alvo
     if alvo.hp <= 0:
         alvo.caiu = True
+    _ganhar_furia_por_efeito_ao_apanhar(alvo, dano_alvo)
     _refletir_se_paladino(luta, alvo, dano_alvo)
     if paladino is not None and dano_paladino > 0:
         paladino.hp -= dano_paladino
         luta.registrar(f"🛡️ {paladino.nome} absorve **{dano_paladino}** de dano por **Juramento**.")
         if paladino.hp <= 0:
             paladino.caiu = True
+        _ganhar_furia_por_efeito_ao_apanhar(paladino, dano_paladino)
         _refletir_se_paladino(luta, paladino, dano_paladino)
     return dano_alvo
 
@@ -393,6 +410,20 @@ def ganhar_furia_defesa(c):
     ganho = 0.5 * (FURIA_POR_GOLPE + int(c.jogador["forca"] or 0) / 5)
     ganho *= passivas.multiplicador_furia_desespero(c.jogador, c.hp / c.s["hp_max"])
     c.furia = min(FURIA_MAX, c.furia + ganho)
+
+
+def _ganhar_furia_por_efeito_ao_apanhar(c, dano_recebido):
+    """Fervor Contido (efeito de acessório, Step D commit 3): Fúria
+    fixa extra sempre que dano de verdade chega no jogador -- 0 de
+    passivas.bonus_furia_ao_apanhar reproduz sempre igual pra quem não
+    tem o efeito. Independente de `ganhar_furia_defesa` (que só dispara
+    ao ESCOLHER Defender): este dispara em qualquer dano recebido,
+    defendendo ou não -- é o que "ao apanhar" pede."""
+    if c.jogador["classe"] != "guerreiro" or dano_recebido <= 0:
+        return
+    bonus = passivas.bonus_furia_ao_apanhar(c.jogador)
+    if bonus:
+        c.furia = min(FURIA_MAX, c.furia + bonus)
 
 
 def regenerar_energia(luta):
@@ -842,7 +873,9 @@ class Luta:
     def _resolver_condicao_pendente(self, inimigo):
         """Aplica a condição que ESTE inimigo telegrafou na rodada
         anterior. Se o alvo defendeu, a duração é cortada pela metade —
-        é isso que faz Defender virar decisão, não sorte."""
+        é isso que faz Defender virar decisão, não sorte. Véu Cinza
+        (efeito de acessório, Step D commit 3) rola ANTES de tudo isso —
+        ignorar cancela a aplicação inteira, não só encurta a duração."""
         pend = inimigo.preparando_condicao
         if not pend:
             return
@@ -850,6 +883,9 @@ class Luta:
         alvo = self.por_id(pend["alvo_id"])
         if not alvo or not alvo.ativo:
             self.registrar(f"{pend['emoji']} O alvo de {inimigo.nome} já não está mais na luta.")
+            return
+        if random.random() < passivas.chance_ignora_condicao(alvo.jogador):
+            self.registrar(f"{pend['emoji']} {alvo.nome} ignora **{pend['nome']}** por completo.")
             return
         duracao = pend["duracao"]
         if alvo.defendendo:
@@ -2116,6 +2152,7 @@ class PainelLuta(discord.ui.View):
                 luta.registrar(f"{c.nome} acerta **{dano}**")
                 ganhar_furia(c, critico)
                 _recuperar_mana_por_golpe(c)
+                _curar_por_critico(c, critico)
                 _talvez_condicionar_chefe(luta, c)
         fim = await self.fim_da_luta()
         if fim:
@@ -2229,6 +2266,7 @@ class PainelLuta(discord.ui.View):
                         luta.registrar(f"{c.nome} acerta **{dano}**")
                         ganhar_furia(c, critico)
                         _recuperar_mana_por_golpe(c)
+                        _curar_por_critico(c, critico)
                         _talvez_condicionar_chefe(luta, c)
             if luta.hp_chefe > 0:
                 luta.turno_do_chefe()

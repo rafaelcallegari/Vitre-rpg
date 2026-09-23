@@ -700,6 +700,29 @@ PASSIVAS = {
         "desc": "Você absorve parte do dano que o chefe causaria em qualquer aliado -- transferência, não redução (não divide teto com Disciplina/Voto de Ferro).",
         "valor": 0.3,
     },
+
+    # ---- efeitos de acessório (Step D, commit 3) ----
+    # Mesma tabela, mesmo motor (passivas.py) -- a diferença é só a ORIGEM:
+    # estas três não entram em nenhum ASCENSOES[ramo]["passivas"], só chegam
+    # a um jogador via instancias.efeito (anel/colar), gravado pelo Selo de
+    # Efeito (commit 4). Nenhuma ascensão concede nenhuma delas -- por isso,
+    # hoje, nunca somam com passiva de ascensão nenhuma; somam entre si se
+    # anel e colar carregarem o MESMO efeito (ver decisoes.md § Step D).
+    "cura_ao_critico": {
+        "nome": "Fio Vermelho", "emoji": "🩸",
+        "desc": "Cura uma fração do seu HP máximo sempre que um ataque normal seu critica.",
+        "valor": 0.05,
+    },
+    "ignora_condicao": {
+        "nome": "Véu Cinza", "emoji": "🌫️",
+        "desc": "Chance de ignorar completamente uma condição que o chefe aplicar em você (Vendaval, Choque, Congelamento...).",
+        "valor": 0.20,
+    },
+    "furia_extra_ao_apanhar": {
+        "nome": "Fervor Contido", "emoji": "💢",
+        "desc": "Ganha um pouco de Fúria extra sempre que apanha um golpe do chefe (só vale pra quem tem Fúria -- Guerreiro).",
+        "valor": 3,
+    },
 }
 
 # ---------------- dungeon (andar 9 -- ver decisoes.md § Dungeon) ----------------

@@ -204,6 +204,8 @@ def com_instancia(item_dado, instancia_id, campo_upgrade=None):
     if instancia["encantamento_atributo"]:
         item_dado["_encantamento_atributo"] = instancia["encantamento_atributo"]
         item_dado["_encantamento_valor"] = instancia["encantamento_valor"]
+    if instancia["efeito"]:
+        item_dado["_efeito"] = instancia["efeito"]
     return item_dado
 
 

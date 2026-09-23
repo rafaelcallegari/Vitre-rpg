@@ -8332,3 +8332,77 @@ corrompido`, `test_cacar_no_andar_corrompido_usa_sortear_criatura`,
 e o resto da suíte continuam verdes. Suíte completa: 11 testes novos em
 `test_incursao.py` (10 de escala + 1 de regressão fora da incursão),
 912 passando + 1 xfail antigo.
+
+### Commit 3 — efeitos em acessório
+
+**Reaproveitou `passivas.py` de verdade, não só de nome.** A pergunta
+aberta do cartão «Efeitos em acessório» ("o que é um efeito?") fecha
+aqui: um efeito de acessório é uma entrada em `game_data.PASSIVAS` —
+literalmente a MESMA tabela que as ascensões já usam — cuja origem é
+`instancias.efeito` (migração 25, coluna nova em `instancias`, não em
+`jogadores` — é a PEÇA física que carrega, mesmo padrão de
+`joia_atributo`/`encantamento_atributo`) em vez de
+`ASCENSOES[ramo]["passivas"]`. Nenhuma tabela nova, nenhum motor
+paralelo — só um terceiro jeito de uma chave de `PASSIVAS` chegar num
+jogador.
+
+**`passivas._tem_passiva` virou contagem de fontes, não só presença.**
+O cartão foi explícito: "um jogador com ascensão e dois acessórios pode
+somar três fontes" — precisa SOMAR, não só perguntar "tem ou não tem".
+`_fontes_do_efeito(jogador, chave)` conta a ascensão (0 ou 1) mais cada
+acessório equipado com aquele efeito (`_efeitos_acessorios`, que lê
+`instancias.efeito` direto do banco por `anel_instancia_id`/
+`colar_instancia_id` — sem passar por `bot.com_instancia`, que resolve
+bônus de atributo que não interessam aqui). As três novas funções de
+consulta (`cura_fracao_ao_critico`/`chance_ignora_condicao`/
+`bonus_furia_ao_apanhar`) multiplicam `PASSIVAS[chave]["valor"]` pela
+contagem — dois acessórios com o MESMO efeito valem o dobro, de
+propósito. As 10 funções de passiva já existentes não precisaram mudar
+uma linha: nenhuma das três chaves novas está em nenhum
+`ASCENSOES[ramo]["passivas"]`, então pra elas a contagem nunca passa de
+1 na prática — comportamento idêntico a antes, confirmado pela suíte
+inteira (nenhum teste antigo se moveu).
+
+**Os tetos que já existem no motor não precisaram de nenhuma mudança —
+verificado, não só assumido.** `combate._reducao_dano_total` já fazia
+`min(0.5, condicoes.reducao_dano_recebido(...) + passivas.bonus_reducao_
+dano(...))` antes deste commit; como "disciplina" nunca é uma das três
+chaves que um acessório pode carregar, `_fontes_do_efeito` pra ela
+continua sempre 0 ou 1 (só a ascensão soldado concede), e o teto de 0.5
+sobre o TOTAL combinado continua valendo exatamente como sempre. Mesma
+lógica pro teto de cura reduzida em 0.8 (`condicoes.reducao_cura_
+recebida`, que nunca competiu com passiva nenhuma pra começar). Nenhum
+dos três efeitos NOVOS mexe nesses dois tetos — eles vivem em mecanismos
+próprios (cura direta no HP, chance de ignorar por completo, Fúria
+fixa), então o "cuidado com o acúmulo" do cartão se aplica a eles
+via `_fontes_do_efeito`, não via os tetos antigos.
+
+**Os três efeitos, onde entram no motor de combate:**
+- **Fio Vermelho** (cura ao crítico, `combate._curar_por_critico`):
+ cura uma fração do HP MÁXIMO — só no ATAQUE NORMAL (os dois call sites
+ de `_rolar_ataque_normal`, rodada normal e on_timeout), mesmo escopo
+ que `ganhar_furia`/`_recuperar_mana_por_golpe` já tinham nesses dois
+ pontos — skill fica de fora por enquanto (estender pra skill exigiria
+ tocar cada `_efeito_*` de habilidade individualmente, escopo maior que
+ "efeito de partida, valor pequeno").
+- **Véu Cinza** (ignora condição, `passivas.chance_ignora_condicao`,
+ consultada em `Luta._resolver_condicao_pendente` ANTES de
+ `condicoes.aplicar`): rola antes de qualquer coisa — ignorar cancela a
+ aplicação inteira (não encurta duração, que é o que Defender já faz).
+ Só cobre a condição TELEGRAFADA pelo chefe (elemento, andares 11+) —
+ as condições de armadilha da dungeon usam um mecanismo aproximado
+ à parte (`dungeon._aplicar_condicao_no_combate`, sem `condicoes.py`
+ nem Luta) e ficam de fora.
+- **Fervor Contido** (fúria extra ao apanhar,
+ `combate._ganhar_furia_por_efeito_ao_apanhar`, dentro de
+ `_aplicar_dano_do_chefe` — o ponto ÚNICO onde dano do chefe toca HP de
+ verdade): Fúria fixa, só Guerreiro, dispara em QUALQUER dano recebido
+ — diferente de `ganhar_furia_defesa` (que só dispara ao ESCOLHER
+ Defender, "ao apanhar" pede mais que isso).
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`combate.py`/
+`database.py`/`game_data.py`/`passivas.py`, mantendo os testes): caem
+exatamente os 18 testes de `test_efeitos_acessorio.py` que dependem da
+integração (schema/com_instancia/consultas de passivas/os três hooks de
+combate) — nenhum teste antigo se move. Suíte completa: 22 testes novos
+em `test_efeitos_acessorio.py`, 934 passando + 1 xfail antigo.
