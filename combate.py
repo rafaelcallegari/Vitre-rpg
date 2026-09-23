@@ -1112,14 +1112,21 @@ async def finalizar_vitoria(luta):
 # gatilho é ter vencido, não estar vencendo"). Ela era escudeira do Herói;
 # ele saiu por aquela porta e não voltou -- ver andares_altos.
 # FALA_SOBRE_VOCE[7] pro resto da história.
-TEXTO_PLEA_GUIA = (
-    "Ela já está ali quando a poeira do chefe assenta — não subiu correndo, estava esperando. "
-    "\"Não vou pedir bonito dessa vez. Eu subi a torre inteira só pra chegar antes de alguém "
-    "abrir essa porta de novo.\"\n\n"
-    "\"Ele passou por ali achando que voltava. Eu fiquei esperando do lado de fora porque foi "
-    "o que ele pediu — a única ordem dele que cumpri até o fim. Ainda estou esperando.\"\n\n"
-    "\"Fica. Não custa nada ficar.\""
-)
+# Reescrito no cartão "reescrita dos diálogos de fora da torre" -- texto do
+# Rafael, substitui a versão anterior ao pé da letra. Batida curta, uma
+# linha por vez ("Pare." sozinho é o requisito) -- ver dialogos.linhas()
+# pro mesmo mecanismo aplicado a `abertura`/`resposta` em dialogos.py; aqui
+# é só um "\n".join() direto porque este texto nunca passa por
+# pronomes.concordar() nem pelo resto do pipeline de DIALOGOS.
+TEXTO_PLEA_GUIA = "\n".join([
+    "Pare.",
+    "Eu esperei por essa porta muito antes de você sequer saber que ela existia.",
+    "Ele me pediu para esperar. Eu esperei.",
+    "Você chegou até aqui porque conseguiu subir a torre.",
+    "Eu cheguei porque tinha uma promessa para cumprir.",
+    "Então, por tudo o que eu esperei...",
+    "Essa porta é minha primeiro.",
+])
 
 
 class BotaoEscolhaPorta(discord.ui.Button):

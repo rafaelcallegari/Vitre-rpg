@@ -247,23 +247,50 @@ NPCS = {
         # dos dois entrega o inimigo maior -- isso ainda não foi decidido.
         {"nome": "Ivo", "titulo": "o Que Aponta pro Norte", "tipo": "conversa", "dialogo": "ivo",
          "fala": "Um saiu daqui, faz tempo. Foi pro norte. Nunca mais soube dele — mas também nunca soube de ninguém que tenha ido atrás."},
-        {"nome": "Nara", "titulo": "a Que Não Entrou", "tipo": "conversa", "dialogo": "nara_vilarejo",
-         "fala": "Vocês entram lá pensando que é desafio. Eu cresci vendo ela de fora. Sei pra que ela serve — e não é pra isso."},
+        # Reescrito no cartão "reescrita dos diálogos de fora da torre" --
+        # título ganhou um segundo segmento ("· a que nunca precisou
+        # procurar"), texto virou lista de linhas curtas (dialogos.linhas).
+        {"nome": "Nara", "titulo": "a Que Não Entrou · a que nunca precisou procurar", "tipo": "conversa", "dialogo": "nara_vilarejo",
+         "fala": [
+             "Vocês entram lá como se a Torre sempre tivesse sido o destino.",
+             "Como se tudo começasse aqui.",
+             "Mas não começou.",
+             "Você escolheu entrar.",
+             "Escolheu subir. Escolheu procurar alguma coisa lá dentro.",
+             "Só tem um detalhe...",
+             "Você não lembra de ter escolhido.",
+             "A Torre não estava esperando por você.",
+             "Ela está esperando porque você decidiu procurá-la.",
+             "Então me diz: por que continua subindo?",
+         ]},
     ],
-    # ---- Costa Verde (Step F, commit 2) ----
+    # ---- Costa Verde (Step F, commit 2; reescrito no cartão de reescrita) ----
     # Cidade de lore, decisão de desenho: NÃO VENDE NADA -- nenhum NPC daqui
     # tem "tipo" comercial (bot.comprar já recusa tudo fora de torre/vilarejo
     # sozinho, ver o `else` em bot.comprar; nada precisou mudar lá pra isso
-    # valer). Suzu é o segundo elo da corrente que o Ivo (vilarejo, Step C)
-    # começou -- ele disse que "alguém saiu e foi pro norte", ela VIU esse
-    # alguém passar por aqui. Osamu é o contraponto que dá o tom da cidade:
-    # gente que fala dos próprios mortos como quem fala do tempo, sem achar
-    # estranho -- o oposto exato da torre, onde ninguém sabe que é abrigo.
+    # valer). Eira (era Suzu) é o segundo elo da corrente que o Ivo (vilarejo,
+    # Step C) começou -- ele disse que "alguém saiu e foi pro norte", ela VIU
+    # esse alguém passar por aqui. Bento (era Osamu) é o contraponto que dá o
+    # tom da cidade: gente que fala dos próprios mortos como quem fala do
+    # tempo, sem achar estranho -- o oposto exato da torre, onde ninguém sabe
+    # que é abrigo. Só nome e texto mudaram -- o papel de cada um na história
+    # continua o mesmo.
     mundo.COSTA_VERDE: [
-        {"nome": "Suzu", "titulo": "Guardiã do Sino Parado", "tipo": "conversa", "dialogo": "suzu",
-         "fala": "Ele parou bem ali, onde a névoa não sobe. Não disse o nome — só perguntou se alguém aqui já tinha visto o que dorme atrás das montanhas."},
-        {"nome": "Osamu", "titulo": "Que Serve Chá pro Avô", "tipo": "conversa", "dialogo": "osamu",
-         "fala": "Meu avô gosta do chá mais forte de manhã. Ele não bebe mais, claro. Mas eu sirvo, do jeito que ele sempre gostou."},
+        {"nome": "Eira", "titulo": "Guardiã do Sino Parado · o primeiro eco do que dorme além das montanhas", "tipo": "conversa", "dialogo": "eira",
+         "fala": [
+             "Ele parou aqui por pouco tempo.",
+             "Ficou diante do sino. Não tocou.",
+             "Só perguntou se os anciãos ainda contavam a história do que dorme atrás das montanhas.",
+             "Eu perguntei por que queria saber.",
+             "Ele não respondeu.",
+             "Mas quem pergunta com tanta pressa já costuma ter ouvido a resposta em algum outro lugar.",
+         ]},
+        {"nome": "Bento", "titulo": "Que Serve Chá pro Avô · aquele que não deixou os mortos para trás", "tipo": "conversa", "dialogo": "bento",
+         "fala": [
+             "Meu avô gostava do chá forte.",
+             "Então eu preparo forte.",
+             "De manhã, como sempre.",
+         ]},
     ],
 }
 

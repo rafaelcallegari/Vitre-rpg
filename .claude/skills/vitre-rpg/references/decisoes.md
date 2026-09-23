@@ -9025,3 +9025,64 @@ medido contra o tempo de farm real de `rpg cacar`/chefe, não chutado)
 espelhos, mestres, multi-inimigo, porta, vilarejo, incursões e estrada
 sobem juntos — o deploy em si continua sendo ação separada, não
 disparada por este cartão.
+
+## Vitre 0.4 — reescrita dos diálogos de fora da torre + o NPC que oferece parar
+
+Cartão reaberto sobre o Step F já fechado. HEAD `13851f9`, suíte em 1038
+(1037 + 1 xfail). **NÃO SOBE** -- o 0.4 ainda não deployou, então mexer no
+texto de NPCs que já estavam prontos não quebra nada em produção.
+
+### Commit 1 — os textos, com o ritmo preservado
+
+**`abertura`/`resposta` em `dialogos.py` passam a aceitar LISTA de linhas,
+sem quebrar quem continua string única.** `dialogos.linhas(texto_ou_lista)`
+normaliza os dois formatos (junta com quebra de linha pra lista, passa
+direto pra string) -- chamada nos dois pontos que renderizam texto de diálogo em
+`bot.py`: a abertura (`falar()`) e a resposta de cada opção
+(`BotaoOpcaoDialogo.__init__`, ANTES de guardar em `self.resposta`, porque
+o clique reaproveita esse valor direto sem passar por `linhas()` de novo).
+`pronomes.concordar()` espera string, nunca lista -- por isso `linhas()`
+sempre roda ANTES dele na cadeia, nunca depois. Escolha deliberada: "batida
+curta, uma linha por vez" é requisito do cartão -- "Pare." sozinho perde o
+efeito se virar parágrafo, e o jeito mais direto de garantir isso no
+Discord é uma quebra de linha de verdade por item da lista, não espaço.
+
+**Suzu virou Eira, Osamu virou Bento -- chave de diálogo, nome em
+`npcs.py`, título (os dois ganharam um segundo segmento com "·") e todo o
+texto.** Papel de cada um na história não mudou (Eira continua o segundo
+elo da corrente do Herói, Bento continua o contraste com a torre) -- só o
+nome e as palavras. Testado que os nomes antigos não sobram em lugar
+nenhum (`test_nomes_antigos_suzu_e_osamu_nao_sobram_em_lugar_nenhum`),
+tanto como chave de `DIALOGOS` quanto como `nome` de NPC.
+
+**Nara perdeu uma das duas opções antigas -- agora são uma só.** Card
+substituiu o texto inteiro (abertura + a única opção que sobrou), não só
+editou em cima; `saida` de Nara/Eira/Bento ficou INTOCADA (o cartão só deu
+abertura/opções novas, não pediu saida nova -- "não edite, não resuma" vale
+também pro que NÃO foi mandado mudar).
+
+**`TEXTO_PLEA_GUIA` (combate.py) reescrito por completo -- fica FORA de
+`dialogos.py` de propósito (nunca passou pelo pipeline de DIALOGOS, é só
+uma constante de módulo usada como valor de field de embed), então a junção
+com quebra de linha acontece direto na definição, sem precisar de
+`dialogos.linhas()` nem de import cruzado entre combate.py e dialogos.py.**
+
+**Decisão sobre as aspas do cartão: tratadas como delimitador de linha, não
+como caractere literal.** O Rafael colou cada bloco com uma linha por
+"batida" entre aspas -- é o mesmo formato usado tanto pra Nara/Eira/Bento
+(que nunca tiveram aspas literais na convenção de `dialogos.py`, sempre
+renderizadas em itálico via `f"*{abertura}*"`) quanto pro texto da Guia
+(que na versão ANTERIOR usava aspas literais pra marcar fala direta dentro
+de narração mista). Como a reescrita da Guia é 100% fala direta, sem
+narração mista, manter as aspas literais seria inconsistente com a
+convenção de `dialogos.py` sem ganho nenhum -- as aspas foram tratadas como
+formatação do card, não conteúdo.
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`combate.py`/
+`dialogos.py`/`npcs.py`, mantendo os testes): caem exatamente os 14 testes
+novos que dependem do texto reescrito (11 em `test_costa_verde.py` -- Eira/
+Bento com os nomes/chaves/contagem de opções novos, mais os dois testes de
+ritmo -- e 3 em `test_vilarejo.py` -- Nara com uma opção só e o teste de
+ritmo). Nenhum teste antigo se move -- Ivo (que não mudou neste commit)
+continua verde revertido. Suíte completa: 14 testes novos/atualizados,
+1044 passando + 1 xfail antigo.

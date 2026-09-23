@@ -306,11 +306,28 @@ def test_falar_com_nara_nao_entrega_o_inimigo_maior():
     ctx = _ctx(1)
     asyncio.run(bot.falar.callback(ctx, quem="nara"))
     embed = ctx.send.call_args.kwargs["embed"]
-    assert "desafio" in embed.description.lower()
+    assert "torre" in embed.description.lower()
 
     dado = dialogos.DIALOGOS["nara_vilarejo"]
-    todas_as_falas = " ".join([dado["abertura"], dado.get("saida", "")] + [o["resposta"] for o in dado.get("opcoes", [])])
+    todas_as_falas = " ".join(
+        [dialogos.linhas(dado["abertura"]), dado.get("saida", "")]
+        + [dialogos.linhas(o["resposta"]) for o in dado.get("opcoes", [])]
+    )
     assert "inimigo" not in todas_as_falas.lower()
+
+
+def test_nara_tem_uma_opcao_so():
+    """Reescrita (Step F) trocou as duas opções antigas por uma só."""
+    assert len(dialogos.DIALOGOS["nara_vilarejo"]["opcoes"]) == 1
+
+
+def test_falar_com_nara_mostra_a_abertura_em_linhas_separadas():
+    """'Batida curta, uma linha por vez' -- não pode virar parágrafo."""
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.falar.callback(ctx, quem="nara"))
+    embed = ctx.send.call_args.kwargs["embed"]
+    assert "\n" in embed.description
 
 
 def test_ivo_e_nara_nao_aparecem_dentro_da_torre():

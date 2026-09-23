@@ -26,7 +26,21 @@
 #
 # Texto marcado com {opcao_ele_elu|opcao_ela} concorda com o pronome de quem
 # está jogando -- ver pronomes.concordar().
+#
+# `abertura`/`resposta` aceitam string única (formato de sempre) OU lista de
+# linhas -- o cartão de reescrita pediu "batidas curtas, uma linha por vez":
+# "Pare." sozinho perde o efeito se virar parágrafo. `linhas()` normaliza os
+# dois formatos pra quem renderiza (bot.py) nunca precisar checar tipo.
 SAIDA_PADRAO = "Você se despede e segue em frente."
+
+
+def linhas(texto_ou_lista):
+    """Lista vira texto com uma quebra de linha por item -- string passa
+    direto, sem mudar nada pra quem não usa o formato novo. Chame ANTES de
+    `pronomes.concordar` (que espera string, não lista)."""
+    if isinstance(texto_ou_lista, list):
+        return "\n".join(texto_ou_lista)
+    return texto_ou_lista
 
 DIALOGOS = {
     "pip": {
@@ -465,33 +479,103 @@ DIALOGOS = {
         "saida": "Ele volta a olhar pro norte, como se ainda esperasse ver alguém voltando.",
     },
     "nara_vilarejo": {
-        "abertura": "Vocês entram lá pensando que é desafio. Eu cresci vendo ela de fora. Sei pra que ela serve — e não é pra isso.",
+        # Step F "reescrita" -- texto do Rafael, substitui o do Step C ao pé
+        # da letra. Uma opção só agora (era duas) -- não resuma, não some
+        # nenhuma linha, o ritmo de batida curta é requisito.
+        "abertura": [
+            "Vocês entram lá como se a Torre sempre tivesse sido o destino.",
+            "Como se tudo começasse aqui.",
+            "Mas não começou.",
+            "Você escolheu entrar.",
+            "Escolheu subir. Escolheu procurar alguma coisa lá dentro.",
+            "Só tem um detalhe...",
+            "Você não lembra de ter escolhido.",
+            "A Torre não estava esperando por você.",
+            "Ela está esperando porque você decidiu procurá-la.",
+            "Então me diz: por que continua subindo?",
+        ],
         "opcoes": [
-            {"label": "Perguntar pra que ela serve, então",
-             "resposta": "Serve pra guardar gente. Só isso. Quem tá dentro não sabe — acha que é prova, é escada, é glória. É cerca."},
-            {"label": "Perguntar por que ela nunca entrou",
-             "resposta": "Porque quem entra esquece de perguntar por quê. Eu prefiro lembrar."},
+            {"label": "E você? Por que nunca entrou?",
+             "resposta": [
+                 "Porque eu nunca precisei.",
+                 "Nunca precisei saber o que poderia ter sido.",
+                 "Nunca precisei descobrir quem eu era antes disso.",
+                 "Vocês entram procurando uma resposta para uma pergunta que nem lembram de ter feito.",
+                 "Eu nunca tive essa pergunta.",
+                 "Talvez seja por isso que nunca precisei da Torre.",
+             ]},
         ],
         "saida": "Ela não se despede — só volta o olhar pra torre, longe, como quem vigia.",
     },
-    # ---- Costa Verde (Step F, commit 2) ----
-    "suzu": {
-        "abertura": "Ele parou bem ali, onde a névoa não sobe. Não disse o nome — só perguntou se alguém aqui já tinha visto o que dorme atrás das montanhas.",
+    # ---- Costa Verde (Step F, commit 2; reescrito no cartão de reescrita) ----
+    # Suzu virou Eira, Osamu virou Bento -- só o nome e o texto mudam, o
+    # papel de cada um na história (segundo elo do Herói / contraste com a
+    # torre) continua o mesmo.
+    "eira": {
+        "abertura": [
+            "Ele parou aqui por pouco tempo.",
+            "Ficou diante do sino. Não tocou.",
+            "Só perguntou se os anciãos ainda contavam a história do que dorme atrás das montanhas.",
+            "Eu perguntei por que queria saber.",
+            "Ele não respondeu.",
+            "Mas quem pergunta com tanta pressa já costuma ter ouvido a resposta em algum outro lugar.",
+        ],
         "opcoes": [
             {"label": "Perguntar quando ele passou por aqui",
-             "resposta": "Antes da última colheita. Seguiu direto pro norte, sem descansar nem uma noite — como quem tem pressa de chegar em algum lugar que não perdoa atraso."},
-            {"label": "Perguntar o que ele procurava",
-             "resposta": "Não disse um nome. Só uma pergunta: se era verdade o que os anciãos contam sobre o que dorme atrás das montanhas. Ninguém aqui soube responder."},
+             "resposta": [
+                 "Antes da última colheita.",
+                 "Seguiu para o norte na manhã seguinte.",
+                 "Não descansou. Não esperou o amanhecer.",
+                 "Era como se tivesse medo de chegar tarde.",
+             ]},
+            {"label": "Perguntar o que ela sabe sobre o que dorme atrás das montanhas",
+             "resposta": [
+                 "Pouco.",
+                 "E talvez seja melhor assim.",
+                 "Os mais antigos dizem que aquilo não dorme como nós dormimos.",
+                 "Dorme porque o mundo ainda não lhe deu motivo para acordar.",
+                 "Há quem diga que é uma criatura.",
+                 "Há quem diga que é um lugar.",
+                 "Minha avó dizia que não era nenhum dos dois.",
+                 "Dizia que aquilo era uma coisa que o homem não deveria lembrar.",
+                 "E que, quando alguém começasse a procurá-la...",
+                 "...o sino pararia.",
+                 "Foi por isso que fiquei aqui.",
+             ]},
         ],
         "saida": "Ela volta a olhar pro sino, esperando ele tocar de novo sozinho.",
     },
-    "osamu": {
-        "abertura": "Meu avô gosta do chá mais forte de manhã. Ele não bebe mais, claro. Mas eu sirvo, do jeito que ele sempre gostou.",
+    "bento": {
+        "abertura": [
+            "Meu avô gostava do chá forte.",
+            "Então eu preparo forte.",
+            "De manhã, como sempre.",
+        ],
         "opcoes": [
             {"label": "Perguntar se ele ainda vê o avô",
-             "resposta": "Ver, não ver — não é isso que importa. Ele continua aqui do jeito que sempre esteve. Só mudou de forma."},
-            {"label": "Perguntar se isso não assusta ninguém aqui",
-             "resposta": "Assustar o quê? Vocês, lá da torre, é que me assustam — vivem cercados de gente e não sabem nada sobre os próprios mortos."},
+             "resposta": [
+                 "Ver?",
+                 "Não sei se é bem isso.",
+                 "Ele continua aqui.",
+                 "Só não ocupa mais o mesmo lugar.",
+                 "Tem coisa que a gente para de enxergar sem precisar deixar de cuidar.",
+             ]},
+            {"label": "Perguntar se não é estranho continuar servindo chá para alguém que morreu",
+             "resposta": [
+                 "Estranho seria esquecer.",
+                 "Ele me ensinou a fazer assim.",
+                 "Enquanto eu lembrar, o costume continua.",
+                 "Um dia talvez eu também não esteja aqui.",
+                 "Espero que alguém ainda prepare o chá do jeito certo.",
+             ]},
+            {"label": "Perguntar se ele não tem medo dos mortos",
+             "resposta": [
+                 "Dos mortos?",
+                 "Não.",
+                 "Tenho mais medo de quem está vivo e acha que já entendeu tudo.",
+                 "Vocês, lá da Torre, passam a vida procurando respostas.",
+                 "Aqui, a gente aprende a conviver com algumas perguntas.",
+             ]},
         ],
         "saida": "Ele volta pro chá, servindo uma xícara a mais que ninguém vai beber.",
     },

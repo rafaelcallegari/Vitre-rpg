@@ -1336,7 +1336,7 @@ class BotaoOpcaoDialogo(discord.ui.Button):
 
     def __init__(self, opcao):
         super().__init__(label=opcao["label"], style=discord.ButtonStyle.secondary)
-        self.resposta = opcao["resposta"]
+        self.resposta = dialogos.linhas(opcao["resposta"])
 
     async def callback(self, interaction):
         e = interaction.message.embeds[0]
@@ -1767,7 +1767,7 @@ async def falar(ctx, *, quem: str = ""):
     if n["tipo"] == "conversa" and n.get("dialogo"):
         dado = dialogos.DIALOGOS[n["dialogo"]]
         opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
-        abertura = pronomes.concordar(dado["abertura"], j["pronome"])
+        abertura = pronomes.concordar(dialogos.linhas(dado["abertura"]), j["pronome"])
         e = discord.Embed(description=f"*{abertura}*", color=cor_lugar)
         e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
         saida = dado.get("saida") or dialogos.SAIDA_PADRAO
