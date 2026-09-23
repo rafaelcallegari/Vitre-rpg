@@ -150,6 +150,21 @@ CREATE TABLE IF NOT EXISTS dungeon_run (
     auto_ressurreicao_usada  INTEGER NOT NULL DEFAULT 0,
     condicao_armadilha       TEXT
 );
+-- Step E, commit 3: o que a estrada roubou, esperando devolução (commit 4).
+-- Várias linhas por jogador -- perdas acumulam (ver decisoes.md § Step E).
+-- tipo='moedas': só `valor` importa. tipo='item': `item` é a chave, `
+-- instancia_id` guarda a instância INTEIRA (melhoria/encantamento/joia/
+-- efeito intactos) quando a peça roubada tinha uma -- NULL pra peça comum.
+-- Sobrevive a restart de graça (é tabela, não estado em memória).
+CREATE TABLE IF NOT EXISTS roubos_pendentes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    tipo         TEXT NOT NULL,
+    valor        INTEGER,
+    item         TEXT,
+    instancia_id INTEGER,
+    criado_em    REAL NOT NULL
+);
 """
 
 COLUNAS_ATRIBUTO = {
@@ -1611,6 +1626,53 @@ def definir_efeito_instancia(instancia_id, efeito):
             "UPDATE instancias SET efeito = ? WHERE id = ?",
             (efeito, instancia_id),
         )
+
+
+def soltar_instancia_para_roubo(instancia_id):
+    """`dono` é o ÚNICO campo que decide "está na mochila" (ver
+    instancias_na_mochila) -- soltar pra NULL é o que faz uma peça
+    roubada sumir de verdade da mochila/inventário do jogador, sem
+    apagar a linha nem um só campo dela (melhoria/encantamento/joia/
+    efeito continuam intactos, prontos pra voltar). Ver decisoes.md §
+    Step E."""
+    with conectar() as conn:
+        conn.execute("UPDATE instancias SET dono = NULL WHERE id = ?", (instancia_id,))
+
+
+def devolver_instancia_roubada(instancia_id, user_id):
+    with conectar() as conn:
+        conn.execute("UPDATE instancias SET dono = ? WHERE id = ?", (user_id, instancia_id))
+
+
+# ---------------- roubos pendentes (Step E, commit 3) ----------------
+def registrar_roubo_moedas(user_id, valor):
+    with conectar() as conn:
+        conn.execute(
+            "INSERT INTO roubos_pendentes (user_id, tipo, valor, criado_em) VALUES (?, 'moedas', ?, ?)",
+            (user_id, valor, time.time()),
+        )
+
+
+def registrar_roubo_item(user_id, item, instancia_id=None):
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO roubos_pendentes (user_id, tipo, item, instancia_id, criado_em)
+               VALUES (?, 'item', ?, ?, ?)""",
+            (user_id, item, instancia_id, time.time()),
+        )
+
+
+def roubos_pendentes(user_id):
+    with conectar() as conn:
+        rows = conn.execute(
+            "SELECT * FROM roubos_pendentes WHERE user_id = ? ORDER BY id", (user_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remover_roubo(roubo_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM roubos_pendentes WHERE id = ?", (roubo_id,))
 
 
 def excluir_instancia(instancia_id):

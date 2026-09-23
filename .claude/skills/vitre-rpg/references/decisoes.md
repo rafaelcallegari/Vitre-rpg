@@ -8698,3 +8698,59 @@ grupo_de_quatro`) não dependem do sorteio, continuam verdes — provam
 que a infra multi-inimigo do Step A já sustentava isso sozinha. Suíte
 completa: 13 testes novos em `test_estrada.py`, 987 passando + 1 xfail
 antigo.
+
+### Commit 3 — perder é ser roubado
+
+**Tabela nova (`roubos_pendentes`), não migração de coluna** — `CREATE
+TABLE IF NOT EXISTS` no `SCHEMA` de `database.py` (mesmo padrão de
+`dungeon_run`/`sidequests`): várias linhas por jogador (perdas
+acumulam, o commit 4 decide a ordem de devolução), `tipo` (`'moedas'`
+ou `'item'`) mais os campos que cada um usa. Sobrevive a restart de
+graça — é tabela, não estado em memória, exatamente o que o cartão
+pediu ("precisa ficar registrado em algum lugar que sobreviva a
+restart").
+
+**A peça roubada é sempre uma das EQUIPADAS, nunca da mochila —
+decisão registrada, como o cartão pediu.** `SLOTS_EQUIPAVEIS =
+("arma", "armadura", "anel", "colar", "mortalha")`, sorteio uniforme
+entre os slots OCUPADOS. Nunca mochila: é o que está exposto, visível,
+o que um assalto de verdade levaria — e evita ter que escolher ENTRE
+instâncias empilhadas lá dentro (dois anéis do Joalheiro, por
+exemplo), problema que o cartão nem propôs resolver.
+
+**"Minha recomendação: guarda a instância inteira" — seguida ao pé da
+letra, via o MESMO truque de `dono = NULL` que já existia pra
+"mochila" ser estado derivado.** `instancias_na_mochila` (database.py)
+já decidia "está na mochila" comparando só `dono` contra os ponteiros
+de slot equipados — nenhuma coluna própria. Uma instância roubada só
+precisa soltar `dono` (`database.soltar_instancia_para_roubo`) pra
+sumir de QUALQUER listagem do jogador (mochila, `rpg inventario`,
+`rpg equipar`) sem apagar ou reconstruir NADA da linha — melhoria,
+encantamento, joia e efeito (Step D) atravessam intactos, porque a
+linha nunca foi tocada, só "soltada". `database.devolver_instancia_
+roubada` (commit 4) é o inverso: só devolve `dono`. Zero serialização,
+zero reconstrução — a alternativa (guardar um snapshot JSON e recriar
+a instância na devolução) teria mais código E mais risco de perder um
+campo no caminho.
+
+**Dinheiro ou peça, sorteado 50/50 — com as duas bordas cobertas.**
+Sem moedas, força peça (se tiver alguma equipada); sem peça
+equipada, força moedas (se tiver alguma); sem nenhum dos dois,
+"não tinha nada pra perder" — nenhum roubo é registrado. `FRACAO_
+ROUBO_MOEDAS = 0.15`, menor que a penalidade de morte da torre (0.20,
+`bot.processar_morte`) — a estrada é o prejuízo mais leve dos dois de
+propósito (ela nem tira o "chegar ao destino", que a morte tira).
+
+**"Ladrão não mata" é testado, não só documentado**: `roubar` nunca
+chama `bot.processar_morte`, nunca toca `andar`/`andar_max` — os dois
+testados diretamente (`test_roubar_nunca_mexe_em_andar_ou_andar_max`),
+por cima do já testado no commit 1 (`_finalizar_derrota_estrada` nunca
+chama `processar_morte`).
+
+Validado revertendo o commit inteiro (stash de `database.py`/
+`estrada.py`, mantendo os testes): caem exatamente os 9 testes novos
+de `roubar`/`_finalizar_derrota_estrada` (a função nem existe sem o
+commit) — nenhum teste antigo se move, `roubos_pendentes` como tabela
+nova não quebra migração nenhuma (mesma garantia de `CREATE TABLE IF
+NOT EXISTS` que toda tabela nova deste projeto já tem). Suíte completa:
+9 testes novos em `test_estrada.py`, 996 passando + 1 xfail antigo.

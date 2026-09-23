@@ -353,3 +353,107 @@ def test_embed_solo_continua_mostrando_um_campo_so_regressao():
     e = luta.embed()
     nomes_de_inimigo = [f.name for f in e.fields if f.name == "Chefinho"]
     assert len(nomes_de_inimigo) == 1
+
+
+# ==================================================================
+# commit 3 -- perder é ser roubado
+# ==================================================================
+
+def test_roubar_nada_pra_levar_nao_registra_roubo_nenhum():
+    _jogador(1, moedas=0)
+    msg = estrada.roubar(1)
+    assert "não tinha nada" in msg.lower()
+    assert db.roubos_pendentes(1) == []
+
+
+def test_roubar_sem_moedas_forca_peca():
+    _jogador(1, moedas=0, arma="lamina_selo", arma_instancia_id=None)
+    estrada.roubar(1)
+    pendentes = db.roubos_pendentes(1)
+    assert len(pendentes) == 1
+    assert pendentes[0]["tipo"] == "item"
+
+
+def test_roubar_sem_peca_equipada_forca_moedas():
+    _jogador(1, moedas=1000)
+    estrada.roubar(1)
+    pendentes = db.roubos_pendentes(1)
+    assert len(pendentes) == 1
+    assert pendentes[0]["tipo"] == "moedas"
+
+
+def test_roubar_dinheiro_e_peca_os_dois_acontecem_em_muitas_tentativas():
+    tipos = set()
+    for i in range(60):
+        _jogador(i, moedas=1000, arma="lamina_selo", arma_instancia_id=None)
+        estrada.roubar(i)
+        tipos.add(db.roubos_pendentes(i)[0]["tipo"])
+    assert tipos == {"moedas", "item"}
+
+
+def test_roubar_moedas_deduz_do_jogador_e_registra_o_valor():
+    j = _jogador(1, moedas=1000)
+    estrada.roubar(1)
+    depois = db.get_jogador(1)
+    pendente = db.roubos_pendentes(1)[0]
+    assert pendente["tipo"] == "moedas"
+    assert depois["moedas"] == j["moedas"] - pendente["valor"]
+    assert pendente["valor"] > 0
+
+
+def test_roubar_peca_sem_instancia_desequipa_e_registra_sem_instancia_id():
+    _jogador(1, moedas=0, arma="lamina_selo", arma_instancia_id=None)
+    estrada.roubar(1)
+    depois = db.get_jogador(1)
+    assert depois["arma"] is None
+    pendente = db.roubos_pendentes(1)[0]
+    assert pendente["item"] == "lamina_selo"
+    assert pendente["instancia_id"] is None
+
+
+def test_roubar_peca_com_instancia_guarda_a_instancia_inteira():
+    """'Minha recomendação: guarda a instância inteira' -- melhoria e
+    encantamento sobrevivem ao roubo, só o dono muda (fica NULL
+    enquanto pendente)."""
+    _jogador(1, moedas=0)
+    instancia_id = db.criar_instancia(1, "lamina_selo", nivel_melhoria=3)
+    db.definir_encantamento(instancia_id, "forca", 7)
+    db.atualizar_jogador(1, arma="lamina_selo", arma_instancia_id=instancia_id)
+
+    estrada.roubar(1)
+
+    depois = db.get_jogador(1)
+    assert depois["arma"] is None
+    assert depois["arma_instancia_id"] is None
+    instancia = db.get_instancia(instancia_id)
+    assert instancia["nivel_melhoria"] == 3          # intacta
+    assert instancia["encantamento_atributo"] == "forca"
+    assert instancia["encantamento_valor"] == 7
+    assert instancia["dono"] is None                 # solta, some da mochila
+    assert instancia_id not in [i["id"] for i in db.instancias_na_mochila(1)]
+
+    pendente = db.roubos_pendentes(1)[0]
+    assert pendente["instancia_id"] == instancia_id
+
+
+def test_roubar_nunca_mexe_em_andar_ou_andar_max():
+    """A estrada pune com prejuízo, não com a reconquista da torre --
+    isso é penalidade de morte (bot.processar_morte), nunca daqui."""
+    j = _jogador(1, moedas=1000, andar=12, andar_max=14)
+    estrada.roubar(1)
+    depois = db.get_jogador(1)
+    assert depois["andar"] == 12
+    assert depois["andar_max"] == 14
+
+
+def test_derrota_na_estrada_chama_roubar_e_mostra_no_embed(monkeypatch):
+    c = _combatente(1, classe="guerreiro", forca=20, moedas=1000, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
+    luta = combate.Luta([c], estrada.sortear_grupo(c.jogador), andar_num=15)
+    c.hp = 0
+    c.caiu = True
+
+    e = asyncio.run(estrada._finalizar_derrota_estrada(luta, 1, mundo.VILAREJO))
+
+    assert len(db.roubos_pendentes(1)) == 1
+    campo_assaltado = next(f for f in e.fields if f.name == "Assaltado")
+    assert "Levaram" in campo_assaltado.value

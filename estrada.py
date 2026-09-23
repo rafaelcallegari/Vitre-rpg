@@ -84,6 +84,55 @@ def sortear_grupo(jogador):
     ]
 
 
+# ---------------- commit 3: perder é ser roubado ----------------
+# Ladrão não mata -- nada de processar_morte, nada de penalidade da torre.
+# Isso é o segundo tipo de derrota do jogo: a torre pune com morte, a
+# estrada pune com prejuízo. Fração menor que a penalidade de morte (0.20,
+# bot.processar_morte) -- a estrada é o prejuízo mais leve dos dois, de
+# propósito (ela nem tira o "chegar ao destino").
+FRACAO_ROUBO_MOEDAS = 0.15
+
+# A peça roubada é sempre uma das EQUIPADAS -- nunca mochila. Decisão (o
+# cartão pediu pra documentar): é o que está exposto, visível, o que um
+# assalto de verdade levaria; a mochila fica de fora pra não precisar
+# escolher ENTRE cópias/instâncias empilhadas lá dentro. Guarda a
+# INSTÂNCIA INTEIRA quando a peça tinha uma -- recomendação do próprio
+# cartão ("sem isso, recuperar devolve uma casca"): melhoria, encantamento,
+# joia e efeito (Step D) atravessam o roubo intactos, só trocam de "dono"
+# no banco (ver database.soltar_instancia_para_roubo) até a devolução
+# (commit 4).
+SLOTS_EQUIPAVEIS = ("arma", "armadura", "anel", "colar", "mortalha")
+
+
+def roubar(user_id):
+    """Sorteia dinheiro OU uma peça, 50/50 quando os dois são possíveis
+    -- sem dinheiro, força peça; sem peça equipada, força dinheiro; sem
+    nenhum dos dois, não há o que levar. Devolve a frase pro embed de
+    derrota."""
+    j = db.get_jogador(user_id)
+    slots_ocupados = [slot for slot in SLOTS_EQUIPAVEIS if j[slot]]
+    tem_moedas = j["moedas"] > 0
+    if not slots_ocupados and not tem_moedas:
+        return "Eles reviram seus bolsos e não acham nada — você não tinha nada pra perder."
+
+    roubar_peca = bool(slots_ocupados) and (not tem_moedas or random.random() < 0.5)
+    if roubar_peca:
+        slot = random.choice(slots_ocupados)
+        item = j[slot]
+        instancia_id = j[f"{slot}_instancia_id"]
+        db.atualizar_jogador(user_id, **{slot: None, f"{slot}_instancia_id": None})
+        db.registrar_roubo_item(user_id, item, instancia_id)
+        if instancia_id:
+            db.soltar_instancia_para_roubo(instancia_id)
+        dado = game_data.ITENS[item]
+        return f"Levaram {dado.get('emoji', '')} **{dado['nome']}** — seu {slot} ficou vazio.".replace("  ", " ")
+
+    valor = max(1, int(j["moedas"] * FRACAO_ROUBO_MOEDAS))
+    db.atualizar_jogador(user_id, moedas=j["moedas"] - valor)
+    db.registrar_roubo_moedas(user_id, valor)
+    return f"Levaram **{valor}** 🪙."
+
+
 async def iniciar_encontro(ctx, j, destino_mundo):
     """Chamado por bot._viajar_fora quando `houve_encontro()` deu positivo
     -- a viagem PARA aqui: `mundo.descer_para_o_vilarejo`/`subir_para_o_
@@ -169,20 +218,22 @@ async def _finalizar_vitoria_estrada(luta, user_id, destino_mundo):
 async def _finalizar_derrota_estrada(luta, user_id, destino_mundo):
     """Ladrão não mata -- nada de processar_morte, nada de penalidade da
     torre. A viagem se resolve sem morte: o jogador ainda chega, só mais
-    pobre (commit 3 decide o que exatamente se perde)."""
+    pobre (`roubar`, commit 3, decide exatamente o quê)."""
     luta.encerrada = True
     c = luta.participantes[0]
     c.salvar_estado()
     _completar_viagem(user_id, destino_mundo)
+    descricao_roubo = roubar(user_id)
     dados_lugar = mundo.LOCAIS_FORA[destino_mundo]
     e = luta.embed(
         titulo="Os bandidos levam o que querem",
         cor=combate.COR_DERROTA,
         rodape=f"Caído na rodada {luta.rodada}.",
     )
+    e.add_field(name="Assaltado", value=descricao_roubo, inline=False)
     e.add_field(
-        name="Assaltado, mas vivo",
-        value=f"Você chega em {dados_lugar['nome']} de qualquer jeito -- só que mais leve.",
+        name="Mas vivo",
+        value=f"Você chega em {dados_lugar['nome']} de qualquer jeito.",
         inline=False,
     )
     return e
