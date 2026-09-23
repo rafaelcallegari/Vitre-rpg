@@ -299,11 +299,12 @@ def test_dois_inimigos_carregando_ao_mesmo_tempo_cada_carga_resolve_sozinha(monk
     assert "Inimigo A" in log and "Inimigo B" in log
 
 
-def test_interrupcao_cancela_a_carga_so_do_inimigo_atacado(monkeypatch):
-    """Fronteira registrada em decisoes.md: Interrupção sempre mira
-    `luta.inimigos[0]` (a ponte "chefe") -- o mesmo que `luta.hp_chefe -=
-    dano` já atinge. Com um segundo inimigo carregando, a carga dele não
-    é afetada."""
+def test_interrupcao_cancela_a_carga_so_do_inimigo_escolhido(monkeypatch):
+    """Step E generalizou o alvo de Interrupção (`dados["alvo"] =
+    "inimigo_escolhido"`) -- ela não mira mais sempre `inimigos[0]`
+    (ver decisoes.md § Step E, que reabre a fronteira registrada no
+    Step A). Mirando o SEGUNDO inimigo, só a carga dele cancela -- a do
+    primeiro fica intocada."""
     monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
     monkeypatch.setattr(combate.random, "random", lambda: 1.0)
     c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
@@ -312,7 +313,99 @@ def test_interrupcao_cancela_a_carga_so_do_inimigo_atacado(monkeypatch):
     luta.inimigos[0].carregando = True
     luta.inimigos[1].carregando = True
 
-    combate._efeito_interrupcao(luta, c, dados)
+    combate._efeito_interrupcao(luta, c, dados, luta.inimigos[1].id)
 
-    assert luta.inimigos[0].carregando is False   # o principal, cancelado
+    assert luta.inimigos[0].carregando is True    # o primeiro, intocado
+    assert luta.inimigos[1].carregando is False   # o escolhido, cancelado
+
+
+def test_interrupcao_mirando_o_primeiro_nao_toca_o_segundo(monkeypatch):
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 1.0)
+    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    dados = game_data.HABILIDADES["interrupcao"]
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    luta.inimigos[0].carregando = True
+    luta.inimigos[1].carregando = True
+
+    combate._efeito_interrupcao(luta, c, dados, luta.inimigos[0].id)
+
+    assert luta.inimigos[0].carregando is False   # o escolhido, cancelado
     assert luta.inimigos[1].carregando is True    # o segundo, intocado
+
+
+def test_interrupcao_causa_dano_no_inimigo_escolhido_nao_no_primeiro(monkeypatch):
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 1.0)
+    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    dados = game_data.HABILIDADES["interrupcao"]
+    luta = combate.Luta([c], [CHEFE_A, CHEFE_B], andar_num=1)
+    hp_a_antes, hp_b_antes = luta.inimigos[0].hp, luta.inimigos[1].hp
+
+    combate._efeito_interrupcao(luta, c, dados, luta.inimigos[1].id)
+
+    assert luta.inimigos[1].hp < hp_b_antes   # o escolhido, tomou dano
+    assert luta.inimigos[0].hp == hp_a_antes  # o primeiro, intocado
+
+
+def test_interrupcao_usa_a_defesa_do_inimigo_escolhido_nao_do_primeiro(monkeypatch):
+    """Se a defesa usada fosse sempre a do primeiro inimigo, os dois
+    golpes dariam o mesmo dano -- CHEFE_A e CHEFE_B têm defesa igual
+    (0), então troca um dos dois por uma defesa alta pra distinguir."""
+    monkeypatch.setattr(combate.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(combate.random, "random", lambda: 1.0)
+    c = _combatente(1, classe="mago", inteligencia=20, ascensao="mago_raio")
+    dados = game_data.HABILIDADES["interrupcao"]
+    luta = combate.Luta([c], [CHEFE_A, {**CHEFE_B, "def": 500}], andar_num=1)
+
+    dano_no_defensor = luta.inimigos[1].hp - 0
+    combate._efeito_interrupcao(luta, c, dados, luta.inimigos[1].id)
+    dano_no_defensor -= luta.inimigos[1].hp
+
+    c2 = _combatente(2, classe="mago", inteligencia=20, ascensao="mago_raio")
+    luta2 = combate.Luta([c2], [CHEFE_A, {**CHEFE_B, "def": 500}], andar_num=1)
+    dano_no_fraco = luta2.inimigos[0].hp - 0
+    combate._efeito_interrupcao(luta2, c2, dados, luta2.inimigos[0].id)
+    dano_no_fraco -= luta2.inimigos[0].hp
+
+    assert dano_no_defensor < dano_no_fraco   # defesa alta do ALVO reduziu o dano
+
+
+# ==================================================================
+# Represália -- reflete pra quem CAUSOU o dano, não sempre inimigos[0]
+# ==================================================================
+
+def test_represalia_reflete_no_inimigo_que_bateu_nao_no_primeiro(monkeypatch):
+    """Antes do Step E, o reflexo sempre saía de `luta.hp_chefe` (o
+    primeiro inimigo) -- errado quando quem bateu foi outro bandido do
+    grupo. Ver decisoes.md § Step E."""
+    paladino = _combatente(1, classe="orador", inteligencia=20, ascensao="paladino")
+    luta = combate.Luta([paladino], [CHEFE_A, CHEFE_B], andar_num=1)
+    condicoes.aplicar(
+        luta, paladino.id, "reflete_dano", "Represália", "🔥",
+        duracao=4, valor=1.0, origem=paladino.id,
+    )
+    hp_a_antes, hp_b_antes = luta.inimigos[0].hp, luta.inimigos[1].hp
+
+    combate._aplicar_dano_do_chefe(luta, paladino, 100, luta.inimigos[1].id)
+
+    assert luta.inimigos[1].hp < hp_b_antes   # quem bateu, tomou o reflexo
+    assert luta.inimigos[0].hp == hp_a_antes  # o primeiro, intocado
+
+
+def test_represalia_sem_inimigo_id_continua_refletindo_no_primeiro(monkeypatch):
+    """Regressão: raide.py/dungeon.py e o resto de combate.py nunca
+    passam `inimigo_id` -- o default "chefe" precisa preservar o
+    comportamento de sempre."""
+    paladino = _combatente(1, classe="orador", inteligencia=20, ascensao="paladino")
+    luta = combate.Luta([paladino], [CHEFE_A, CHEFE_B], andar_num=1)
+    condicoes.aplicar(
+        luta, paladino.id, "reflete_dano", "Represália", "🔥",
+        duracao=4, valor=1.0, origem=paladino.id,
+    )
+    hp_a_antes, hp_b_antes = luta.inimigos[0].hp, luta.inimigos[1].hp
+
+    combate._aplicar_dano_do_chefe(luta, paladino, 100)
+
+    assert luta.inimigos[0].hp < hp_a_antes   # sem inimigo_id, cai no default "chefe"
+    assert luta.inimigos[1].hp == hp_b_antes

@@ -987,8 +987,8 @@ HABILIDADES = {
     },
     "interrupcao": {
         "nome": "Interrupção", "emoji": "🔌", "classe": "mago",
-        "recurso": "mana", "custo": 18, "ascensao": "mago_raio",
-        "desc": "Dano em INT que passa pela defesa do chefe -- se ele estiver carregando um golpe, cancela a carga.",
+        "recurso": "mana", "custo": 18, "ascensao": "mago_raio", "alvo": "inimigo_escolhido",
+        "desc": "Dano em INT que passa pela defesa do inimigo escolhido -- se ele estiver carregando um golpe, cancela a carga dele.",
     },
     "muralha_de_escudos": {
         "nome": "Muralha de Escudos", "emoji": "🛡️", "classe": "guerreiro",

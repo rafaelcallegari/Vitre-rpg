@@ -173,15 +173,18 @@ def _reducao_dano_total(luta, combatente):
     return min(0.5, condicoes.reducao_dano_recebido(luta, combatente.id) + passivas.bonus_reducao_dano(combatente.jogador))
 
 
-def _defesa_efetiva(luta, c):
-    """Fio da Lâmina (espadachim, Step 2c): reduz a defesa do chefe ANTES
-    de `at.aplicar_defesa` ver ela -- perfuração PARCIAL, nunca pula a
-    função (ao contrário de Dardo Arcano/Flecha Perfurante, que ignoram
-    defesa por inteiro e não chamam isto). 0.0 de passivas.fracao_defesa_
-    ignorada reproduz `luta.chefe["def"]` sem mudança nenhuma -- é por
-    isso que todo ponto de dano-com-defesa (ataque normal E toda skill)
-    pode chamar isto sem risco pra quem não é espadachim."""
-    return luta.chefe["def"] * (1 - passivas.fracao_defesa_ignorada(c.jogador))
+def _defesa_efetiva(luta, c, inimigo=None):
+    """Fio da Lâmina (espadachim, Step 2c): reduz a defesa do inimigo
+    ANTES de `at.aplicar_defesa` ver ela -- perfuração PARCIAL, nunca
+    pula a função (ao contrário de Dardo Arcano/Flecha Perfurante, que
+    ignoram defesa por inteiro e não chamam isto). 0.0 de passivas.
+    fracao_defesa_ignorada reproduz a defesa do inimigo sem mudança
+    nenhuma. `inimigo` -- Step E: qual inimigo defende; default None
+    continua lendo `luta.chefe["def"]` (o principal), então todo
+    chamador de antes deste cartão (ataque normal e toda skill que
+    mira sempre `inimigos[0]`) funciona sem passar nada."""
+    dados = inimigo.dados if inimigo is not None else luta.chefe
+    return dados["def"] * (1 - passivas.fracao_defesa_ignorada(c.jogador))
 
 
 def _recuperar_mana_por_golpe(c):
@@ -277,43 +280,53 @@ def _transferir_para_paladino(luta, alvo, dano):
     return dano - absorvido, absorvido, paladino
 
 
-def _refletir_se_paladino(luta, combatente, dano_recebido):
-    """Represália (paladino, skill, Step 2d): devolve ao CHEFE uma fração
-    do dano que `combatente` acabou de tomar, se ele estiver sob
-    `reflete_dano`. O dano refletido sai de `luta.hp_chefe` DIRETO -- não
-    volta a passar por `_aplicar_dano_do_chefe` nem por esta função --
-    então reflexão nunca dispara reflexão de novo, mesmo se o paladino
-    tomar dano transferido de Juramento (que também chama isto)."""
+def _refletir_se_paladino(luta, combatente, dano_recebido, inimigo_id="chefe"):
+    """Represália (paladino, skill, Step 2d): devolve a QUEM CAUSOU o
+    dano uma fração do que `combatente` acabou de tomar, se ele estiver
+    sob `reflete_dano`. `inimigo_id` -- Step E: antes disto, o reflexo
+    sempre saía de `luta.hp_chefe` (o inimigo PRINCIPAL), certo enquanto
+    só existia um inimigo por luta; com grupos de bandidos, o inimigo
+    que bateu pode não ser `inimigos[0]`, e devolver nele bateria no
+    alvo errado. Default "chefe" preserva every chamador antigo (raide,
+    dungeon, os testes de `test_paladino.py`) sem mudar uma linha. O
+    dano refletido sai do HP do inimigo DIRETO -- não volta a passar por
+    `_aplicar_dano_do_chefe` nem por esta função -- então reflexão nunca
+    dispara reflexão de novo, mesmo se o paladino tomar dano transferido
+    de Juramento (que também chama isto)."""
     fracao = condicoes.fracao_reflexao(luta, combatente.id)
     if fracao <= 0 or dano_recebido <= 0:
         return
     refletido = max(1, int(dano_recebido * fracao))
-    luta.hp_chefe -= refletido
+    inimigo = luta.inimigo_por_id(inimigo_id) or luta.inimigos[0]
+    inimigo.hp -= refletido
     luta.verificar_fase2()
-    luta.registrar(f"🔥 **Represália** devolve **{refletido}** de dano a {luta.chefe['nome']}.")
+    luta.registrar(f"🔥 **Represália** devolve **{refletido}** de dano a {inimigo.nome}.")
 
 
-def _aplicar_dano_do_chefe(luta, alvo, dano):
-    """Ponto único onde o dano que o CHEFE causa realmente toca o HP de
-    um combatente -- os dois lugares que causam esse dano (ataque
-    normal, golpe carregado, dentro de `turno_do_chefe`) chamam isto em
-    vez de mexer em `c.hp` direto. Devolve o dano que `alvo` de fato
-    tomou (depois de Juramento), pro chamador logar a mensagem certa.
-    Marca `caiu` normalmente pros dois lados (alvo original e paladino,
-    se ele absorveu parte)."""
+def _aplicar_dano_do_chefe(luta, alvo, dano, inimigo_id="chefe"):
+    """Ponto único onde o dano que um inimigo causa realmente toca o HP
+    de um combatente -- os dois lugares que causam esse dano (ataque
+    normal, golpe carregado, dentro de `_turno_de_um_inimigo`) chamam
+    isto em vez de mexer em `c.hp` direto. `inimigo_id` -- Step E: quem
+    causou ESTE dano, só usado hoje pra saber pra quem a Represália
+    reflete (ver `_refletir_se_paladino`); default "chefe" preserva os
+    chamadores que não passam nada (todos antes deste cartão). Devolve
+    o dano que `alvo` de fato tomou (depois de Juramento), pro chamador
+    logar a mensagem certa. Marca `caiu` normalmente pros dois lados
+    (alvo original e paladino, se ele absorveu parte)."""
     dano_alvo, dano_paladino, paladino = _transferir_para_paladino(luta, alvo, dano)
     alvo.hp -= dano_alvo
     if alvo.hp <= 0:
         alvo.caiu = True
     _ganhar_furia_por_efeito_ao_apanhar(alvo, dano_alvo)
-    _refletir_se_paladino(luta, alvo, dano_alvo)
+    _refletir_se_paladino(luta, alvo, dano_alvo, inimigo_id)
     if paladino is not None and dano_paladino > 0:
         paladino.hp -= dano_paladino
         luta.registrar(f"🛡️ {paladino.nome} absorve **{dano_paladino}** de dano por **Juramento**.")
         if paladino.hp <= 0:
             paladino.caiu = True
         _ganhar_furia_por_efeito_ao_apanhar(paladino, dano_paladino)
-        _refletir_se_paladino(luta, paladino, dano_paladino)
+        _refletir_se_paladino(luta, paladino, dano_paladino, inimigo_id)
     return dano_alvo
 
 
@@ -809,13 +822,13 @@ class Luta:
     def _turno_de_um_inimigo(self, inimigo, alvos):
         """O turno de UM inimigo -- Step A. Usa o estado PRÓPRIO dele
         (`inimigo.carregando`/`inimigo.preparando_condicao`/`inimigo.
-        dados`), nunca a ponte `self.chefe`/`self.carregando` -- exceto
-        onde a fronteira abaixo aponta pro inimigo PRINCIPAL de propósito
-        (o despacho pro espelho e a reflexão de Represália continuam
-        lendo/escrevendo por `self.hp_chefe`/`self.chefe`, que só
-        coincidem com ESTE `inimigo` quando ele é `self.inimigos[0]` --
-        única combinação que existe hoje, decisão registrada em
-        decisoes.md § Step A -- fronteiras não generalizadas)."""
+        dados`), nunca a ponte `self.chefe`/`self.carregando` -- exceto o
+        despacho pro espelho (`espelhos.turno_do_espelho` só sabe operar
+        em `self.chefe`/`self.hp_chefe`, correto hoje porque só
+        `inimigos[0]` pode ser espelho). A Represália (Step E) passou a
+        receber `inimigo.id` explícito em `_aplicar_dano_do_chefe` --
+        deixou de ser uma fronteira presa a `inimigos[0]`, ver
+        decisoes.md § Step E."""
         if not condicoes.pode_agir(self, inimigo.id):
             self.registrar(f"{inimigo.nome} está sob efeito e perde a rodada.")
             return
@@ -846,7 +859,7 @@ class Luta:
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(self, c.id))
                 dano = max(1, int(dano * (1 - _reducao_dano_total(self, c))))
-                dano_no_alvo = _aplicar_dano_do_chefe(self, c, dano)
+                dano_no_alvo = _aplicar_dano_do_chefe(self, c, dano, inimigo.id)
                 aparou = " (aparou)" if c.defendendo else ""
                 self.registrar(f"· {c.nome} toma **{dano_no_alvo}**{aparou}")
         # Curto (bloqueia_skill) só impede COMEÇAR a carregar -- um golpe
@@ -865,7 +878,7 @@ class Luta:
                 )
                 dano = int(dano * condicoes.multiplicador_dano_causado(self, alvo.id))
                 dano = max(1, int(dano * (1 - _reducao_dano_total(self, alvo))))
-                dano_no_alvo = _aplicar_dano_do_chefe(self, alvo, dano)
+                dano_no_alvo = _aplicar_dano_do_chefe(self, alvo, dano, inimigo.id)
                 self.registrar(f"{inimigo.nome} ataca **{alvo.nome}** — {dano_no_alvo} de dano")
 
         self._talvez_telegrafar_condicao(inimigo)
@@ -1638,35 +1651,46 @@ def _efeito_conflagracao(luta, c, dados):
     _talvez_condicionar_chefe(luta, c)
 
 
-def _efeito_interrupcao(luta, c, dados):
+def _efeito_interrupcao(luta, c, dados, alvo_id):
     """Mago de Raio: dano em cima da MESMA base do ataque normal (com
-    defesa, ver decisoes.md § Step 2b) e, se o chefe estiver CARREGANDO um
-    golpe (`luta.carregando`), cancela a carga.
+    defesa, ver decisoes.md § Step 2b) contra o inimigo ESCOLHIDO e, se
+    ELE estiver CARREGANDO um golpe, cancela a carga dele.
+
+    Step E generalizou o alvo (`dados["alvo"] = "inimigo_escolhido"`,
+    infra que existia desde o Step A sem nenhuma skill usando) porque
+    um bandido de estrada carregando não é sempre `inimigos[0]` --
+    antes disto, Interrupção sempre batia no primeiro inimigo da luta,
+    não importa qual o jogador escolhesse (ver decisoes.md § Step E).
+    `alvo_id` vem de `MenuAlvoHabilidade`/`BotaoHabilidade` (resolve
+    direto quando só existe um inimigo -- luta solo contra a torre,
+    hoje sempre; abre o menu com dois ou mais).
 
     FRONTEIRA DURA, NÃO GENERALIZAR: isto cancela especificamente
-    `luta.carregando` -- o golpe pesado que o chefe prepara em
-    `Luta.turno_do_chefe` (ver `CHANCE_CARREGAR`). NUNCA uma habilidade de
-    chefe -- o chefe ainda não tem nenhuma (a IA de combo entra no step 3),
-    mas quando entrar, Interrupção não cancela ela por acidente só porque
-    alguém generalizou isto pra "ação do chefe" no genérico. Se uma
-    habilidade de chefe precisar ser interrompível um dia, é uma consulta
-    NOVA, não a reutilização deste `if luta.carregando`. Ver
-    tests/test_mago_raio.py, teste que trava exatamente essa fronteira.
+    `inimigo.carregando` -- o golpe pesado que qualquer inimigo prepara
+    em `_turno_de_um_inimigo` (ver `CHANCE_CARREGAR`). NUNCA uma
+    habilidade de chefe -- nenhum chefe tem uma ainda. Se uma
+    habilidade de chefe precisar ser interrompível um dia, é uma
+    consulta NOVA, não a reutilização deste `if inimigo.carregando`.
+    Ver tests/test_mago_raio.py, teste que trava exatamente essa
+    fronteira.
 
-    Contra chefe que não está carregando, a skill é só dano -- reativa de
-    propósito, sem efeito de consolação."""
-    dano = at.aplicar_defesa(_rolar_dano_habilidade(luta, c, MULTIPLICADOR_INTERRUPCAO), _defesa_efetiva(luta, c))
+    Contra inimigo que não está carregando, a skill é só dano -- reativa
+    de propósito, sem efeito de consolação."""
+    inimigo = luta.inimigo_por_id(alvo_id) or luta.inimigos[0]
+    dano = at.aplicar_defesa(
+        _rolar_dano_habilidade(luta, c, MULTIPLICADOR_INTERRUPCAO), _defesa_efetiva(luta, c, inimigo),
+    )
     dano = max(1, int(dano * _fator_elemento_arma(luta, c)))
     dano = _aplicar_sombra(luta, c, dano)
-    luta.hp_chefe -= dano
+    inimigo.hp -= dano
     luta.verificar_fase2()
-    if luta.carregando:
-        luta.carregando = False
+    if inimigo.carregando:
+        inimigo.carregando = False
         luta.registrar(
-            f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano e interrompe a carga de {luta.chefe['nome']}!"
+            f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano e interrompe a carga de {inimigo.nome}!"
         )
     else:
-        luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano.")
+        luta.registrar(f"{dados['emoji']} {c.nome} conjura **{dados['nome']}** — {dano} de dano em {inimigo.nome}.")
     _talvez_condicionar_chefe(luta, c)
 
 

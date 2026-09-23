@@ -55,12 +55,12 @@ def test_interrupcao_aplica_a_defesa_do_chefe(monkeypatch):
     dados = game_data.HABILIDADES["interrupcao"]
 
     luta_sem_def = combate.Luta([c], {**CHEFE_TESTE, "def": 0}, andar_num=1)
-    combate._efeito_interrupcao(luta_sem_def, c, dados)
+    combate._efeito_interrupcao(luta_sem_def, c, dados, "chefe")
     dano_sem_def = luta_sem_def.hp_chefe_max - luta_sem_def.hp_chefe
 
     c2 = _combatente(2, classe="mago", inteligencia=20, ascensao="mago_raio")
     luta_com_def = combate.Luta([c2], {**CHEFE_TESTE, "def": 500}, andar_num=1)
-    combate._efeito_interrupcao(luta_com_def, c2, dados)
+    combate._efeito_interrupcao(luta_com_def, c2, dados, "chefe")
     dano_com_def = luta_com_def.hp_chefe_max - luta_com_def.hp_chefe
 
     assert dano_com_def < dano_sem_def
@@ -77,7 +77,7 @@ def test_interrupcao_cancela_a_carga_e_o_golpe_seguinte_do_chefe_nao_e_carregado
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     luta.carregando = True
 
-    combate._efeito_interrupcao(luta, c, dados)
+    combate._efeito_interrupcao(luta, c, dados, "chefe")
 
     assert luta.carregando is False
 
@@ -104,7 +104,7 @@ def test_interrupcao_contra_chefe_nao_carregando_e_so_dano(monkeypatch):
     luta = combate.Luta([c], CHEFE_TESTE, andar_num=1)
     assert luta.carregando is False
 
-    combate._efeito_interrupcao(luta, c, dados)
+    combate._efeito_interrupcao(luta, c, dados, "chefe")
 
     assert luta.carregando is False   # continua False -- não tinha nada pra cancelar
     assert luta.hp_chefe < luta.hp_chefe_max   # mas o dano aconteceu normalmente
@@ -124,7 +124,7 @@ def test_interrupcao_nao_cancela_nada_alem_da_carga(monkeypatch):
     luta.carregando = True
     luta.preparando_condicao = {"tipo": "vulneravel", "nome": "Marca", "emoji": "✨", "alvo_id": c.id}
 
-    combate._efeito_interrupcao(luta, c, dados)
+    combate._efeito_interrupcao(luta, c, dados, "chefe")
 
     assert luta.carregando is False                    # isto, cancela
     assert luta.preparando_condicao is not None         # isto, NUNCA -- não é carga

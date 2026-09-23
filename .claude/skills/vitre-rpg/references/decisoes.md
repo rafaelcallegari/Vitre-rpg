@@ -8508,3 +8508,73 @@ acúmulo (0.5 de redução de dano, 0.8 de redução de cura, nenhum dos
 dois tocado pelos efeitos novos) · push · **sem deploy** — Step D faz
 parte do pacote 0.4, que sobe inteiro só quando os seis steps do plano
 (A a F) estiverem prontos.
+
+## Step E — a estrada e os ladrões
+
+### Preliminar — Interrupção e Represália miram o inimigo certo
+
+O cartão mandou ler `decisoes.md § Step A` antes de começar: duas
+fronteiras foram deixadas de propósito na ponte pro inimigo principal
+(`inimigos[0]`) esperando exatamente o momento em que a torre ganhasse
+um grupo de verdade — o step A não tinha conteúdo nenhum pra testar
+contra, então generalizar ali teria sido código morto. Os ladrões de
+estrada (commit 2) são esse momento. **As duas foram RESOLVIDAS, não
+só reafirmadas** — com um mago de raio numa briga de quatro bandidos,
+deixar a fronteira em pé faria Interrupção cancelar sempre a carga do
+primeiro (o cartão foi explícito: "isso o jogador percebe").
+
+**Interrupção ganhou alvo escolhido, reaproveitando infra que já
+existia parada.** `game_data.HABILIDADES["interrupcao"]["alvo"] =
+"inimigo_escolhido"` — o MESMO mecanismo que o Step A commit 3
+generalizou (`_alvos_possiveis`/`MenuAlvoHabilidade`/
+`BotaoAlvoHabilidade`) sem nenhuma skill usando ainda, comentado lá
+como "infra pura... quando alguém precisar dele". `_efeito_interrupcao`
+passou a receber `alvo_id` (obrigatório — só tem dois chamadores reais,
+os dois já resolvidos: `_lancar_habilidade`, que sempre passa alguma
+coisa quando `dados.get("alvo") in TIPOS_ALVO_ESCOLHIDO`) e resolve
+`luta.inimigo_por_id(alvo_id)` em vez de `luta.hp_chefe`/`luta.
+carregando` fixos. Com um alvo só (torre, sempre, hoje), a interface
+nem muda — resolve direto, sem abrir menu, exatamente a regra que o
+Step A commit 3 já garantia.
+
+**`_defesa_efetiva` ganhou um `inimigo=None` opcional** pra Interrupção
+poder calcular dano contra a DEFESA do bandido escolhido, não sempre a
+do principal — sem isso, o número batia no inimigo certo mas com a
+defesa errada, um bug mais sutil (invisível pro jogador, mas errado).
+Default `None` continua lendo `luta.chefe["def"]`, então nenhum dos
+outros ~15 pontos que chamam essa função precisou mudar.
+
+**Represália ganhou `inimigo_id` em `_aplicar_dano_do_chefe`/
+`_refletir_se_paladino`** — o dano refletido agora sai do HP de QUEM
+CAUSOU o dano original, não sempre `luta.hp_chefe`. `_turno_de_um_
+inimigo` (Step A commit 4) já sabia `inimigo.id` no momento de chamar
+`_aplicar_dano_do_chefe` — só faltava passar adiante. Default `"chefe"`
+preserva os chamadores que não passam nada (raide.py, dungeon.py, os
+~10 testes de `test_paladino.py` que chamam a função direto com 3
+argumentos) sem tocar uma linha neles.
+
+**O que ficou de FORA, de propósito — registrado, não descoberto
+depois**: `_talvez_condicionar_chefe` (a condição de arma elemental que
+qualquer golpe pode amarrar, 25% de chance) continua hardcoded em
+`"chefe"` — generalizar isso tocaria os 17 call sites que chamam essa
+função mais as duas que escrevem a condição
+(`_aplicar_ou_renovar_condicao_arma`/`_empilhar_condicao_arma`), um
+escopo bem maior que as duas fronteiras que o cartão nomeou
+explicitamente. Um mago de raio elemental que usa Interrupção contra o
+segundo bandido de um grupo, acertando um proc de arma, ainda amarra a
+condição no PRIMEIRO bandido, não no que ele atacou — inconsistente,
+mas de baixa visibilidade (o jogador não vê "qual inimigo recebeu a
+condição interna", só o log de dano, que já está certo). Decisão:
+aceitar por agora, próxima carta que mexer em condição elemental
+decide se generaliza.
+
+Validado revertendo (stash de `combate.py`/`game_data.py`, mantendo os
+testes): caem exatamente os 4 testes antigos de `test_mago_raio.py` que
+chamavam `_efeito_interrupcao` com a assinatura velha (3 argumentos, sem
+`alvo_id`) e os 5 testes novos de `test_multi_inimigo.py` que travam o
+comportamento generalizado — `test_represalia_sem_inimigo_id_continua_
+refletindo_no_primeiro` (regressão, sem passar `inimigo_id`) continua
+verde mesmo revertido, prova de que o default preserva o de sempre.
+Suíte completa: 5 testes novos em `test_multi_inimigo.py` (mais o ajuste
+de assinatura em 4 de `test_mago_raio.py`, que não contam como novos),
+962 passando + 1 xfail antigo.
