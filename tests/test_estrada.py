@@ -571,3 +571,159 @@ def test_vitoria_sem_nada_pendente_nao_mostra_campo_de_revide():
     e = asyncio.run(estrada._finalizar_vitoria_estrada(luta, 1, mundo.VILAREJO))
 
     assert not any(f.name == "🤝 O revide" for f in e.fields)
+
+
+# ==================================================================
+# Step F, commit 1 -- as estradas longas (trechos por rota)
+# ==================================================================
+
+def _interacao(user_id):
+    it = MagicMock()
+    it.user.id = user_id
+    it.response = MagicMock()
+    it.response.is_done = MagicMock(return_value=True)
+    it.edit_original_response = AsyncMock()
+    it.followup = MagicMock()
+    it.followup.send = AsyncMock(return_value=MagicMock())
+    return it
+
+
+def test_trechos_da_rota_mirante_continua_um_trecho():
+    assert estrada.trechos_da_rota(mundo.VILAREJO, mundo.MIRANTE) == 1
+    assert estrada.trechos_da_rota(mundo.MIRANTE, mundo.VILAREJO) == 1
+
+
+def test_trechos_da_rota_costa_verde_dois_trechos():
+    assert estrada.trechos_da_rota(mundo.VILAREJO, mundo.COSTA_VERDE) == 2
+    assert estrada.trechos_da_rota(mundo.COSTA_VERDE, mundo.VILAREJO) == 2
+
+
+def test_trechos_da_rota_principades_tres_trechos():
+    assert estrada.trechos_da_rota(mundo.VILAREJO, mundo.PRINCIPADES) == 3
+    assert estrada.trechos_da_rota(mundo.PRINCIPADES, mundo.VILAREJO) == 3
+
+
+def test_rota_de_dois_trechos_rola_encontro_em_cada_um(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: chamadas.append(1) or False)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=6)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="costa verde"))
+    assert len(chamadas) == 2
+    assert db.get_jogador(1)["mundo"] == mundo.COSTA_VERDE
+
+
+def test_rota_de_tres_trechos_rola_encontro_em_cada_um(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: chamadas.append(1) or False)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=6)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="principades"))
+    assert len(chamadas) == 3
+    assert db.get_jogador(1)["mundo"] == mundo.PRINCIPADES
+
+
+def test_duas_emboscadas_na_mesma_viagem_o_jogador_chega(monkeypatch):
+    """Duas lutas na mesma viagem -- aceitável, vira história de mesa.
+    O jogador só chega depois de resolver as duas (vencendo, aqui)."""
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: True)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=6)
+    ctx = _ctx(1)
+
+    asyncio.run(bot.viajar.callback(ctx, destino="costa verde"))
+    painel1 = ctx.send.call_args.kwargs["view"]
+    assert isinstance(painel1, estrada.PainelEstrada)
+    assert painel1.trechos_restantes == 1
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # ainda no primeiro trecho
+
+    for inimigo in painel1.luta.inimigos:
+        inimigo.hp = 0
+    it1 = _interacao(1)
+    embed1 = asyncio.run(painel1.fim_da_luta())
+    asyncio.run(painel1.encerrar(it1, embed1))
+
+    painel2 = it1.followup.send.call_args.kwargs["view"]
+    assert isinstance(painel2, estrada.PainelEstrada)
+    assert painel2.trechos_restantes == 0
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # segunda emboscada, ainda não chegou
+
+    for inimigo in painel2.luta.inimigos:
+        inimigo.hp = 0
+    it2 = _interacao(1)
+    embed2 = asyncio.run(painel2.fim_da_luta())
+    asyncio.run(painel2.encerrar(it2, embed2))
+
+    assert db.get_jogador(1)["mundo"] == mundo.COSTA_VERDE   # chegou depois das duas
+
+
+def test_perder_no_primeiro_trecho_nao_fica_em_limbo_segue_pro_segundo(monkeypatch):
+    """'Perder no primeiro trecho não deixa o jogador em limbo: ele é
+    roubado e segue' -- o cartão foi explícito."""
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: True)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=6, moedas=1000)
+    ctx = _ctx(1)
+
+    asyncio.run(bot.viajar.callback(ctx, destino="costa verde"))
+    painel1 = ctx.send.call_args.kwargs["view"]
+
+    c1 = painel1.luta.participantes[0]
+    c1.hp = 0
+    c1.caiu = True
+    it1 = _interacao(1)
+    embed1 = asyncio.run(painel1.fim_da_luta())
+    asyncio.run(painel1.encerrar(it1, embed1))
+
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # roubado, mas segue -- não é limbo
+    painel2 = it1.followup.send.call_args.kwargs["view"]
+    assert isinstance(painel2, estrada.PainelEstrada)
+
+    for inimigo in painel2.luta.inimigos:
+        inimigo.hp = 0
+    it2 = _interacao(1)
+    embed2 = asyncio.run(painel2.fim_da_luta())
+    asyncio.run(painel2.encerrar(it2, embed2))
+
+    assert db.get_jogador(1)["mundo"] == mundo.COSTA_VERDE
+
+
+def test_fuga_no_primeiro_trecho_nao_continua_pro_segundo(monkeypatch):
+    """Fugir cancela o resto da viagem -- nenhum trecho seguinte rola."""
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: True)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=6)
+    ctx = _ctx(1)
+
+    asyncio.run(bot.viajar.callback(ctx, destino="costa verde"))
+    painel1 = ctx.send.call_args.kwargs["view"]
+
+    c1 = painel1.luta.participantes[0]
+    c1.fugiu = True
+    it1 = _interacao(1)
+    embed1 = asyncio.run(painel1.fim_da_luta())
+    asyncio.run(painel1.encerrar(it1, embed1))
+
+    it1.followup.send.assert_not_called()
+    assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # continua onde estava, sem chegar
+
+
+def test_viagem_pro_mirante_regressao_continua_um_trecho_so(monkeypatch):
+    """Regressão: a rota já existente (vilarejo <-> Mirante) não muda de
+    comportamento com a chegada das duas cidades."""
+    chamadas = []
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: chamadas.append(1) or False)
+    _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino="mirante"))
+    assert len(chamadas) == 1
+    assert db.get_jogador(1)["mundo"] == mundo.MIRANTE
+
+
+def test_viagem_dentro_da_torre_continua_sem_estrada_regressao(monkeypatch):
+    """Regressão: viagem dentro da torre não passa perto de `estrada`
+    nem do conceito de trechos."""
+    chamadas = []
+    monkeypatch.setattr(estrada, "houve_encontro", lambda: chamadas.append(1) or True)
+    _jogador(1, andar=1, andar_max=5, moedas=10000)
+    ctx = _ctx(1)
+    asyncio.run(bot.viajar.callback(ctx, destino=3))
+    assert db.get_jogador(1)["andar"] == 3
+    assert chamadas == []

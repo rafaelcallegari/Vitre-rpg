@@ -8811,3 +8811,88 @@ não só reafirmadas: alvo escolhido pra uma, `inimigo_id` explícito pra
 outra) e a chance de encontro (commit 1, `CHANCE_ENCONTRO_ESTRADA =
 0.12`, ponto de partida pra playtest) · push · **sem deploy** — falta
 só o Step F pro pacote 0.4 fechar.
+
+## Step F — Costa Verde e Principades
+
+**ÚLTIMO STEP DO 0.4** — o cartão foi explícito: quando ele fechar, o
+pacote inteiro sobe (ascensão, dungeon, espelhos, mestres, multi-
+inimigo, porta, vilarejo, incursões, estrada), mais de sessenta commits
+desde o último ponto em produção.
+
+### Commit 1 — as estradas longas
+
+**Cada rota tem um número de TRECHOS, e cada trecho rola o próprio
+encontro — não é distância virando espera, é risco ACUMULADO.**
+`estrada.TRECHOS_POR_ROTA = {mundo.MIRANTE: 1, mundo.COSTA_VERDE: 2,
+mundo.PRINCIPADES: 3}`. Vilarejo até Mirante continua com um trecho
+(sem mudança de comportamento — testado explicitamente,
+`test_viagem_pro_mirante_regressao_continua_um_trecho_so`). Principades
+sendo a rota de três trechos é coerente com o resto do desenho: é a
+que leva ao dinheiro (commit 3), então é a mais perigosa.
+
+**Toda rota passa pelo vilarejo — ele é o hub, nunca as cidades se
+conectam direto entre si.** `estrada.trechos_da_rota(origem, destino)`
+tira proveito disso: a chave é sempre o lado que NÃO é o vilarejo, e
+vale nos dois sentidos (ir e voltar são a mesma estrada, mesmo número
+de trechos).
+
+**Arquitetura: `Luta`/`PainelLuta` são inerentemente assíncronos
+(clique de botão por rodada) — não dá pra simplesmente fazer um loop
+síncrono sobre N trechos.** Resolvido encadeando lutas via estado
+carregado no próprio `PainelEstrada` (`trechos_restantes`,
+`_continua_viagem`), com uma função `_prosseguir_viagem(enviar, ...)`
+que rola trechos até achar um encontro (para numa luta) ou esgotar (
+completa a viagem direto). `enviar` é o mesmo truque que já existia em
+`combate._talvez_oferecer_porta` — `ctx.send` pra viagem nova,
+`interaction.followup.send` pra continuar depois de resolver um trecho
+anterior. `PainelEstrada.encerrar` foi override: depois de mostrar o
+resultado do trecho atual (`super().encerrar`), se ainda sobra estrada
+e o jogador não fugiu, o próximo trecho entra como mensagem nova no
+mesmo canal.
+
+**Verificado antes de escrever, não depois: `on_timeout` nunca chama
+`self.encerrar()`** (ele resolve inline, direto em `PainelLuta.
+on_timeout`) — então o hook de continuação só dispara pelo caminho de
+clique de botão, que SEMPRE tem uma `interaction` de verdade. E como a
+luta de estrada é sempre solo, um timeout só pode resolver como
+abandono (o único combatente vira `saiu`, nunca cai em vitória/derrota
+por essa via) — `_continua_viagem` fica `False` nesse caso, então
+mesmo que o caminho fosse alcançado, não haveria continuação pra
+disparar. Isso eliminou a dúvida "o que acontece se o jogador sumir no
+meio de uma viagem de vários trechos" antes de virar bug.
+
+**Perder no primeiro trecho não deixa o jogador em limbo — vitória OU
+derrota em qualquer trecho (exceto o último) continuam a viagem, só
+fugir cancela o resto.** `_finalizar_vitoria_estrada`/`_finalizar_
+derrota_estrada` ganharam `trechos_restantes`: com `> 0`, mostra "você
+segue viagem" e NÃO troca `mundo` ainda; em `0`, chama `mundo.ir_para`
+como sempre. `devolver_um_roubo` (Step E, commit 4) dispara em TODA
+vitória de trecho, não só na chegada final — o cartão do Step E já
+dizia "qualquer vitória", não "a vitória que chega".
+
+**Duas emboscadas na mesma viagem são aceitáveis e viram história de
+mesa** — testado (`test_duas_emboscadas_na_mesma_viagem_o_jogador_
+chega`): força vitória no primeiro trecho de uma rota de dois, confirma
+que uma segunda luta nasce sozinha via `interaction.followup.send`, e
+só depois da segunda o jogador chega de verdade.
+
+**Refatoração: `mundo.descer_para_o_vilarejo`/`subir_para_o_mirante`
+(Step C, uma linha cada, só a chave mudava) viraram `mundo.ir_
+para(user_id, lugar)`, genérico.** Com quatro lugares fora da torre
+agora, continuar uma função por par teria virado repetição pura.
+`andar`/`andar_max` continuam intocados (congelados desde a porta,
+Step B) — só `mundo` muda.
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`estrada.py`/
+`mundo.py`, mantendo os testes): caem exatamente os 8 testes que
+dependem de trecho múltiplo (`test_trechos_da_rota_mirante_continua_
+um_trecho`, `test_trechos_da_rota_costa_verde_dois_trechos`, `test_
+trechos_da_rota_principades_tres_trechos`, `test_rota_de_dois_trechos_
+rola_encontro_em_cada_um`, `test_rota_de_tres_trechos_rola_encontro_
+em_cada_um`, `test_duas_emboscadas_na_mesma_viagem_o_jogador_chega`,
+`test_perder_no_primeiro_trecho_nao_fica_em_limbo_segue_pro_segundo`,
+`test_fuga_no_primeiro_trecho_nao_continua_pro_segundo`) — os dois
+testes de regressão (Mirante de um trecho só, viagem dentro da torre)
+continuam verdes revertidos, prova de que o comportamento antigo não
+mudou nem um pouco pra quem não usa as cidades novas. Suíte completa:
+10 testes novos em `test_estrada.py`, 1014 passando + 1 xfail antigo.

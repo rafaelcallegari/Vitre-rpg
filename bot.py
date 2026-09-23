@@ -1076,25 +1076,59 @@ def _normalizar_destino(destino):
         return None, texto
 
 
+# Step F, commit 1: as duas estradas do vilarejo. Toda rota fora da porta
+# passa a resolver por `estrada.iniciar_viagem` -- mesmo pro Mirante<->
+# vilarejo (que já existia), pra não ter dois caminhos de código fazendo a
+# mesma coisa. `estrada.iniciar_viagem` decide sozinho quantos trechos rolar
+# (`estrada.trechos_da_rota`) e só troca `mundo` no fim de verdade.
+ROTAS_FORA = {
+    (mundo.MIRANTE, "vilarejo"): mundo.VILAREJO,
+    (mundo.VILAREJO, "mirante"): mundo.MIRANTE,
+    (mundo.VILAREJO, "costa verde"): mundo.COSTA_VERDE,
+    (mundo.VILAREJO, "principades"): mundo.PRINCIPADES,
+    (mundo.COSTA_VERDE, "vilarejo"): mundo.VILAREJO,
+    (mundo.PRINCIPADES, "vilarejo"): mundo.VILAREJO,
+}
+
+# rodapé da mensagem "sem destino" (`rpg viajar` sem texto) -- um por lugar,
+# pra não crescer um if/else por cidade nova.
+RODAPE_FORA = {
+    mundo.MIRANTE: "`rpg viajar 15` sobe de volta pra torre · `rpg viajar vilarejo` desce a escada.",
+    mundo.VILAREJO: "`rpg viajar mirante` sobe de volta pela escada · `rpg viajar costa verde` ou `rpg viajar principades` pegam a estrada.",
+    mundo.COSTA_VERDE: "`rpg viajar vilarejo` pega a estrada de volta.",
+    mundo.PRINCIPADES: "`rpg viajar vilarejo` pega a estrada de volta.",
+}
+
+# recusa quando o destino digitado não existe a partir daqui.
+RECUSA_FORA = {
+    mundo.MIRANTE: (
+        "Só dá pra ver as cidades daqui — ainda não tem como chegar lá. "
+        "`rpg viajar 15` sobe a escada de volta pra torre, `rpg viajar vilarejo` desce."
+    ),
+    mundo.VILAREJO: (
+        "Daqui dá pra subir pro Mirante ou pegar a estrada pra Costa Verde ou Principades. "
+        "`rpg viajar mirante` · `rpg viajar costa verde` · `rpg viajar principades`."
+    ),
+    mundo.COSTA_VERDE: "Daqui só dá pra pegar a estrada de volta pro vilarejo. `rpg viajar vilarejo`.",
+    mundo.PRINCIPADES: "Daqui só dá pra pegar a estrada de volta pro vilarejo. `rpg viajar vilarejo`.",
+}
+
+
 async def _viajar_fora(ctx, j, destino):
     """`rpg viajar` do lado de fora -- Step B trouxe só o Mirante, Step C
-    acrescenta o vilarejo. Cada lugar sabe pra onde a própria escada vai:
-    do Mirante, sobe pro andar 15 (a porta) ou desce pro vilarejo; do
-    vilarejo, só sobe de volta pro Mirante -- pra voltar pra torre a
-    partir daqui, primeiro sobe aqui, depois atravessa a porta de novo.
-    Sem a escada o jogador ficaria preso lá fora pra sempre (ver
-    decisoes.md § Step B). As três cidades da vista (step F) continuam
-    sem ser destino nenhum, em lugar nenhum."""
+    acrescenta o vilarejo, Step F acrescenta Costa Verde e Principades
+    (só alcançáveis a partir do vilarejo -- ele é o hub). A escada
+    Mirante<->andar 15 continua fora de `ROTAS_FORA`: é o mesmo degrau
+    de sempre, não estrada nenhuma, sem `estrada.iniciar_viagem`. Sem
+    ela o jogador ficaria preso lá fora pra sempre (ver decisoes.md §
+    Step B)."""
     numero, texto = _normalizar_destino(destino)
     lugar = j["mundo"]
     dados_lugar = mundo.LOCAIS_FORA[lugar]
 
     if not texto:
         e = discord.Embed(title=dados_lugar["nome"], description=dados_lugar["descricao"], color=dados_lugar["cor"])
-        if lugar == mundo.MIRANTE:
-            e.set_footer(text="`rpg viajar 15` sobe de volta pra torre · `rpg viajar vilarejo` desce a escada.")
-        else:
-            e.set_footer(text="`rpg viajar mirante` sobe de volta pela escada.")
+        e.set_footer(text=RODAPE_FORA[lugar])
         await ctx.send(embed=e)
         return
 
@@ -1106,35 +1140,12 @@ async def _viajar_fora(ctx, j, destino):
         await ctx.send(embed=e)
         return
 
-    if lugar == mundo.MIRANTE and texto == "vilarejo":
-        if estrada.houve_encontro():
-            await estrada.iniciar_encontro(ctx, j, mundo.VILAREJO)
-            return
-        mundo.descer_para_o_vilarejo(j["user_id"])
-        novo = mundo.LOCAIS_FORA[mundo.VILAREJO]
-        e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
-        e.set_footer(text="A escada sobe de volta pro Mirante quando quiser.")
-        await ctx.send(embed=e)
+    destino_mundo = ROTAS_FORA.get((lugar, texto.replace("_", " ")))
+    if destino_mundo:
+        await estrada.iniciar_viagem(ctx, j, destino_mundo)
         return
 
-    if lugar == mundo.VILAREJO and texto == "mirante":
-        if estrada.houve_encontro():
-            await estrada.iniciar_encontro(ctx, j, mundo.MIRANTE)
-            return
-        mundo.subir_para_o_mirante(j["user_id"])
-        novo = mundo.LOCAIS_FORA[mundo.MIRANTE]
-        e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
-        e.set_footer(text="`rpg viajar 15` sobe de volta pra torre a partir daqui.")
-        await ctx.send(embed=e)
-        return
-
-    if lugar == mundo.MIRANTE:
-        await ctx.send(
-            "Só dá pra ver as cidades daqui — ainda não tem como chegar lá. "
-            "`rpg viajar 15` sobe a escada de volta pra torre, `rpg viajar vilarejo` desce."
-        )
-    else:
-        await ctx.send("Daqui só dá pra subir de volta pro Mirante. `rpg viajar mirante`.")
+    await ctx.send(RECUSA_FORA[lugar])
 
 
 @bot.command(name="viajar", aliases=["ir", "travel"])

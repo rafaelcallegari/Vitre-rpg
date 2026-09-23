@@ -21,8 +21,10 @@ import game_data
 from andares_altos import ANDAR_ACIMA_DO_SELO
 
 TORRE = "torre"
-MIRANTE = "mirante"     # o alto da torre, do lado de fora da porta
-VILAREJO = "vilarejo"   # ao pé da escada que desce do Mirante -- Step C
+MIRANTE = "mirante"           # o alto da torre, do lado de fora da porta
+VILAREJO = "vilarejo"         # ao pé da escada que desce do Mirante -- Step C
+COSTA_VERDE = "costa_verde"   # cidade de lore, alcançável desde o vilarejo -- Step F
+PRINCIPADES = "principades"   # cidade grande, alcançável desde o vilarejo -- Step F
 
 
 def na_torre(jogador):
@@ -71,16 +73,19 @@ def subir_a_escada(user_id):
     db.atualizar_jogador(user_id, mundo=TORRE)
 
 
-def descer_para_o_vilarejo(user_id):
-    """A mesma escada do Mirante desce pro vilarejo (Step C) -- outra
-    perna da mesma estrutura que leva de volta pro andar 15."""
-    db.atualizar_jogador(user_id, mundo=VILAREJO)
-
-
-def subir_para_o_mirante(user_id):
-    """Do vilarejo, a escada só sobe de volta pro Mirante -- pra chegar
-    na torre a partir daqui, primeiro sobe aqui, depois usa a porta."""
-    db.atualizar_jogador(user_id, mundo=MIRANTE)
+def ir_para(user_id, lugar):
+    """Move o jogador pra outro lugar FORA da torre -- vilarejo,
+    Mirante, ou uma das duas cidades (Step F: `estrada.py` chama isto
+    quando uma viagem termina, com ou sem bandido no caminho). Nunca
+    mexe em `andar`/`andar_max` (congelados desde que saiu pela porta,
+    ver Step B) -- só `mundo` muda. A escada de volta pro andar 15 é
+    outra função (`subir_a_escada`, acima): aquela troca pra TORRE, não
+    pra um lugar de `LOCAIS_FORA`. Generaliza o que antes eram
+    `descer_para_o_vilarejo`/`subir_para_o_mirante` -- duas funções de
+    uma linha cada, que só a chave mudava; com quatro lugares fora da
+    torre (Step F), continuar uma função por par de lugares viraria
+    repetição pura."""
+    db.atualizar_jogador(user_id, mundo=lugar)
 
 
 # ---------------- a fala da Guia -- gatilho é VER, não VENCER (conserto) ----------------
@@ -98,10 +103,11 @@ def marcar_porta_vista(user_id):
 
 
 # ---------------- os lugares fora da torre ----------------
-# Nasceu no Step B com o Mirante sozinho; o Step C acrescenta o vilarejo e
-# é aqui que a estrutura precisa aguentar o segundo lugar antes das duas
-# cidades do step F (ver decisoes.md § Step C). Cada entrada é só dado --
-# nome, cor, descrição -- sem discord.Embed nenhum aqui; quem chama (bot.py,
+# Nasceu no Step B com o Mirante sozinho; o Step C acrescenta o vilarejo; o
+# Step F fecha com as duas cidades (Costa Verde, Principades), alcançáveis
+# só a partir do vilarejo -- ele é o hub, não um lugar de passagem qualquer
+# (ver decisoes.md § Step F). Cada entrada é só dado -- nome, cor,
+# descrição -- sem discord.Embed nenhum aqui; quem chama (bot.py,
 # combate.py) monta o embed com o que fizer sentido pro próprio contexto.
 # `npcs.NPCS` usa a MESMA chave (string) pra guardar quem mora em cada
 # lugar -- não precisa de estrutura paralela nenhuma pra isso.
@@ -110,7 +116,7 @@ LOCAIS_FORA = {
         "nome": "O Mirante",
         "cor": 0x87CEEB,
         "descricao": (
-            "Sol, nuvens, montanhas verdejantes até onde a vista alcança. Ao longe, três "
+            "Sol, nuvens, montanhas verdejantes até onde a vista alcança. Ao longe, duas "
             "cidades — perto demais pra ignorar, longe demais pra chegar a pé. Uma escada "
             "desce logo atrás de você."
         ),
@@ -121,7 +127,26 @@ LOCAIS_FORA = {
         "descricao": (
             "Pequeno, gente vivendo — depois da torre inteira, é a diferença de respiro que "
             "chama atenção primeiro. Aqui tem sol de verdade, não o que passa pelas frestas de "
-            "andar nenhum. Uma escada sobe de volta pro Mirante."
+            "andar nenhum. Uma escada sobe de volta pro Mirante, e duas estradas saem daqui — "
+            "uma pra Costa Verde, outra pra Principades."
+        ),
+    },
+    COSTA_VERDE: {
+        "nome": "Costa Verde",
+        "cor": 0x4B6B43,
+        "descricao": (
+            "Arrozais em terraços, névoa baixa entre os bambus, um sino que ninguém toca mas "
+            "sempre soa. Aqui a gente fala dos próprios mortos como quem fala do tempo — sem "
+            "medo, sem pressa, sem achar estranho. Uma estrada volta pro vilarejo."
+        ),
+    },
+    PRINCIPADES: {
+        "nome": "Principades",
+        "cor": 0xB08D57,
+        "descricao": (
+            "Ruas de pedra cheias de gente, carroça em cima de carroça, pregão de mercador "
+            "disputando o ouvido do próximo. É pra cá que todo caminho de fora da torre acaba "
+            "levando, mais cedo ou mais tarde. Uma estrada volta pro vilarejo."
         ),
     },
 }
