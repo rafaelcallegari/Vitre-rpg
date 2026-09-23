@@ -8578,3 +8578,63 @@ verde mesmo revertido, prova de que o default preserva o de sempre.
 Suíte completa: 5 testes novos em `test_multi_inimigo.py` (mais o ajuste
 de assinatura em 4 de `test_mago_raio.py`, que não contam como novos),
 962 passando + 1 xfail antigo.
+
+### Commit 1 — a estrada
+
+**Módulo novo (`estrada.py`), mesmo padrão H = {} / instalar(bot, ...)
+de combate.py/dungeon.py/raide.py.** Reaproveita o motor de combate de
+verdade (`combate.Luta`, `combate.PainelLuta`) em vez de escrever um
+sistema de luta paralelo — só o FIM muda (chegar ao destino em vez de
+XP/andar de torre, ser roubado em vez de `processar_morte`), exatamente
+o mesmo padrão que `dungeon.PainelEspelho`/`raide.PainelRaide` já usam:
+uma subclasse de `PainelLuta` que só sobrescreve `fim_da_luta`/
+`_continuar`, nunca os botões.
+
+**Só as duas pernas que atravessam terreno aberto (Mirante↔vilarejo)
+podem ter encontro — a escada de volta pro andar 15 (a porta) fica de
+fora, de propósito.** O cartão diz "`rpg viajar` fora da torre já
+existe (Mirante, vilarejo)... a viagem passa a poder ser interrompida",
+mas a porta/escada pro andar 15 é o mesmo degrau fixo desde o Step B —
+nunca foi chamada de estrada em lugar nenhum da lore, e bandido de
+estrada não faz sentido guardando a ENTRADA da torre. Testado
+explicitamente (`test_escada_do_mirante_pro_andar_15_nunca_tem_
+encontro`): `estrada.houve_encontro` nunca é sequer consultado nessa
+perna.
+
+**A viagem "para" literalmente — `mundo.descer_para_o_vilarejo`/
+`subir_para_o_mirante` só rodam dentro de `_finalizar_vitoria_estrada`/
+`_finalizar_derrota_estrada`, nunca antes de `iniciar_encontro`.** Isso
+é o que faz "a viagem se resolve sem morte" (perder) e "chega ao
+destino" (vencer) os dois completarem a viagem — só fugir não move o
+jogador (`_finalizar_abandono_estrada` nunca chama `_completar_
+viagem`). Fugir não decidido pelo cartão explicitamente; escolhido como
+nem punição nem chegada — volta pra onde estava, tenta de novo quando
+quiser.
+
+**Sem recompensa de XP/moedas por vencer bandido.** O cartão nunca
+menciona ganho nenhum além de "chegar ao destino" (e, no commit 4,
+recuperar o que foi roubado) — "Nomes e cara própria: bandido de
+estrada, não monstro" sinaliza que eles são obstáculo de história, não
+farm. Decisão: nenhum XP/moedas sai de uma vitória de estrada — sem
+isso, `rpg viajar` viraria mais uma fonte de XP grátis, competindo com
+cacar/explorar/incursão sem nenhum motivo novo.
+
+**Placeholder no commit 1: um bandido só, fixo (`sortear_grupo`
+devolve sempre `["Bandido de Estrada"]`), só pra provar o mecanismo —
+o grupo de verdade (1-4, nomeado, escalado) é o commit 2.** Chance de
+encontro (`CHANCE_ENCONTRO_ESTRADA = 0.12`) é ponto de partida pra
+playtest, não medida ainda — o cartão pediu pra medir depois.
+
+Validado revertendo o commit inteiro (stash de `bot.py`, mantendo
+`estrada.py` e os testes): caem exatamente os 2 testes de integração
+(`test_encontro_no_mirante_indo_pro_vilarejo_nao_move_o_jogador_ainda`,
+`test_encontro_no_vilarejo_indo_pro_mirante_nao_move_o_jogador_ainda`)
+mais os 4 testes antigos (Step C/D) que precisaram de `bot.estrada.
+houve_encontro` mockado pra não ficar flaky com o encontro de verdade
+agora ligado — sem o import, `bot.estrada` nem existe, então o mock
+falha primeiro (`AttributeError`, sinal correto de que a integração
+sumiu). Os testes de `estrada.py` isolado (probabilidade pura,
+`_finalizar_vitoria_estrada`/`_finalizar_derrota_estrada`/`_finalizar_
+abandono_estrada` chamados direto) continuam verdes — não passam pelo
+`bot.py` revertido. Suíte completa: 12 testes novos em
+`test_estrada.py`, 974 passando + 1 xfail antigo.

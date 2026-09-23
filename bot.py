@@ -1107,6 +1107,9 @@ async def _viajar_fora(ctx, j, destino):
         return
 
     if lugar == mundo.MIRANTE and texto == "vilarejo":
+        if estrada.houve_encontro():
+            await estrada.iniciar_encontro(ctx, j, mundo.VILAREJO)
+            return
         mundo.descer_para_o_vilarejo(j["user_id"])
         novo = mundo.LOCAIS_FORA[mundo.VILAREJO]
         e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
@@ -1115,6 +1118,9 @@ async def _viajar_fora(ctx, j, destino):
         return
 
     if lugar == mundo.VILAREJO and texto == "mirante":
+        if estrada.houve_encontro():
+            await estrada.iniciar_encontro(ctx, j, mundo.MIRANTE)
+            return
         mundo.subir_para_o_mirante(j["user_id"])
         novo = mundo.LOCAIS_FORA[mundo.MIRANTE]
         e = discord.Embed(title=novo["nome"], description=novo["descricao"], color=novo["cor"])
@@ -2770,6 +2776,11 @@ raide.instalar(bot, globals())
 import dungeon
 
 dungeon.instalar(bot, globals())
+
+# estrada — encontros de rpg viajar fora da torre (Step E)
+import estrada
+
+estrada.instalar(bot, globals())
 
 # agenda — aviso automático da carroça do Bramm
 import agenda

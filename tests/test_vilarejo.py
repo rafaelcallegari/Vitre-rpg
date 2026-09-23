@@ -239,7 +239,8 @@ def test_cacar_consome_a_cerveja_pendente_uma_vez_so(monkeypatch):
 # a cerveja atravessa do vilarejo pra torre
 # ==================================================================
 
-def test_cerveja_comprada_no_vilarejo_sobrevive_a_viagem_de_volta_pra_torre():
+def test_cerveja_comprada_no_vilarejo_sobrevive_a_viagem_de_volta_pra_torre(monkeypatch):
+    monkeypatch.setattr(bot.estrada, "houve_encontro", lambda: False)   # Step E -- isola de bandidos
     _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15, moedas=10000)
     ctx = _ctx(1)
     asyncio.run(bot.cerveja.callback(ctx))

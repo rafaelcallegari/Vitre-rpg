@@ -213,7 +213,8 @@ def test_viajar_dentro_da_torre_continua_igual_regressao(monkeypatch):
 # Step C, commit 1 -- a escada desce pro vilarejo
 # ==================================================================
 
-def test_viajar_vilarejo_do_mirante_desce_a_escada():
+def test_viajar_vilarejo_do_mirante_desce_a_escada(monkeypatch):
+    monkeypatch.setattr(bot.estrada, "houve_encontro", lambda: False)   # Step E -- isola de bandidos
     _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino="vilarejo"))
@@ -225,7 +226,8 @@ def test_viajar_vilarejo_do_mirante_desce_a_escada():
     assert "vilarejo" in embed.title.lower()
 
 
-def test_viajar_mirante_do_vilarejo_sobe_a_escada():
+def test_viajar_mirante_do_vilarejo_sobe_a_escada(monkeypatch):
+    monkeypatch.setattr(bot.estrada, "houve_encontro", lambda: False)   # Step E -- isola de bandidos
     _jogador(1, mundo_atual=mundo.VILAREJO, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino="mirante"))
@@ -244,7 +246,8 @@ def test_viajar_15_do_vilarejo_nao_pula_direto_pra_torre():
     assert db.get_jogador(1)["mundo"] == mundo.VILAREJO   # não subiu direto
 
 
-def test_viajar_ida_e_volta_vilarejo_andar_sobrevive():
+def test_viajar_ida_e_volta_vilarejo_andar_sobrevive(monkeypatch):
+    monkeypatch.setattr(bot.estrada, "houve_encontro", lambda: False)   # Step E -- isola de bandidos
     _jogador(1, mundo_atual=mundo.MIRANTE, andar=15, andar_max=15)
     ctx = _ctx(1)
     asyncio.run(bot.viajar.callback(ctx, destino="vilarejo"))
