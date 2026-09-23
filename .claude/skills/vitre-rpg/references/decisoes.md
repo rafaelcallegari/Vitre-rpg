@@ -8943,3 +8943,85 @@ do `else` antigo, não algo que este commit introduziu) mais
 `test_todo_npc_conversa_tem_chave_de_dialogo_valida` (contagem global
 de NPCs "conversa", que subiu de 15 pra 17). Suíte completa: 9 testes
 novos em `test_costa_verde.py`, 1023 passando + 1 xfail antigo.
+### Commit 3 — Principades
+
+**Módulo novo (`principades.py`), mesma convenção de `vilarejo.py`/
+`estrada.py`: o conceito é grande o bastante pra merecer arquivo
+próprio, sem tocar em `game_data.py`.** Duas mecânicas, as duas ligam o
+mundo de fora à torre em vez de competir com ela.
+
+**Compra espólio ACIMA do valor de face —
+`principades.BONUS_COMPRA_ESPOLIO = 0.25`, aplicado só em cima do
+`unitario` que `bot.vender` já calculava (espólio sempre vendeu a
+preço cheio em qualquer lugar — Step Dungeon, "é loot puro, não
+craft"). Não desequilibra nada rio acima: espólio não é ingrediente de
+receita nenhuma, é só "moeda de troca" — um bônus na revenda dele é só
+mais moedas por viagem, não mais poder.** 0.25 é ponto de partida pra
+playtest, mesma régua das outras constantes nomeadas do pacote
+(`CHANCE_ENCONTRO_ESTRADA = 0.12`, `FRACAO_ROUBO_MOEDAS = 0.15`).
+
+**Vende materiais de profissão — preço calibrado contra o tempo de
+farm equivalente, o cartão pediu medição, não chute. `principades.
+MULTIPLICADOR_COMPRA_MATERIAL = 8`, sobre o mesmo `ITENS[x]["preco"]`
+que `bot.vender` já paga em qualquer lugar.** A conta, com os números
+reais de `game_data.py`:
+- Tier "chão" (preço 12-800, monstro comum de qualquer andar 1-15):
+ ~50% de chance por `rpg cacar` (cooldown de 60s) — ~2 caçadas (~2 min)
+ por unidade em média, e cada caçada JÁ rende moedas/XP por conta
+ própria, doa ou não o material. No andar 11 (Grifo de Vidro, 222
+ moedas/caçada, "pluma etérea" a 480), 2 caçadas rendem ~444 moedas de
+ brinde sozinho — comprar 1 unidade a 8x (3840) fica ~8.6x mais caro
+ que só o brinde, sem contar tempo nem garantia. No andar 1 (Javali, 26
+ moedas/caçada, "presa de javali" a 12), a mesma conta (96 vs ~52 de
+ brinde) cobre quase 2x — calibra mais apertado no chão baixo, que é
+ onde a diferença importa menos.
+- Tier "chefe" (preço 1600-2800, material de arma elemental, andares
+ 11-15): 100% de chance, mas só de CHEFE, cooldown de 900s = 15 min.
+ Comprar a 8x (12800-22400) fica ordens de grandeza acima do que um
+ chefe rende em moedas por kill — de propósito: esse tier crafta arma
+ elemental, é conteúdo de fim de jogo, tem que continuar raro pra quem
+ farma, nunca virar prateleira.
+
+**Não vende arma, armadura nem encantamento — e isso nunca precisou de
+lista de exclusão.** `principades.materiais_a_venda()` só olha
+`tipo == "material"` pra começo de conversa; arma/armadura/encantamento
+nunca entram no filtro, então não existe risco de esquecer de excluir
+alguém — testado mesmo assim
+(`test_nenhum_material_a_venda_e_arma_armadura_ou_encantamento`), pra
+travar a decisão contra refator futuro.
+
+**`materiais_a_venda()` filtra pelas MESMAS duas flags que já existiam
+em `game_data.py` — `loja` (default True) tira os materiais de
+quest/fabricação especial (`flor_do_andar_1`, `molde_do_manto` e
+primos, todos `"loja": False`); `vendavel` (default True) tira o
+`fragmento_selo`.** Zero coluna nova, zero lista de exclusão mantida à
+mão — os dois flags já existiam desde antes deste pacote, só nunca
+tinham sido usados pra filtrar materiais porque nenhum lugar vendia
+material até agora.
+
+**`bot.comprar` ganhou um `elif` a mais no mesmo `if/elif` fechado do
+Step C** (torre / vilarejo / Principades / `else` — Costa Verde cai no
+`else` de propósito, decisão do commit 2). O preço marcado já vem
+MULTIPLICADO dentro do dict que `materiais_a_venda()` devolve — `bot.
+comprar` usa `disponiveis[item]["preco"]` do jeito que sempre usou, sem
+saber nada sobre o multiplicador (mesmo padrão do vilarejo: quem chama
+não sabe de regra de preço nenhuma, só lê o dict).
+
+Validado revertendo o commit inteiro (stash de `bot.py`, `principades.
+py` posto de lado por não estar rastreado ainda): a suíte nem coleta
+(`ERROR tests/test_principades.py` — `import principades` falha, sinal
+correto de que o módulo inteiro sumiu). Restaurado, a suíte completa
+fica verde nos 14 testes novos de `test_principades.py`. Suíte
+completa: 1037 passando + 1 xfail antigo.
+
+## DoD do Step F
+
+Suíte verde (1004 → 1037) · `decisoes.md` com os trechos por rota
+(commit 1: Mirante 1, Costa Verde 2, Principades 3), o percentual do
+espólio (commit 3: `BONUS_COMPRA_ESPOLIO = 0.25`) e a calibragem do
+preço de material (commit 3: `MULTIPLICADOR_COMPRA_MATERIAL = 8`,
+medido contra o tempo de farm real de `rpg cacar`/chefe, não chutado)
+· push · **e aí o 0.4 está fechado no código.** Ascensão, dungeon,
+espelhos, mestres, multi-inimigo, porta, vilarejo, incursões e estrada
+sobem juntos — o deploy em si continua sendo ação separada, não
+disparada por este cartão.

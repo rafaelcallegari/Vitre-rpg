@@ -24,6 +24,7 @@ import mestres
 import mundo
 import paginacao
 import passivas
+import principades
 import pronomes
 import travas
 import vilarejo
@@ -1982,10 +1983,13 @@ async def comprar(ctx, *, argumento: str = ""):
     (poção/elixir nunca entram aqui, "loja": False cuida disso sozinho);
     no vilarejo, só os quatro elixires do alquimista (`vilarejo.
     elixires_a_venda` -- ele é a ÚNICA exceção comercial de lá, sem
-    ferreiro nem mercador de equipamento). **Cuidado:** a trava velha
-    comparava `andar > ANDAR_ACIMA_DO_SELO` cru -- fora da torre isso é
-    lixo (o vilarejo tem `andar` sempre 15, congelado). Tratar o mundo
-    antes do número."""
+    ferreiro nem mercador de equipamento). Em Principades (Step F, commit
+    3), só material de profissão (`principades.materiais_a_venda`, preço
+    já com o multiplicador embutido) -- nunca arma/armadura/encantamento,
+    isso continua sendo só da torre. Costa Verde não vende nada -- cai no
+    `else` de propósito. **Cuidado:** a trava velha comparava `andar >
+    ANDAR_ACIMA_DO_SELO` cru -- fora da torre isso é lixo (o vilarejo tem
+    `andar` sempre 15, congelado). Tratar o mundo antes do número."""
     j = await pegar_jogador(ctx)
     if not j:
         return
@@ -1997,6 +2001,8 @@ async def comprar(ctx, *, argumento: str = ""):
                                **equipamentos_do_andar(j["andar"])})
     elif j["mundo"] == mundo.VILAREJO:
         disponiveis = vilarejo.elixires_a_venda()
+    elif j["mundo"] == mundo.PRINCIPADES:
+        disponiveis = principades.materiais_a_venda()
     else:
         await ctx.send("Não tem ninguém vendendo nada aqui.")
         return
@@ -2015,6 +2021,8 @@ async def comprar(ctx, *, argumento: str = ""):
             )
         elif pista in vilarejo.ELIXIRES:
             await ctx.send(f"**{ITENS[pista]['nome']}** só o alquimista do vilarejo vende. `rpg viajar vilarejo`.")
+        elif pista in principades.materiais_a_venda():
+            await ctx.send(f"**{ITENS[pista]['nome']}** só Principades vende. `rpg viajar principades` (a partir do vilarejo).")
         elif pista and not ITENS[pista].get("loja", True):
             await ctx.send(
                 f"**{ITENS[pista]['nome']}** não se compra: é item de fabricação. "
@@ -2082,6 +2090,12 @@ async def vender(ctx, *, argumento: str = ""):
     # de tabela, sem desconto de revenda. Ver decisoes.md § Dungeon --
     # pool e armadilha.
     unitario = dado["preco"] if dado["tipo"] in ("material", "espolio") else int(dado["preco"] * 0.5)
+    if dado["tipo"] == "espolio" and j["mundo"] == mundo.PRINCIPADES:
+        # Step F, commit 3: Principades compra espólio ACIMA do valor de
+        # face -- dá motivo real pra viagem, sem desequilibrar nada rio
+        # acima (espólio não é ingrediente de receita nenhuma). Ver
+        # principades.preco_compra_espolio.
+        unitario = principades.preco_compra_espolio(unitario)
     plain_qtd = inventario_qtd.get(item, 0)
     lista_instancias = mochila_instancias.get(item, [])
 
