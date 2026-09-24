@@ -208,7 +208,7 @@ async def _prosseguir_viagem(enviar, user_id, destino_mundo, trechos_restantes):
             await _iniciar_luta_de_trecho(enviar, j, destino_mundo, trechos_restantes)
             return
     mundo.ir_para(user_id, destino_mundo)
-    dados_lugar = mundo.LOCAIS_FORA[destino_mundo]
+    dados_lugar = mundo.LOCAIS_NOMEADOS[destino_mundo]
     e = discord.Embed(title=dados_lugar["nome"], description=dados_lugar["descricao"], color=dados_lugar["cor"])
     await enviar(embed=e)
 
@@ -306,7 +306,7 @@ async def _finalizar_vitoria_estrada(luta, user_id, destino_mundo, trechos_resta
         )
     else:
         mundo.ir_para(user_id, destino_mundo)
-        dados_lugar = mundo.LOCAIS_FORA[destino_mundo]
+        dados_lugar = mundo.LOCAIS_NOMEADOS[destino_mundo]
         e.add_field(name="Você chega", value=f"{dados_lugar['nome']} -- a estrada ficou livre dessa vez.", inline=False)
     if descricao_devolucao:
         e.add_field(name="🤝 O revide", value=descricao_devolucao, inline=False)
@@ -338,7 +338,7 @@ async def _finalizar_derrota_estrada(luta, user_id, destino_mundo, trechos_resta
         )
     else:
         mundo.ir_para(user_id, destino_mundo)
-        dados_lugar = mundo.LOCAIS_FORA[destino_mundo]
+        dados_lugar = mundo.LOCAIS_NOMEADOS[destino_mundo]
         e.add_field(
             name="Mas vivo",
             value=f"Você chega em {dados_lugar['nome']} de qualquer jeito.",

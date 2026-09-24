@@ -9168,3 +9168,89 @@ Suíte verde (1038 → 1062) · `decisoes.md` com o formato de linhas
 (commit 1) e a regra do repouso -- as DUAS colunas separadas
 (`em_repouso` liga/desliga, `ja_parou` só liga) e por que nada é travado
 (commit 2) · push · **sem deploy** -- o 0.4 continua sem subir.
+
+## Vitre — A Praça: o andar de comunidade
+
+Cartão novo. HEAD `f06d23d`, suíte em 1063 (1062 + 1 xfail). NÃO SOBE
+sozinha -- entra no 0.4, que ainda espera deploy.
+
+### Commit 1 — o lugar
+
+**A Praça é o primeiro lugar NOMEADO que fica DENTRO da torre -- e isso
+quebrou o nome da constante que já existia.** `mundo.LOCAIS_FORA` virou
+`mundo.LOCAIS_NOMEADOS`: o dict sempre guardou só dado (nome/cor/
+descrição) por lugar nomeado, nunca dependeu de "fora" pra fazer sentido
+-- só nunca tinha um lugar de DENTRO pra provar isso. Renomear em vez de
+duplicar a estrutura foi a parte fácil do cartão.
+
+**`na_torre(jogador)` continua False na Praça, de propósito -- é o que
+faz "use a trava que já existe" funcionar de graça.** `mundo.exigir_
+torre` já bloqueava cacar/explorar/boss/party/dungeon pra quem não está
+com `mundo == TORRE`; dar à Praça seu próprio valor de `mundo` (nunca
+`TORRE`) faz os cinco recusarem sozinhos, sem tocar num só desses
+arquivos. Narrativamente ela é "dentro" da torre; mecanicamente ela se
+comporta como Mirante/vilarejo/cidades, porque é exatamente esse
+comportamento (recusa de conteúdo, `andar` congelado) que o cartão pediu.
+
+**Entrar/sair nunca tocam `andar`/`andar_max` -- "guardar o andar na
+entrada e devolver na saída" sai de graça do mesmo mecanismo que a porta
+atrás do trono já usava (Step B).** `entrar_na_praca(user_id)` só seta
+`mundo = PRACA`; `sair_da_praca(user_id)` só seta `mundo = TORRE`.
+Nenhuma coluna nova pra "andar de origem" -- o andar nunca deixou de ser
+o que era, só ficou congelado enquanto `mundo` apontava pra outro
+lugar, exatamente como já acontece pra quem vai ao Mirante. Diferença
+do Mirante: aquele só nasce num andar fixo (15, depois da porta); a
+Praça precisa funcionar a partir de QUALQUER andar -- testado
+explicitamente indo e voltando de 1, 5, 9, 12 e 15
+(`test_viajar_praca_de_varios_andares_sempre_volta_pro_de_origem`).
+
+**Entrada pelo lado de dentro intercepta o texto "praca"/"praça" ANTES
+da checagem numérica de `rpg viajar`** (`destino, texto =
+_normalizar_destino(destino); if texto in ("praca", "praça"): ...`) --
+sem isso, cairia direto no "Não entendi esse andar" que só espera
+número. Saída usa o mesmo `_viajar_fora` que Mirante/vilarejo/cidades já
+usam, com um `lugar == mundo.PRACA and texto == "torre"` a mais -- sempre
+volta pro andar de `j["andar"]`, nunca uma escolha (ao contrário do
+Mirante, que tem destino fixo -- aqui o "fixo" é "o andar de onde você
+saiu", que muda por jogador).
+
+**"Varra os comandos" achou três bugs pré-existentes, não introduzidos
+por este commit -- os três corrigidos no mesmo commit:**
+- `rpg andar` mostrava monstro/chefe do `andar` CONGELADO pra quem
+  estava fora da torre (Mirante, vilarejo, cidades -- e agora a Praça
+  também sentiria isso). Nunca checava `na_torre`. Corrigido com
+  `mundo.exigir_torre` no topo, mesma trava de sempre.
+- `rpg colher` (a flor do andar 1) só checava `j["andar"] != 1` -- quem
+  tinha o andar congelado em 1 (fora da torre) conseguia colher de
+  qualquer lugar. Corrigido acrescentando `not mundo.na_torre(j)` à
+  mesma condição, reaproveitando a MESMA mensagem de recusa (nunca
+  precisou de texto novo).
+- O hook `@bot.after_invoke falar_guia_acima_do_selo` (dispara a cada
+  `GUIA_A_CADA_ACOES` comandos) só checava `j["andar"] <=
+  ANDAR_ACIMA_DO_SELO` -- alguém com andar congelado acima do Selo
+  (11+) ouviria a Guia comentar em QUALQUER comando, mesmo estando fora
+  da torre inteira. Este é o mais impactante dos três: dispara depois
+  de TODO comando, não só de um específico -- testado explicitamente
+  (`test_guia_acima_do_selo_nao_fala_na_praca`).
+
+Nenhum dos três foi causado pela Praça -- já valiam pra quem visitava o
+Mirante/vilarejo/cidades desde os Steps B/C/F. A Praça só tornou a
+varredura necessária, e os três eram exatamente o "comportamento como
+se estivesse no andar guardado" que o cartão avisou ser difícil de ver.
+
+**`rpg cacar`/`explorar`/`boss`/`party`/`dungeon` não precisaram de
+nenhuma mudança -- já liam `mundo.exigir_torre` antes de qualquer coisa
+que dependesse de `andar` de verdade.** Confirmado, não assumido: os
+cinco testados explicitamente contra `mundo.PRACA`.
+
+Validado revertendo o commit inteiro (stash de `bot.py`/`estrada.py`/
+`mundo.py`, mantendo os testes): caem exatamente os 11 testes que
+dependem de `mundo.PRACA` existir (a maioria com `AttributeError:
+module 'mundo' has no attribute 'PRACA'`, sinal correto de que a
+constante nem existe sem o commit) -- os 4 testes de regressão
+(`rpg andar`/Guia dentro da torre, quem nunca visita a Praça, `cacar`
+dentro da torre) e os 2 que testam recusa a partir de OUTRO lugar
+(Mirante/vilarejo recusando "praca" como destino) continuam verdes
+revertidos, porque não dependem da Praça existir pra já estarem certos.
+Suíte completa: 15 testes novos em `test_praca.py`, 1079 passando + 1
+xfail antigo.

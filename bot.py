@@ -638,7 +638,12 @@ async def falar_guia_acima_do_selo(ctx):
     if ctx.command_failed:
         return
     j = db.get_jogador(ctx.author.id)
-    if not j or j["andar"] <= andares_altos.ANDAR_ACIMA_DO_SELO:
+    # Achado varrendo os comandos pro cartão "A Praça": sem checar
+    # `na_torre`, isso lia o `andar` CONGELADO de quem estava fora (Mirante,
+    # vilarejo, cidades, e agora a Praça) e comentava como se a Guia
+    # estivesse ali -- ela é conteúdo dos andares 11-15, não deveria falar
+    # com ninguém fora da torre. Ver decisoes.md § A Praça.
+    if not j or not mundo.na_torre(j) or j["andar"] <= andares_altos.ANDAR_ACIMA_DO_SELO:
         return
     acoes = (j["acoes_andar_alto"] or 0) + 1
     if acoes < GUIA_A_CADA_ACOES:
@@ -1007,6 +1012,12 @@ async def andar_info(ctx):
     j = await pegar_jogador(ctx)
     if not j:
         return
+    # Achado varrendo os comandos pro cartão "A Praça": sem essa trava,
+    # mostrava monstro/chefe do andar CONGELADO pra quem está fora da torre
+    # (Mirante, vilarejo, cidades, Praça) -- conteúdo que não existe onde a
+    # pessoa está de verdade. Ver decisoes.md § A Praça.
+    if not await mundo.exigir_torre(ctx, j):
+        return
     a = ANDARES[j["andar"]]
     e = discord.Embed(title=f"Andar {j['andar']} — {a['nome']}", description=a["descricao"], color=a["cor"])
     e.add_field(
@@ -1099,6 +1110,7 @@ RODAPE_FORA = {
     mundo.VILAREJO: "`rpg viajar mirante` sobe de volta pela escada · `rpg viajar costa verde` ou `rpg viajar principades` pegam a estrada.",
     mundo.COSTA_VERDE: "`rpg viajar vilarejo` pega a estrada de volta.",
     mundo.PRINCIPADES: "`rpg viajar vilarejo` pega a estrada de volta.",
+    mundo.PRACA: "`rpg viajar torre` volta pro andar de onde você saiu — de graça, sempre.",
 }
 
 # recusa quando o destino digitado não existe a partir daqui.
@@ -1113,6 +1125,7 @@ RECUSA_FORA = {
     ),
     mundo.COSTA_VERDE: "Daqui só dá pra pegar a estrada de volta pro vilarejo. `rpg viajar vilarejo`.",
     mundo.PRINCIPADES: "Daqui só dá pra pegar a estrada de volta pro vilarejo. `rpg viajar vilarejo`.",
+    mundo.PRACA: "Daqui só dá pra voltar pro andar de onde você saiu. `rpg viajar torre`.",
 }
 
 
@@ -1126,7 +1139,7 @@ async def _viajar_fora(ctx, j, destino):
     Step B)."""
     numero, texto = _normalizar_destino(destino)
     lugar = j["mundo"]
-    dados_lugar = mundo.LOCAIS_FORA[lugar]
+    dados_lugar = mundo.LOCAIS_NOMEADOS[lugar]
 
     if not texto:
         e = discord.Embed(title=dados_lugar["nome"], description=dados_lugar["descricao"], color=dados_lugar["cor"])
@@ -1139,6 +1152,18 @@ async def _viajar_fora(ctx, j, destino):
         a = ANDARES[15]
         e = discord.Embed(title=f"Andar 15 — {a['nome']}", description=a["descricao"], color=a["cor"])
         e.set_footer(text="A escada sobe de volta — de graça, sempre.")
+        await ctx.send(embed=e)
+        return
+
+    if lugar == mundo.PRACA and texto == "torre":
+        # Sempre volta pro andar de ONDE SAIU -- nunca uma escolha, nunca
+        # outro destino (o cartão foi explícito). `andar`/`andar_max`
+        # nunca foram tocados na entrada, então já estão certos aqui --
+        # ver mundo.sair_da_praca.
+        mundo.sair_da_praca(j["user_id"])
+        a = ANDARES[j["andar"]]
+        e = discord.Embed(title=f"Andar {j['andar']} — {a['nome']}", description=a["descricao"], color=a["cor"])
+        e.set_footer(text="Você volta pro andar de onde saiu — de graça, sempre.")
         await ctx.send(embed=e)
         return
 
@@ -1162,7 +1187,19 @@ async def viajar(ctx, *, destino: str = ""):
         await _viajar_fora(ctx, j, destino)
         return
 
-    destino, _texto = _normalizar_destino(destino)
+    destino, texto = _normalizar_destino(destino)
+    if texto in ("praca", "praça"):
+        # De graça, de qualquer andar, sem cooldown -- o cartão foi
+        # explícito. `andar`/`andar_max` não mudam (ver mundo.
+        # entrar_na_praca) -- é isso que faz `rpg viajar torre` devolver
+        # pro mesmo andar depois, sem precisar guardar nada à parte.
+        mundo.entrar_na_praca(j["user_id"])
+        dados = mundo.LOCAIS_NOMEADOS[mundo.PRACA]
+        e = discord.Embed(title=dados["nome"], description=dados["descricao"], color=dados["cor"])
+        e.set_footer(text="De graça, sem cooldown · `rpg viajar torre` volta pro andar de onde você saiu.")
+        await ctx.send(embed=e)
+        return
+
     if destino is None:
         await ctx.send("Não entendi esse andar. `rpg viajar <número>`.")
         return
@@ -1187,8 +1224,8 @@ async def viajar(ctx, *, destino: str = ""):
                 f"a volta é lutando, `rpg boss` a partir do {LIMITE_VIAJAR}."
             )
         e = discord.Embed(title="Para onde?", description="\n".join(linhas), color=0xA8DADC)
-        e.set_footer(text="rpg viajar <número> · você tem "
-                          f"{j['moedas']} moedas")
+        e.set_footer(text="rpg viajar <número> · rpg viajar praca (de graça, de qualquer andar) · "
+                          f"você tem {j['moedas']} moedas")
         await ctx.send(embed=e)
         return
 
@@ -1284,7 +1321,11 @@ async def colher(ctx):
     j = await pegar_jogador(ctx)
     if not j:
         return
-    if j["andar"] != 1:
+    # `not mundo.na_torre(j)` achado varrendo os comandos pro cartão "A
+    # Praça": sem isso, quem tinha `andar` CONGELADO em 1 (fora da torre,
+    # ou agora na Praça) conseguia colher -- mesma mensagem de sempre
+    # continua certa, só o gate que faltava. Ver decisoes.md § A Praça.
+    if not mundo.na_torre(j) or j["andar"] != 1:
         await ctx.send("Não tem flor nenhuma aqui — ela só nasce na grama do andar 1.")
         return
     if not flor_ativa()[0]:

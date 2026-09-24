@@ -11,8 +11,16 @@
 # Step C: "fora" deixou de ser um balde só (o Mirante era o único lugar) --
 # agora `mundo` guarda o NOME do lugar (torre/mirante/vilarejo, cidades no
 # step F). "A estrutura de lugares nomeados nasceu no step B... aqui ela
-# ganha o segundo" -- é por isso que existe `LOCAIS_FORA` abaixo, em vez de
-# cada lugar novo ganhar seu próprio módulo de constantes soltas.
+# ganha o segundo" -- é por isso que existe `LOCAIS_NOMEADOS` abaixo, em vez
+# de cada lugar novo ganhar seu próprio módulo de constantes soltas.
+#
+# A Praça (cartão "A Praça") quebra a premissa do nome antigo do dict
+# (`LOCAIS_FORA`) -- é o primeiro lugar NOMEADO que fica DENTRO da torre
+# (`na_torre` continua False lá, pelo motivo de sempre: destrava a mesma
+# trava que já bloqueia cacar/explorar/boss/dungeon, ver `exigir_torre`
+# abaixo -- mas ela não fica "fora" no sentido narrativo do Mirante/
+# vilarejo/cidades). Renomeado pra `LOCAIS_NOMEADOS`, que descreve os dois
+# grupos sem mentir sobre nenhum.
 #
 # Função pura, sem discord no topo -- qualquer módulo (bot.py, combate.py,
 # dungeon.py) importa sem risco de ciclo.
@@ -25,6 +33,7 @@ MIRANTE = "mirante"           # o alto da torre, do lado de fora da porta
 VILAREJO = "vilarejo"         # ao pé da escada que desce do Mirante -- Step C
 COSTA_VERDE = "costa_verde"   # cidade de lore, alcançável desde o vilarejo -- Step F
 PRINCIPADES = "principades"   # cidade grande, alcançável desde o vilarejo -- Step F
+PRACA = "praca"                # o andar de comunidade -- dentro da torre, mas não é conteúdo
 
 
 def na_torre(jogador):
@@ -39,10 +48,16 @@ MENSAGEM_FORA_DA_TORRE = (
 
 async def exigir_torre(ctx, jogador):
     """Trava central pra todo comando que assume torre -- `rpg cacar`/
-    `explorar`/`boss`/`party`/`dungeon`/`npcs`/`falar`. Recusa em
-    personagem (a mesma frase ambiente pros seis, não erro de sistema);
-    devolve True se pode seguir. Chame depois de `pegar_jogador`, igual
-    a `travas.bloqueado`. Ver decisoes.md § Step B."""
+    `explorar`/`boss`/`party`/`dungeon`/`andar`/`colher`. Recusa em
+    personagem (a mesma frase ambiente, não erro de sistema); devolve
+    True se pode seguir. Chame depois de `pegar_jogador`, igual a
+    `travas.bloqueado`. Ver decisoes.md § Step B.
+
+    Também é a trava que bloqueia esses comandos pra quem está na Praça
+    (cartão "A Praça") -- ela fica DENTRO da torre narrativamente, mas
+    `mundo` != TORRE lá, de propósito: reaproveita esta mesma trava em
+    vez de escrever uma nova (o cartão foi explícito: "use a trava que
+    já existe")."""
     if na_torre(jogador):
         return True
     await ctx.send(MENSAGEM_FORA_DA_TORRE)
@@ -80,12 +95,31 @@ def ir_para(user_id, lugar):
     mexe em `andar`/`andar_max` (congelados desde que saiu pela porta,
     ver Step B) -- só `mundo` muda. A escada de volta pro andar 15 é
     outra função (`subir_a_escada`, acima): aquela troca pra TORRE, não
-    pra um lugar de `LOCAIS_FORA`. Generaliza o que antes eram
+    pra um lugar de `LOCAIS_NOMEADOS`. Generaliza o que antes eram
     `descer_para_o_vilarejo`/`subir_para_o_mirante` -- duas funções de
     uma linha cada, que só a chave mudava; com quatro lugares fora da
     torre (Step F), continuar uma função por par de lugares viraria
     repetição pura."""
     db.atualizar_jogador(user_id, mundo=lugar)
+
+
+# ---------------- a Praça (cartão "A Praça", commit 1) ----------------
+def entrar_na_praca(user_id):
+    """De graça, de qualquer andar, sem cooldown -- o cartão foi
+    explícito. `andar`/`andar_max` NUNCA são tocados aqui: é isso que
+    faz "sair só volta pro andar de origem" funcionar de graça, sem
+    precisar de uma coluna pra guardar o andar de entrada -- o mesmo
+    truque de `sair_pela_porta`/`subir_a_escada` (Step B), só que agora
+    de QUALQUER andar, não só do 15."""
+    db.atualizar_jogador(user_id, mundo=PRACA)
+
+
+def sair_da_praca(user_id):
+    """Volta reto pro andar de onde saiu -- nunca outro destino, nunca
+    uma escolha. `andar`/`andar_max` continuam intocados (congelados
+    durante a visita inteira), então "voltar" é só `mundo` = TORRE de
+    novo -- o andar já está lá, esperando, do jeito que ficou."""
+    db.atualizar_jogador(user_id, mundo=TORRE)
 
 
 # ---------------- a fala da Guia -- gatilho é VER, não VENCER (conserto) ----------------
@@ -102,16 +136,17 @@ def marcar_porta_vista(user_id):
     db.atualizar_jogador(user_id, viu_porta_do_trono=1)
 
 
-# ---------------- os lugares fora da torre ----------------
+# ---------------- os lugares nomeados ----------------
 # Nasceu no Step B com o Mirante sozinho; o Step C acrescenta o vilarejo; o
 # Step F fecha com as duas cidades (Costa Verde, Principades), alcançáveis
 # só a partir do vilarejo -- ele é o hub, não um lugar de passagem qualquer
-# (ver decisoes.md § Step F). Cada entrada é só dado -- nome, cor,
-# descrição -- sem discord.Embed nenhum aqui; quem chama (bot.py,
-# combate.py) monta o embed com o que fizer sentido pro próprio contexto.
-# `npcs.NPCS` usa a MESMA chave (string) pra guardar quem mora em cada
-# lugar -- não precisa de estrutura paralela nenhuma pra isso.
-LOCAIS_FORA = {
+# (ver decisoes.md § Step F); a Praça acrescenta o primeiro lugar nomeado
+# DENTRO da torre. Cada entrada é só dado -- nome, cor, descrição -- sem
+# discord.Embed nenhum aqui; quem chama (bot.py, combate.py) monta o embed
+# com o que fizer sentido pro próprio contexto. `npcs.NPCS` usa a MESMA
+# chave (string) pra guardar quem mora em cada lugar -- não precisa de
+# estrutura paralela nenhuma pra isso.
+LOCAIS_NOMEADOS = {
     MIRANTE: {
         "nome": "O Mirante",
         "cor": 0x87CEEB,
@@ -149,13 +184,23 @@ LOCAIS_FORA = {
             "levando, mais cedo ou mais tarde. Uma estrada volta pro vilarejo."
         ),
     },
+    PRACA: {
+        "nome": "A Praça",
+        "cor": 0xD9A441,
+        "descricao": (
+            "Um pátio aberto no meio da torre, sem chefe, sem monstro, sem cooldown — o único "
+            "andar que não pede nada de volta. Gente parada, sentada, conversando, ou só de "
+            "passagem entre uma caçada e outra. Um mural numa das paredes guarda o que alguém "
+            "deixou pra quem chegar depois."
+        ),
+    },
 }
 
 # título/descrição de compatibilidade -- Step B chamava só de "o Mirante";
 # mantidos porque _viajar_fora (bot.py) e a escolha "Sair" da porta
 # (combate.py) ainda leem direto daqui.
-TITULO_MIRANTE = LOCAIS_FORA[MIRANTE]["nome"]
-DESCRICAO_MIRANTE = LOCAIS_FORA[MIRANTE]["descricao"]
+TITULO_MIRANTE = LOCAIS_NOMEADOS[MIRANTE]["nome"]
+DESCRICAO_MIRANTE = LOCAIS_NOMEADOS[MIRANTE]["descricao"]
 
 
 def chave_do_lugar(jogador):
@@ -174,5 +219,5 @@ def info_do_lugar(jogador):
     if na_torre(jogador):
         dados = game_data.ANDARES[chave]
     else:
-        dados = LOCAIS_FORA[chave]
+        dados = LOCAIS_NOMEADOS[chave]
     return chave, dados["nome"], dados["cor"]
