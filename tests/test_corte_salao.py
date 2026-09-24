@@ -122,3 +122,129 @@ def test_devolucao_deixa_rastro_no_log_da_guilda():
 
     log = db.get_guilda_log(g)
     assert any(e["acao"] == "salao_devolvido" and e["item"] == "coroa_velha" for e in log)
+
+
+# ------------------------------------------------------------ commit 2
+# Home e raide pelo tier da guilda: média do andar_max dos membros, teto 10
+# por membro, piso de MEMBROS_PARA_VALER. Sem tesouro nenhum.
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import bot  # noqa: F401 -- side effect: liga H de guildas.py/raide.py via instalar()
+import guildas
+from game_data import TIERS_GUILDA
+
+
+class FakeCtx:
+    def __init__(self, user_id):
+        self.author = SimpleNamespace(id=user_id, display_name=f"user{user_id}")
+        self.message = SimpleNamespace(mentions=[])
+        self.guild = None
+        self.send = AsyncMock()
+
+
+def _guilda_com_andares(nome, andares, andar_home=1):
+    """Líder é o user 1; andares[i] vira o andar_max do membro i+1."""
+    for i, a in enumerate(andares, start=1):
+        _jogador(i)
+        db.atualizar_jogador(i, andar_max=a)
+    return _guilda(nome, 1, membros_extra=range(2, len(andares) + 1), andar_home=andar_home)
+
+
+def test_media_tem_teto_no_selo():
+    assert guildas.media_andar_max([15, 1, 2]) == (10 + 1 + 2) / 3
+    assert guildas.media_andar_max([]) == 0
+
+
+def test_tiers_por_media_batem_com_home_e_raide_de_antes():
+    assert [t["andar_home_max"] for t in TIERS_GUILDA] == [3, 5, 8, 10]
+    assert [t["cooldown_raide"] for t in TIERS_GUILDA] == [7200, 7200, 5400, 3600]
+    assert guildas.tier_por_media(2.9)["tier"] == 0
+    assert guildas.tier_por_media(3)["tier"] == 1
+    assert guildas.tier_por_media(6.99)["tier"] == 1
+    assert guildas.tier_por_media(7)["tier"] == 2
+    assert guildas.tier_por_media(10)["tier"] == 3
+
+
+def test_media_puxa_pra_baixo_mas_novato_nao_zera_a_guilda():
+    """O motivo de média e não mínimo: veteranos 8 e 10 com um novato no 2
+    (TOMBAR no banco de 04/09) ficam no tier 1, não no 0."""
+    g = _guilda_com_andares("Mista", [8, 2, 10])
+    tier, media = guildas.tier_da_guilda(g)
+    assert round(media, 2) == 6.67
+    assert tier["tier"] == 1
+
+
+def test_veterano_sozinho_nao_carrega_a_guilda():
+    """O motivo de média e não máximo: um no 10 e dois no 1 = média 4."""
+    g = _guilda_com_andares("Carregada", [10, 1, 1])
+    assert guildas.tier_da_guilda(g)[0]["tier"] == 1
+
+
+def test_menos_de_3_membros_fica_no_tier_0_mesmo_com_media_alta():
+    g = _guilda_com_andares("Dupla", [10, 10])
+    tier, media = guildas.tier_da_guilda(g)
+    assert media == 10
+    assert tier["tier"] == 0
+
+
+def test_home_liberada_pela_media():
+    g = _guilda_com_andares("Subindo", [10, 7, 7])  # média 8 -> tier 2, home até 8
+    ctx = FakeCtx(1)
+
+    asyncio.run(guildas.acao_home(ctx, db.get_jogador(1), "8"))
+
+    assert db.get_guilda(g)["andar_home"] == 8
+
+
+def test_home_acima_do_tier_e_recusada_e_diz_a_media():
+    g = _guilda_com_andares("Baixa", [10, 1, 1])  # média 4 -> tier 1, home até 5
+    ctx = FakeCtx(1)
+
+    asyncio.run(guildas.acao_home(ctx, db.get_jogador(1), "8"))
+
+    assert db.get_guilda(g)["andar_home"] == 1
+    texto = ctx.send.await_args.args[0]
+    assert "4.0" in texto and "média 7" in texto
+
+
+def test_guilda_com_home_acima_do_criterio_novo_nao_e_rebaixada():
+    """Mesmo precedente da migração do Salão: o gate novo vale na próxima
+    troca de home, não retroage -- nem na subida do bot (init_db), nem
+    numa troca recusada."""
+    g = _guilda_com_andares("Antiga", [10, 1, 1], andar_home=9)  # média 4 -> tier 1 só libera até 5
+
+    db.init_db()
+    assert db.get_guilda(g)["andar_home"] == 9
+
+    ctx = FakeCtx(1)
+    asyncio.run(guildas.acao_home(ctx, db.get_jogador(1), "10"))
+    assert db.get_guilda(g)["andar_home"] == 9  # recusada, e segue 9
+
+
+def _cooldown_gravado_pela_raide(andares):
+    import raide
+    import travas
+
+    g = _guilda_com_andares(f"Raide {andares}", andares)
+    ids = list(range(1, len(andares) + 1))
+    ctx = FakeCtx(1)
+    ctx.send = AsyncMock(return_value=SimpleNamespace())
+    try:
+        asyncio.run(raide.iniciar_raide(ctx, ids, g, 1))
+    finally:
+        travas.destravar_todos(ids)
+    return db.checar_cooldown_raide(g)
+
+
+def test_cooldown_de_raide_segue_a_media():
+    assert 7200 - 5 < _cooldown_gravado_pela_raide([1, 1, 1]) <= 7200
+
+
+def test_cooldown_de_raide_tier_2_e_1h30():
+    assert 5400 - 5 < _cooldown_gravado_pela_raide([7, 7, 7]) <= 5400
+
+
+def test_cooldown_de_raide_tier_3_e_1h():
+    assert 3600 - 5 < _cooldown_gravado_pela_raide([10, 10, 10]) <= 3600

@@ -313,62 +313,6 @@ def test_extrair_tesouro_por_nome_e_por_chave():
     assert chave3 is None
 
 
-# ------------------------------------------------------- home / migração
-def test_home_acima_do_tier_e_recusada_com_tesouros_faltando():
-    j = _jogador(1)
-    db.atualizar_jogador(1, andar_max=10)
-    guilda_id = _guilda(lider_id=1, membros_extra=(2, 3))
-    ctx = FakeCtx(1)
-
-    asyncio.run(guildas.acao_home(ctx, j, "10"))
-
-    guilda = db.get_guilda(guilda_id)
-    assert guilda["andar_home"] == 1  # não mudou
-    ctx.send.assert_awaited()
-
-
-def test_guilda_com_home_pre_existente_acima_do_tier_nao_e_rebaixada_pela_migracao():
-    """Grandfather: uma guilda com home 10 (de antes deste cartão) mantém a
-    home -- só a PRÓXIMA troca é que passa pelo gate novo."""
-    j = _jogador(1)
-    db.atualizar_jogador(1, andar_max=10)
-    guilda_id = db.criar_guilda("Antiga", lider_id=1, andar_home=10, cargo_id=10, canal_id=20)
-    db.adicionar_membro_guilda(2, guilda_id)
-    db.adicionar_membro_guilda(3, guilda_id)
-
-    # nada além de init_db()/criar_guilda rodou -- home continua 10
-    assert db.get_guilda(guilda_id)["andar_home"] == 10
-
-    ctx = FakeCtx(1)
-    asyncio.run(guildas.acao_home(ctx, j, "10"))  # tentar TROCAR é recusado (tier 0 só libera até 3)
-    assert db.get_guilda(guilda_id)["andar_home"] == 10  # segue 10 -- não foi rebaixada nem "reconfirmada"
-
-
-def test_home_liberada_apos_tier_suficiente():
-    _jogador(1)
-    db.atualizar_jogador(1, andar_max=10)
-    j = db.get_jogador(1)  # relê depois do atualizar_jogador -- senão fica com andar_max velho
-    guilda_id = _guilda(lider_id=1, membros_extra=(2, 3))
-    for i in range(6):
-        db.depositar_tesouro_salao(guilda_id, "coroa_velha", 100 + i, None)
-    ctx = FakeCtx(1)
-
-    asyncio.run(guildas.acao_home(ctx, j, "5"))  # tier 1 libera até o andar 5
-
-    assert db.get_guilda(guilda_id)["andar_home"] == 5
-
-
-# ------------------------------------------------------------------ raide
-def test_cooldown_de_raide_muda_com_tier_da_guilda():
-    guilda_id = _guilda(lider_id=1, membros_extra=(2, 3))
-    assert salao.tier_efetivo(0, 3, guildas.MEMBROS_PARA_VALER)["cooldown_raide"] == 2 * 3600
-
-    for i in range(36):
-        db.depositar_tesouro_salao(guilda_id, "coroa_velha", 1000 + i, None)
-    total = db.contar_tesouros_salao(guilda_id)
-    assert salao.tier_efetivo(total, 3, guildas.MEMBROS_PARA_VALER)["cooldown_raide"] == 3600
-
-
 # --------------------------------------------------------- reset de temporada
 def test_reset_zera_salao_ativo_e_preserva_historico():
     guilda_id = _guilda(lider_id=1)

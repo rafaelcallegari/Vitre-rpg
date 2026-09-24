@@ -1168,6 +1168,19 @@ def membros_da_guilda(guilda_id):
     return [dict(r) for r in rows]
 
 
+def andares_max_da_guilda(guilda_id):
+    """andar_max de cada membro -- matéria-prima do tier da guilda (ver
+    guildas.tier_da_guilda)."""
+    with conectar() as conn:
+        rows = conn.execute(
+            """SELECT j.andar_max FROM guilda_membros m
+               JOIN jogadores j ON j.user_id = m.user_id
+               WHERE m.guilda_id = ?""",
+            (guilda_id,),
+        ).fetchall()
+    return [r["andar_max"] for r in rows]
+
+
 def contar_membros_guilda(guilda_id):
     with conectar() as conn:
         return conn.execute(

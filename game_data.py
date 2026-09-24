@@ -1083,6 +1083,20 @@ SALAO_TIERS = (
     {"tier": 3, "nome": "Salão Coroado", "min_tesouros": 36, "andar_home_max": 10, "cooldown_raide": 3600},
 )
 
+# Tier da guilda pela MÉDIA do andar_max dos membros (teto 10 por membro --
+# acima do Selo não conta mais, senão um veterano no 15 carrega a média).
+# Substitui o Salão: sobe só quando o grupo sobe, sem depósito. Os limiares
+# vêm da calibração antiga com uma guilda de 3: 6 tesouros = três membros
+# com 2 chefes cada (andar_max 3), 18 = três com 6 (andar_max 7), e o tier 3
+# pede todo mundo no 10. Home e cooldown de raide por tier não mudaram --
+# ver decisoes.md § Corte do Salão da Guilda.
+TIERS_GUILDA = (
+    {"tier": 0, "media_min": 0, "andar_home_max": 3, "cooldown_raide": 2 * 3600},
+    {"tier": 1, "media_min": 3, "andar_home_max": 5, "cooldown_raide": 2 * 3600},
+    {"tier": 2, "media_min": 7, "andar_home_max": 8, "cooldown_raide": 90 * 60},
+    {"tier": 3, "media_min": 10, "andar_home_max": 10, "cooldown_raide": 3600},
+)
+
 
 def itens_da_loja(andar: int):
     return {k: v for k, v in ITENS.items()

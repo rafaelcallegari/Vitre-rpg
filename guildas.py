@@ -14,7 +14,7 @@ import pronomes
 import salao
 import travas
 from admin import ConfirmarAcao
-from game_data import ITENS, ANDARES, ANDAR_MAXIMO
+from game_data import ITENS, ANDARES, ANDAR_MAXIMO, TIERS_GUILDA
 
 H = {}
 
@@ -26,6 +26,45 @@ EXPIRA_CONVITE_SEGUNDOS = 24 * 3600
 LIMITE_CONVITES_GUILDA = 5    # convites pendentes ao mesmo tempo, por guilda — não é spam
 COOLDOWN_HOME_SEGUNDOS = 3 * 3600   # 1 troca de home a cada 3h, por guilda
 
+
+
+# ------------------------------------------------------------ tier da guilda
+def media_andar_max(andares_max):
+    """Média do andar_max dos membros, cada um com teto no Selo -- acima
+    dele não tem home nem loja, e sem teto um veterano no 15 carregaria a
+    guilda inteira. 0 pra lista vazia."""
+    if not andares_max:
+        return 0
+    teto = andares_altos.ANDAR_ACIMA_DO_SELO
+    return sum(min(a, teto) for a in andares_max) / len(andares_max)
+
+
+def tier_por_media(media):
+    atual = TIERS_GUILDA[0]
+    for t in TIERS_GUILDA:
+        if media >= t["media_min"]:
+            atual = t
+    return atual
+
+
+def proximo_tier_por_media(media):
+    for t in TIERS_GUILDA:
+        if media < t["media_min"]:
+            return t
+    return None
+
+
+def tier_da_guilda(guilda_id):
+    """(tier que vale, média) -- abaixo de MEMBROS_PARA_VALER o benefício
+    fica no tier 0 qualquer que seja a média, mesmo piso que já valia pra
+    viagem grátis (sem isso o ótimo seria guilda solo de veterano). Média é
+    calculada na hora, nunca guardada: sobe e desce com o grupo, e o reset
+    de temporada (andar_max = 1) já a derruba sozinho."""
+    andares = db.andares_max_da_guilda(guilda_id)
+    media = media_andar_max(andares)
+    if len(andares) < MEMBROS_PARA_VALER:
+        return TIERS_GUILDA[0], media
+    return tier_por_media(media), media
 
 # ---------------------------------------------------------- Discord: cargo e canal
 async def criar_cargo_e_canal(ctx, nome_guilda):
@@ -114,17 +153,16 @@ async def acao_status(ctx, j):
         inline=True,
     )
     e.add_field(name="Moedas no baú", value=f"🪙 {guilda['moedas']}", inline=True)
-    total_tesouros = db.contar_tesouros_salao(guilda["id"])
-    tier = salao.tier_por_total(total_tesouros)
+    tier, media = tier_da_guilda(guilda["id"])
     e.add_field(
-        name="🏛️ Salão", value=f"{tier['nome']} — {total_tesouros} tesouro(s)", inline=True
+        name="Tier", value=f"{tier['tier']} — média da torre: andar {media:.1f}", inline=True
     )
     if not vale:
         e.add_field(
             name="⚠️ Ainda não vale",
             value=(
                 "Com menos de 3 membros a viagem pra home continua sendo cobrada normal "
-                "e o Salão não libera benefício nenhum, mesmo com tesouro de sobra."
+                "e a guilda fica no tier 0 (home até o andar 3, raide de 2h), qualquer que seja a média."
             ),
             inline=False,
         )
@@ -491,24 +529,25 @@ async def acao_home(ctx, j, argumento):
             "acima do Selo não tem loja nem ferreiro, guilda não mora lá."
         )
         return
-    # Gate do Salão -- guildas que já tinham home acima do que o tier atual
-    # libera (de antes desse cartão existir) NÃO são rebaixadas em silêncio;
-    # o gate só entra na hora de TROCAR, que é ato voluntário e já tem
-    # cooldown de 3h (ver decisoes.md § Salão da Guilda -- migração).
-    total_tesouros = db.contar_tesouros_salao(guilda["id"])
-    membros = db.membros_da_guilda(guilda["id"])
-    tier = salao.tier_efetivo(total_tesouros, len(membros), MEMBROS_PARA_VALER)
+    # Gate de tier (média do andar_max dos membros) -- guildas que já têm
+    # home acima do que o tier atual libera NÃO são rebaixadas; o gate só
+    # entra na hora de TROCAR, que é ato voluntário com cooldown de 3h.
+    # Mesmo precedente da migração do Salão (ver decisoes.md § Corte do
+    # Salão da Guilda).
+    tier, media = tier_da_guilda(guilda["id"])
     if andar > tier["andar_home_max"]:
-        prox = salao.proximo_tier(total_tesouros)
-        extra = (
-            f" — faltam **{prox['min_tesouros'] - total_tesouros}** tesouros pro tier {prox['nome']} "
-            f"(libera até o andar {prox['andar_home_max']})"
-            if prox and len(membros) >= MEMBROS_PARA_VALER
-            else (f" — precisa de {MEMBROS_PARA_VALER}+ membros pro Salão valer alguma coisa"
-                  if len(membros) < MEMBROS_PARA_VALER else "")
-        )
+        membros = db.contar_membros_guilda(guilda["id"])
+        if membros < MEMBROS_PARA_VALER:
+            extra = f" — precisa de {MEMBROS_PARA_VALER}+ membros pra guilda subir de tier"
+        else:
+            prox = proximo_tier_por_media(media)
+            extra = (
+                f" — média da guilda: andar **{media:.1f}**; o tier {prox['tier']} pede média "
+                f"{prox['media_min']} (libera até o andar {prox['andar_home_max']})"
+                if prox else ""
+            )
         await ctx.send(
-            f"O Salão da guilda está em **{tier['nome']}**, que libera home só até o andar "
+            f"A guilda está no tier **{tier['tier']}**, que libera home só até o andar "
             f"{tier['andar_home_max']}{extra}."
         )
         return

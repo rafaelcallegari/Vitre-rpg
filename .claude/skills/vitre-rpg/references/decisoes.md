@@ -9426,3 +9426,41 @@ o chefe na mesma temporada, então o tesouro não cai de novo.
 - **Deixa rastro:** uma entrada `salao_devolvido` no `rpg guilda log`
   (só se a guilda ainda existe, porque `apagar_guilda` já limpou o log).
 - Testado em `tests/test_corte_salao.py`.
+
+### Commit 2: home e raide pela média do `andar_max` dos membros
+
+O tier do Salão decidia duas coisas, e as duas ficam: andar máximo da home
+(3/5/8/10) e cooldown da raide (2h/2h/1h30/1h). Muda só o gatilho:
+`guildas.tier_da_guilda()` sobre `game_data.TIERS_GUILDA`, sem tesouro.
+
+- **Média, não mínimo nem máximo.** Mínimo puniria guilda que recruta
+  novato. Máximo deixaria um veterano carregar todo mundo. A média
+  preserva o único acerto do Salão, que era subir só quando o grupo sobe,
+  e é automática: sem depósito e sem irreversibilidade.
+- **Teto de 10 por membro.** Acima do Selo não tem home nem loja, e sem
+  teto um veterano no 15 inflaria a média sozinho.
+- **Limiares 3 / 7 / 10**, tirados da calibração antiga com uma guilda de
+  3: 6 tesouros eram três membros com 2 chefes (andar_max 3), 18 eram três
+  com 6 (andar_max 7). O tier 3 pede todo mundo no 10.
+- **Conferido com o banco local (cópia de 04/09):** TOMBAR (8, 2, 10)
+  dá média 6,67, tier 1. Pelo Salão teria 7+1+9 = 17 tesouros, também
+  tier 1 (faltaria 1 para o 2). O critério novo chega ao mesmo lugar.
+  BONDE (10, 8) tem 2 membros e fica no tier 0 pelo piso, com home 9
+  mantida (ver abaixo).
+- **Piso de `MEMBROS_PARA_VALER` (3) continua.** Abaixo disso é tier 0
+  qualquer que seja a média, mesmo motivo de antes: sem isso o ótimo seria
+  guilda solo de veterano.
+- **Calculada na hora, nunca guardada.** Sobe e desce com o grupo. O reset
+  de temporada (`andar_max = 1`) já derruba a média sozinho, coerente com a
+  home voltando para 1.
+- **Não rebaixa.** Guilda com home acima do que a média daria mantém a
+  home: o gate só entra em `rpg guilda home` na próxima troca. É o mesmo
+  precedente da migração do Salão. A raide não tem esse grandfather,
+  porque cooldown não é estado guardado: vale o tier do momento em que
+  ela dispara.
+- **Consequência a vigiar:** recrutar novato baixa a média e pode
+  alongar a raide na hora. É o preço da média, e é bem menor que o do
+  mínimo.
+- Testado em `tests/test_corte_salao.py`, incluindo o cooldown gravado
+  por `raide.iniciar_raide` de verdade (os testes de tier 2 e 3 caem
+  revertendo só `raide.py`).
