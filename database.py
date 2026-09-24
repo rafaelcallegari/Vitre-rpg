@@ -788,6 +788,46 @@ def init_db():
                 )
             print("Banco migrado: colunas de repouso criadas -- ninguém em repouso, ninguém já parou.")
 
+        # migração 27: corte do Salão da Guilda -- todo tesouro depositado
+        # na temporada atual volta pra mochila de quem depositou, ANTES de
+        # qualquer remoção (o depósito era irreversível e o tesouro vira
+        # chave de sidequest do próprio andar; sem isso quem depositou fica
+        # trancado fora). Idempotente: a linha devolvida sai de
+        # guilda_salao na mesma transação. Ver _devolver_tesouros_salao e
+        # decisoes.md § Corte do Salão da Guilda.
+        devolvidos = _devolver_tesouros_salao(conn)
+        if devolvidos:
+            print(f"Banco migrado: {devolvidos} tesouro(s) do Salão devolvido(s) a quem depositou.")
+
+
+def _devolver_tesouros_salao(conn):
+    """Migração 27. Só a temporada ATUAL volta: tesouro de temporada
+    passada teria sido apagado pelo `DELETE FROM inventario` do reset se
+    não estivesse no Salão, então devolvê-lo daria à temporada nova um item
+    que ninguém ganhou nela. Vai pro `user_id` da linha, não pra guilda --
+    quem saiu da guilda (ou cuja guilda foi dissolvida) recebe igual, o
+    tesouro é dele. Uma entrada no log da guilda por devolução, pra ficar
+    rastro de onde o item veio."""
+    temporada = conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()["numero"]
+    linhas = conn.execute(
+        "SELECT id, guilda_id, item, user_id FROM guilda_salao WHERE temporada = ?", (temporada,)
+    ).fetchall()
+    agora = time.time()
+    for row in linhas:
+        conn.execute(
+            """INSERT INTO inventario (user_id, item, qtd) VALUES (?, ?, 1)
+               ON CONFLICT(user_id, item) DO UPDATE SET qtd = qtd + 1""",
+            (row["user_id"], row["item"]),
+        )
+        # guilda dissolvida já perdeu o log (apagar_guilda) -- não cria órfão
+        conn.execute(
+            """INSERT INTO guilda_log (guilda_id, user_id, acao, item, qtd, quando)
+               SELECT ?, ?, 'salao_devolvido', ?, 1, ? WHERE EXISTS (SELECT 1 FROM guildas WHERE id = ?)""",
+            (row["guilda_id"], row["user_id"], row["item"], agora, row["guilda_id"]),
+        )
+        conn.execute("DELETE FROM guilda_salao WHERE id = ?", (row["id"],))
+    return len(linhas)
+
 
 def _migrar_upgrades_para_instancias(conn):
     """Migração 12, uma linha de `upgrades` por vez -> `instancias`. Extraída

@@ -9397,3 +9397,32 @@ tocados, mesmo mecanismo da porta atrás do trono) e o porquê de a
 reserva acontecer na publicação (commit 2: a linha da tabela É a
 reserva, atomicidade numa conexão só resolve os aceites simultâneos sem
 lock novo) · push · **sem deploy** -- entra no 0.4, que ainda espera.
+
+## Corte do Salão da Guilda
+
+Cartão «Cortar o Salão da Guilda». Não sobe sozinho: entra no 0.4. O Salão
+sai; os dez tesouros continuam caindo a 100% nos chefes 1-10 e continuam
+sem venda, craft ou equipamento. O destino muda: cada tesouro passa a ser
+chave de sidequest do próprio andar, a começar pelo Homem de Sal (andar 4).
+
+### Commit 1: devolver antes de remover (migração 27)
+
+O Salão está no ar desde 20/08 e o depósito era irreversível. Remover a
+tabela antes de devolver apagaria o tesouro de quem depositou, e com ele
+a chave da sidequest daquele andar: `andar == andar_max` não deixa refazer
+o chefe na mesma temporada, então o tesouro não cai de novo.
+
+- **`guilda_salao` guarda quem depositou (`user_id`)**, uma linha por
+  tesouro. Por isso a devolução é exata, sem critério alternativo.
+- **Só a temporada ATUAL volta.** Tesouro de temporada passada teria sido
+  apagado pelo `DELETE FROM inventario` do reset se estivesse na mochila.
+  Devolvê-lo daria à temporada nova um item que ninguém ganhou nela. As
+  linhas antigas somem junto com a tabela no commit 3 (o histórico por
+  temporada acaba com o Salão).
+- **Vai para o `user_id` da linha, não para a guilda.** Quem saiu da
+  guilda, ou teve a guilda dissolvida, recebe igual: o tesouro é dele.
+- **Idempotente pela própria linha:** devolver e apagar a linha acontecem
+  na mesma transação, então rodar `init_db()` de novo não duplica nada.
+- **Deixa rastro:** uma entrada `salao_devolvido` no `rpg guilda log`
+  (só se a guilda ainda existe, porque `apagar_guilda` já limpou o log).
+- Testado em `tests/test_corte_salao.py`.
