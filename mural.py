@@ -110,6 +110,38 @@ async def _acao_ver(ctx):
     await ctx.send(embed=embed_mural(ofertas))
 
 
+# ---------------- commit 3: o encontro ----------------
+# `rpg trade` continua exatamente como é (só ganhou onde acontecer, ver
+# trocas._estao_juntos) -- o que faltava era saber quem mais está lá.
+# Sem isso a Praça é sala de espera cega: ninguém sabe se vale a pena
+# aparecer.
+def _nome_de_exibicao(ctx, user_id, nome_personagem):
+    membro = ctx.guild.get_member(user_id) if ctx.guild else None
+    return membro.display_name if membro else nome_personagem
+
+
+def embed_quem_esta_na_praca(ctx, autor_id):
+    """`presentes` sempre inclui QUEM PERGUNTA -- `rpg praca` só roda de
+    dentro da Praça (`_exigir_praca`). Por isso "vazio" não é `not
+    presentes` (nunca acontece, o autor sempre está lá): é "ninguém ALÉM
+    do autor"."""
+    presentes = db.jogadores_no_mundo(mundo.PRACA)
+    dados = mundo.LOCAIS_NOMEADOS[mundo.PRACA]
+    e = discord.Embed(title="Quem está na Praça", color=dados["cor"])
+    outros = [j for j in presentes if j["user_id"] != autor_id]
+    if not outros:
+        e.description = "Só você por enquanto — ninguém mais está na Praça agora."
+        return e
+    linhas = []
+    for jogador in presentes:
+        nome = _nome_de_exibicao(ctx, jogador["user_id"], jogador["nome"])
+        marca = " *(você)*" if jogador["user_id"] == autor_id else ""
+        linhas.append(f"• {nome}{marca}")
+    e.description = "\n".join(linhas)
+    e.set_footer(text="rpg mural mostra o que está à venda agora.")
+    return e
+
+
 async def _acao_oferecer(ctx, j, resto):
     if not resto:
         await ctx.send("Uso: `rpg mural oferecer <item> <quantidade> <preço>`. Ex: `rpg mural oferecer pocao pequena 5 200`")
@@ -190,4 +222,13 @@ def instalar(bot, contexto):
         else:
             await ctx.send("Não conheço esse comando de mural. Opções: oferecer, aceitar, cancelar.")
 
-    print("mural.py carregado — rpg mural (ver/oferecer/aceitar/cancelar), A Praça commit 2.")
+    @bot.command(name="praca", aliases=["quemesta", "presentes"])
+    async def praca_cmd(ctx):
+        j = await H["pegar_jogador"](ctx)
+        if not j:
+            return
+        if not await _exigir_praca(ctx, j):
+            return
+        await ctx.send(embed=embed_quem_esta_na_praca(ctx, j["user_id"]))
+
+    print("mural.py carregado — rpg mural (ver/oferecer/aceitar/cancelar) e rpg praca (quem está lá), A Praça commit 2-3.")

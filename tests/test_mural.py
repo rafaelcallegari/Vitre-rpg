@@ -11,6 +11,7 @@ import bot  # noqa: F401 -- popula combate.H via bot.instalar()
 import database as db
 import mundo
 import mural
+import trocas
 
 
 def _jogador(user_id=1, mundo_atual=None, **campos):
@@ -291,6 +292,7 @@ def test_trade_funciona_entre_dois_na_praca_com_andares_diferentes():
     `andar`, sem checar `mundo` -- dois jogadores na Praça vindos de
     andares diferentes (nunca vão bater em `andar`) não conseguiam
     trocar, mesmo estando fisicamente juntos. Corrigido em trocas.py."""
+    trocas.TROCAS_ATIVAS.clear()   # trocas.py guarda estado em memória, não no banco -- outro teste pode ter deixado 1/2 "presos"
     _na_praca(1, andar=3, andar_max=3)
     _na_praca(2, andar=9, andar_max=9)
     ctx = _ctx(1)
@@ -309,6 +311,7 @@ def test_trade_funciona_entre_dois_na_praca_com_andares_diferentes():
 
 
 def test_trade_continua_recusando_andares_diferentes_dentro_da_torre_regressao():
+    trocas.TROCAS_ATIVAS.clear()
     _jogador(1, andar=1, andar_max=5)
     _jogador(2, andar=3, andar_max=5)
     ctx = _ctx(1)

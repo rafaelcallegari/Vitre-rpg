@@ -863,6 +863,17 @@ def get_jogador(user_id):
     return dict(row) if row else None
 
 
+def jogadores_no_mundo(lugar):
+    """A Praça, commit 3: "saber quem está lá" -- genérico o bastante pra
+    qualquer valor de `mundo` (não só a Praça), mas hoje só ela tem um
+    comando que pergunta isso. Não resolve nome/display do Discord aqui
+    -- isso é `ctx.guild.get_member` (bot.py/mural.py), fora do alcance
+    de database.py."""
+    with conectar() as conn:
+        rows = conn.execute("SELECT * FROM jogadores WHERE mundo = ?", (lugar,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def criar_jogador(user_id, nome):
     atribs = at.distribuicao_inicial()
     hp = at.hp_maximo(1, atribs["constituicao"])

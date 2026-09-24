@@ -9345,3 +9345,55 @@ outros 18 continuam verdes (inclusive o de regressão dentro da torre,
 prova de que o comportamento antigo não mudou nem um pouco). Suíte
 completa: 19 testes novos em `test_mural.py`, 1098 passando + 1 xfail
 antigo.
+
+### Commit 3 — o encontro
+
+**`rpg trade` continua EXATAMENTE como é, do jeito que o cartão pediu --
+a única mudança nele foi `_estao_juntos` (Commit 2), não algo novo deste
+commit.** O que faltava não era mecânica de troca, era VISIBILIDADE: sem
+saber quem mais está lá, a Praça é sala de espera cega -- ninguém sabe se
+vale a pena aparecer.
+
+**`rpg praca` é comando novo (não um subcomando de `rpg mural`) -- lista
+quem está com `mundo == PRACA` agora, resolvendo o nome de exibição via
+`ctx.guild.get_member` quando dá, caindo pro nome do personagem quando
+não (sem guild, ou membro que já saiu do servidor -- nunca quebra).**
+`database.jogadores_no_mundo(lugar)` é genérico o bastante pra qualquer
+valor de `mundo`, não só a Praça, mas hoje só ela tem um comando que
+pergunta isso.
+
+**Achado escrevendo o próprio código: "vazio" não pode ser `not
+presentes` -- o autor SEMPRE está na lista, porque `rpg praca` só roda
+de dentro da Praça (`_exigir_praca`, Commit 2).** Ia ser código morto: a
+lista nunca vem vazia de verdade. "Vazio" certo é "ninguém ALÉM do
+autor" (`outros = [j for j in presentes if j["user_id"] != autor_id]`).
+Testado tanto o caso sozinho quanto o caso com companhia
+(`test_sozinho_na_praca_mostra_mensagem_de_sozinho`/
+`test_com_outro_jogador_lista_os_dois`).
+
+**Achado no mesmo commit: `trocas.TROCAS_ATIVAS`/`PIX_PENDENTES` são
+estado em MEMÓRIA (de propósito, ver header de trocas.py) -- o fixture
+`banco_de_teste` (conftest.py) só isola o BANCO entre testes, nunca esses
+sets.** Um teste que abre `rpg trade` sem cancelar deixa os user_ids
+"presos" pro resto da suíte inteira -- não só este arquivo. Os três
+testes que chamam `rpg trade` (dois em `test_mural.py`, um em
+`test_praca_encontro.py`) agora limpam `TROCAS_ATIVAS` no próprio início
+-- não depende de ordem de execução entre arquivos pra passar.
+
+Validado revertendo o commit inteiro (stash de `database.py`/`mural.py`,
+mantendo os testes): caem exatamente os 6 testes que dependem de `rpg
+praca` existir (`AttributeError` -- o comando nem está registrado sem o
+commit); `test_trade_dentro_da_torre_continua_igual_regressao` continua
+verde revertido, prova de que ele nunca dependeu do commit 3 pra
+funcionar. Suíte completa: 7 testes novos em `test_praca_encontro.py`
+(mais a limpeza de `TROCAS_ATIVAS` em dois testes já existentes de
+`test_mural.py`), 1105 passando + 1 xfail antigo.
+
+## DoD
+
+Suíte verde (1063 → 1105) · `decisoes.md` com a regra de voltar só pro
+andar de origem (commit 1: sem coluna nova, `andar`/`andar_max` nunca
+tocados, mesmo mecanismo da porta atrás do trono) e o porquê de a
+reserva acontecer na publicação (commit 2: a linha da tabela É a
+reserva, atomicidade numa conexão só resolve os aceites simultâneos sem
+lock novo) · push · **sem deploy** -- entra no 0.4, que ainda espera.
