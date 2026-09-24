@@ -1,9 +1,9 @@
 # tests/test_corte_salao.py
 # Corte do Salão da Guilda (ver decisoes.md § Corte do Salão da Guilda).
-# Commit 1: a migração 27 devolve cada tesouro da temporada atual à mochila
-# de quem depositou, antes de qualquer remoção. Os depósitos entram por SQL
-# direto em guilda_salao, sem passar por função de feature -- é o estado
-# que o banco de produção tem hoje, e é isso que a migração precisa ler.
+# A migração 27 devolve cada tesouro da temporada atual à mochila de quem
+# depositou e só depois derruba guilda_salao. O SCHEMA não cria mais a
+# tabela, então os testes recriam ela com o schema que produção tem desde
+# 20/08 e depositam por SQL direto -- é esse estado que a migração lê.
 import database as db
 
 
@@ -19,8 +19,28 @@ def _guilda(nome, lider_id, membros_extra=(), andar_home=1):
     return guilda_id
 
 
+SCHEMA_SALAO_LEGADO = """
+CREATE TABLE IF NOT EXISTS guilda_salao (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    guilda_id     INTEGER,
+    item          TEXT,
+    user_id       INTEGER,
+    mensagem      TEXT,
+    depositado_em REAL,
+    temporada     INTEGER
+)"""
+
+
+def _tem_tabela_salao():
+    with db.conectar() as conn:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'guilda_salao'"
+        ).fetchone() is not None
+
+
 def _deposito_legado(guilda_id, item, user_id, temporada=None, mensagem=None):
     with db.conectar() as conn:
+        conn.execute(SCHEMA_SALAO_LEGADO)
         if temporada is None:
             temporada = conn.execute("SELECT numero FROM estado_temporada WHERE id = 1").fetchone()["numero"]
         conn.execute(
@@ -39,7 +59,7 @@ def _linhas_salao():
         return conn.execute("SELECT COUNT(*) FROM guilda_salao").fetchone()[0]
 
 
-# ------------------------------------------------------------ commit 1
+# ------------------------------------------------------------ devolução
 def test_devolucao_coloca_cada_tesouro_na_mochila_de_quem_depositou():
     for uid in (1, 2, 3):
         _jogador(uid)
@@ -56,7 +76,7 @@ def test_devolucao_coloca_cada_tesouro_na_mochila_de_quem_depositou():
     assert _qtd(2, "coroa_velha") == 1
     assert _qtd(3, "lasca_do_guardiao") == 1
     assert _qtd(2, "novelo_da_rainha") == 0  # ninguém recebe o que não depositou
-    assert _linhas_salao() == 0
+    assert not _tem_tabela_salao()  # devolveu e SÓ ENTÃO removeu
 
 
 def test_devolucao_soma_com_o_que_ja_estava_na_mochila():
@@ -97,6 +117,34 @@ def test_devolucao_e_idempotente():
     assert _qtd(1, "coroa_velha") == 1
 
 
+def test_banco_novo_nao_cria_o_salao():
+    assert not _tem_tabela_salao()
+    db.init_db()
+    assert not _tem_tabela_salao()
+
+
+def test_devolucao_e_remocao_sao_uma_transacao_so(monkeypatch):
+    """Se a devolução falhar no meio, a tabela NÃO cai -- senão o tesouro
+    que não voltou some junto."""
+    _jogador(1)
+    g = _guilda("Ordem H", 1)
+    _deposito_legado(g, "coroa_velha", 1)
+
+    def _quebra(conn):
+        conn.execute("INSERT INTO inventario (user_id, item, qtd) VALUES (1, 'coroa_velha', 1)")
+        raise RuntimeError("falhou no meio")
+
+    monkeypatch.setattr(db, "_devolver_tesouros_salao", _quebra)
+    try:
+        db.init_db()
+    except RuntimeError:
+        pass
+
+    assert _tem_tabela_salao()
+    assert _linhas_salao() == 1
+    assert _qtd(1, "coroa_velha") == 0
+
+
 def test_temporada_passada_nao_volta():
     """Tesouro de temporada passada teria sido apagado pelo reset se não
     estivesse no Salão -- devolver daria à temporada nova um item que
@@ -124,7 +172,7 @@ def test_devolucao_deixa_rastro_no_log_da_guilda():
     assert any(e["acao"] == "salao_devolvido" and e["item"] == "coroa_velha" for e in log)
 
 
-# ------------------------------------------------------------ commit 2
+# ------------------------------------------------------ tier da guilda
 # Home e raide pelo tier da guilda: média do andar_max dos membros, teto 10
 # por membro, piso de MEMBROS_PARA_VALER. Sem tesouro nenhum.
 import asyncio

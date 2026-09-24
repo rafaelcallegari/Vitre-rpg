@@ -92,11 +92,8 @@ GUILDA_RESET = (
     "**baú da guilda** (`guilda_bau`) — todo item guardado é apagado",
     "**moedas da guilda** voltam a 0 — senão quem tem guilda começa a temporada "
     "rico enquanto quem não tem começa do zero",
-    "**Salão da guilda** volta a Tier 0 — o histórico de quem depositou o quê em "
-    "temporadas passadas fica guardado, só a contagem ativa reseta "
-    "(`rpg guilda salao historico`)",
-    "**home da guilda** volta pro andar 1 — junto do Salão, pra não sobrar home em "
-    "andar alto sem tesouro nenhum da temporada nova pra justificar aquele tier",
+    "**home da guilda** volta pro andar 1 — todo mundo volta pro andar 1, a média da "
+    "torre da guilda cai pro tier 0 junto, e não sobra home em andar alto sem ninguém lá",
 )
 
 

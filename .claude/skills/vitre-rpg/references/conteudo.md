@@ -75,12 +75,15 @@ receitas de nível 9 (armas e manto de selo).
 | 9 | «Vyrra, a Serpente do Trovão» | 1130 | 77 | 26 | 1100 | 1850 |
 | 10 | «O Arquiteto do Décimo Selo» | 1260 | 85 | 29 | 1220 | 2050 |
 
-### Tesouros de chefe (andares 1-10) e o Salão da Guilda
+### Tesouros de chefe (andares 1-10)
 
 Cada chefe 1-10 solta um tesouro (100%, `tipo: "tesouro"`, não vendável, não
-craftável, não equipável), ao lado do `fragmento_selo`, um por andar. Não é
-farmável — `rpg boss` só vale em `andar == andar_max`, então cada jogador
-enfrenta cada chefe uma vez só (por temporada).
+craftável, não equipável, não entra no baú da guilda), ao lado do
+`fragmento_selo`, um por andar. Não é farmável — `rpg boss` só vale em
+`andar == andar_max`, então cada jogador enfrenta cada chefe uma vez só (por
+temporada). Cada tesouro é chave de sidequest do próprio andar, a começar
+pelo Homem de Sal (andar 4). O Salão da Guilda, destino antigo, foi cortado
+(ver decisoes.md § Corte do Salão da Guilda).
 
 | Andar | Chefe | Tesouro |
 |---|---|---|
@@ -95,23 +98,19 @@ enfrenta cada chefe uma vez só (por temporada).
 | 9 | «Vyrra, a Serpente do Trovão» | 🐍 Escama de Vyrra |
 | 10 | «O Arquiteto do Décimo Selo» | 🔨 Martelo do Arquiteto |
 
-`rpg guilda depositar <tesouro> [assinatura]` crava o tesouro no Salão —
-irreversível, com confirmação. O tier da guilda é a quantidade TOTAL de
-tesouros depositados na temporada ativa (não distintos — ver decisoes.md §
-Salão da Guilda), com piso de `MEMBROS_PARA_VALER` (3) membros pro benefício
-valer:
+### Tier da guilda
 
-| Tier | Tesouros | Home liberada | Cooldown da raide |
+Média do `andar_max` dos membros (teto 10 por membro), com piso de
+`MEMBROS_PARA_VALER` (3) membros pro benefício valer (`game_data.TIERS_GUILDA`):
+
+| Tier | Média da torre | Home liberada | Cooldown da raide |
 |---|---|---|---|
-| 0 — Salão Vazio | 0 | andares 1-3 | 2h |
-| 1 — Salão Erguido | 6 | andares 1-5 | 2h |
-| 2 — Salão Guarnecido | 18 | andares 1-8 | 1h30 |
-| 3 — Salão Coroado | 36 | andares 1-10 | 1h |
+| 0 | abaixo de 3 | andares 1-3 | 2h |
+| 1 | 3 | andares 1-5 | 2h |
+| 2 | 7 | andares 1-8 | 1h30 |
+| 3 | 10 | andares 1-10 | 1h |
 
-`rpg guilda salao` mostra tier/progresso/quem entregou cada um (paginado);
-`rpg guilda salao historico [temporada]` arquiva temporadas passadas —
-`resetar_temporada` zera o tier ativo (avança o contador de temporada) mas
-nunca apaga as linhas antigas.
+Home acima do tier não é rebaixada: o gate vale na próxima troca.
 
 ## Itens
 

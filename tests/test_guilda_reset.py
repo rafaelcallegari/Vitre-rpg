@@ -1,7 +1,8 @@
 # tests/test_guilda_reset.py
 # resetar_temporada() zera o caixa da guilda (baú + moedas) e a home (volta
 # pro andar 1) mas mantém a guilda, os membros e o cargo de pé -- ver
-# decisoes.md § Salão da Guilda -- home reset. O reset de home é reversão
+# decisoes.md § Salão da Guilda -- home reset (o Salão foi cortado depois;
+# o reset de home ficou, ver § Corte do Salão da Guilda). O reset de home é reversão
 # deliberada de uma decisão anterior (a guilda "sobrevivia inteira", home
 # incluída) -- ver o commit do Salão da Guilda pro raciocínio de por que
 # manter a home antiga junto com o Salão zerado virou inconsistência.
@@ -45,7 +46,7 @@ def test_resetar_temporada_zera_home_mesmo_em_andar_alto():
     """Caso mais realista de produção: guilda com home no andar 10 (tier
     alto conquistado na temporada anterior) precisa voltar pro andar 1 --
     não só sair do valor não-1 qualquer, é especificamente o "1" que
-    representa o Salão em tier 0."""
+    é onde uma guilda recém-resetada (média da torre 1, tier 0) mora."""
     guilda_id = db.criar_guilda("Coroados", lider_id=5, andar_home=10, cargo_id=50, canal_id=60)
 
     db.resetar_temporada()

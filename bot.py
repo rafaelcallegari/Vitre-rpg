@@ -31,7 +31,7 @@ import travas
 import vilarejo
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, TITULOS, CLASSES, ASCENSOES, ANDAR_MESTRES, PASSIVAS,
-    NIVEL_ASCENSAO_PADRAO, xp_necessario, multiplicador_elemento,
+    NIVEL_ASCENSAO_PADRAO, xp_necessario, multiplicador_elemento, andar_do_tesouro,
 )
 from npcs import (
     ANDAR_DESBLOQUEIA_CARROCA, HORARIOS_CARROCA, JANELA_CARROCA_MIN,
@@ -2134,8 +2134,8 @@ async def comprar(ctx, *, argumento: str = ""):
         pista = encontrar_item(texto)
         if pista and ITENS[pista]["tipo"] == "tesouro":
             await ctx.send(
-                f"**{ITENS[pista]['nome']}** não se compra nem se vende — só cai de chefe (andares 1-10) "
-                f"e vai pro Salão da guilda. `rpg guilda depositar {ITENS[pista]['nome']}`."
+                f"**{ITENS[pista]['nome']}** não se compra nem se vende — só cai do chefe do andar "
+                f"{andar_do_tesouro(pista)}, e é chave: alguém lá vai pedir por ele."
             )
         elif pista in vilarejo.ELIXIRES:
             await ctx.send(f"**{ITENS[pista]['nome']}** só o alquimista do vilarejo vende. `rpg viajar vilarejo`.")
@@ -2187,8 +2187,8 @@ async def vender(ctx, *, argumento: str = ""):
     if not dado.get("vendavel", True):
         if dado["tipo"] == "tesouro":
             await ctx.send(
-                f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é pro Salão da guilda. "
-                f"`rpg guilda depositar {dado['nome']}`."
+                f"**{dado['nome']}** não se vende — cada chefe solta um só, e ele é chave. "
+                f"Guarda: alguém no andar {andar_do_tesouro(item)} vai pedir por ele."
             )
         elif dado["tipo"] == "orbe":
             await ctx.send(f"**{dado['nome']}** não se vende — é o portão da sua própria ascensão. Guarda.")
@@ -2844,9 +2844,8 @@ def embed_ajuda():
             "`rpg guilda` — status · `rpg guilda criar <nome>` (5.000 🪙)\n"
             "`rpg guilda convidar/expulsar @alguém` · `rpg guilda sair`\n"
             "`rpg guilda aceitar/recusar <nome>` · `rpg guilda convites` — convite vale 24h\n"
-            "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro; libera mais andar por tier do Salão\n"
+            "`rpg guilda home <andar>` — viagem grátis pra lá, checada por membro; tier (até onde a home vai) sobe com a média da torre dos membros\n"
             "`rpg guilda bau` · `depositar <item> <qtd>` · `sacar <item> <qtd>` · `log`\n"
-            "`rpg guilda salao` — tier da guilda, vem de tesouro de chefe (`depositar <tesouro>`, irreversível)\n"
             "`rpg raide` — «Sua Majestade do Andar Nenhum», mínimo 3, cooldown de 2h a 1h conforme o tier"
         ),
         inline=False,

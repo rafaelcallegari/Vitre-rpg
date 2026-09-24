@@ -216,13 +216,29 @@ def test_embed_de_vitoria_acima_do_selo_repeticao_com_sorte_mostra_item(monkeypa
 
 
 # ================================================================
-# Contexto do tesouro no embed de vitória (Salão da Guilda)
+# Contexto do tesouro no embed de vitória (chave de sidequest do andar;
+# o Salão da Guilda foi cortado -- ver decisoes.md § Corte do Salão)
 # ================================================================
 
-def test_embed_de_vitoria_com_guilda_mostra_progresso_do_salao():
-    """Com guilda, a linha do tesouro traz a projeção de progresso (ex.
-    "1/6 pro tier ...") e NÃO menciona irreversibilidade -- esse aviso é
-    só na hora do depósito de verdade (`rpg guilda depositar`)."""
+def test_embed_de_vitoria_com_tesouro_diz_que_e_chave_do_andar():
+    for andar in (1, 4, 10):
+        chefe = dict(game_data.ANDARES[andar]["boss"])
+        _, luta = _luta_1v1(chefe, andar_num=andar)
+
+        e = asyncio.run(combate.finalizar_vitoria(luta))
+
+        campo = next(f for f in e.fields if f.name == "Recompensas")
+        tesouro = next(i for i, _ in chefe["drops"] if game_data.ITENS[i]["tipo"] == "tesouro")
+        assert game_data.ITENS[tesouro]["nome"] in campo.value
+        assert "chave" in campo.value
+        assert f"andar {andar} vai pedir" in campo.value
+        assert "Salão" not in campo.value and "depositar" not in campo.value
+        db.fechar_conexao()
+        db.init_db()
+
+
+def test_embed_de_vitoria_com_tesouro_e_igual_com_ou_sem_guilda():
+    """O tesouro é de quem venceu, não da guilda -- o texto não muda."""
     chefe = dict(game_data.ANDARES[1]["boss"])
     c, luta = _luta_1v1(chefe, andar_num=1)
     db.criar_guilda("Ordem de Teste", c.id, 1, cargo_id=10, canal_id=20)
@@ -230,24 +246,8 @@ def test_embed_de_vitoria_com_guilda_mostra_progresso_do_salao():
     e = asyncio.run(combate.finalizar_vitoria(luta))
 
     campo = next(f for f in e.fields if f.name == "Recompensas")
-    assert "Salão de **Ordem de Teste**" in campo.value
-    assert "1/6" in campo.value
-    assert "pro tier 1" in campo.value
-    assert "não pode ser desfeito" not in campo.value.lower()
-
-
-def test_embed_de_vitoria_sem_guilda_mostra_convite_sem_numero():
-    """Sem guilda, a linha é convite (fundar/entrar), sem número de
-    progresso -- o jogador não tem Salão nenhum pra progredir."""
-    chefe = dict(game_data.ANDARES[1]["boss"])
-    _, luta = _luta_1v1(chefe, andar_num=1)
-
-    e = asyncio.run(combate.finalizar_vitoria(luta))
-
-    campo = next(f for f in e.fields if f.name == "Recompensas")
-    assert "tesouro de guilda" in campo.value
-    assert "rpg guilda criar" in campo.value
-    assert "/6" not in campo.value  # sem guilda, sem projeção de tier
+    assert "andar 1 vai pedir" in campo.value
+    assert "Ordem de Teste" not in campo.value
 
 
 # ================================================================

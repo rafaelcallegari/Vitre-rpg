@@ -118,10 +118,10 @@ async def enviar_paginado(
     """Monta e envia a lista paginada. pagina_inicial é 1-indexado (o que o
     jogador digita: `rpg receitas 2`) — fora do intervalo é só recortado pro
     mais perto, sem virar erro. `allowed_mentions` passa direto pro
-    envio/edição de cada página -- quem lista texto de jogador (assinatura do
-    Salão, por exemplo) manda `discord.AllowedMentions.none()` aqui pra
-    nenhuma menção pingar de verdade, mesmo que algo escape da validação de
-    entrada (ver decisoes.md § Salão da Guilda)."""
+    envio/edição de cada página -- quem lista texto livre de jogador manda
+    `discord.AllowedMentions.none()` aqui pra nenhuma menção pingar de
+    verdade, mesmo que algo escape da validação de entrada (nasceu pras
+    assinaturas do Salão da Guilda, já cortado)."""
     if not entradas:
         await ctx.send(mensagem_vazia)
         return

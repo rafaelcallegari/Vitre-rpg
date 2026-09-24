@@ -166,11 +166,13 @@ ITENS = {
     "anel_joia": {"loja": False, "nome": "Anel Lapidado", "emoji": "💍", "tipo": "anel", "preco": 3800, "andar_min": 1},
     "colar_joia": {"loja": False, "nome": "Colar Lapidado", "emoji": "📿", "tipo": "colar", "preco": 3800, "andar_min": 1},
 
-    # ---------------- tesouros de chefe (Salão da Guilda, andares 1-10) ----------------
+    # ---------------- tesouros de chefe (andares 1-10) ----------------
     # Segundo drop do chefe, 100% de chance, ao lado do fragmento_selo (ver
     # ANDARES abaixo). `vendavel: False` e `loja: False` seguem o precedente
     # do fragmento_selo -- tesouro não vira moeda, não craft, não equipa,
-    # nunca. Ver decisoes.md § Salão da Guilda.
+    # nunca. Cada um é chave de sidequest do próprio andar (o Salão da
+    # Guilda, destino antigo, foi cortado -- ver decisoes.md § Corte do
+    # Salão da Guilda).
     "coroa_velha": {"vendavel": False, "loja": False, "nome": "Coroa Velha", "emoji": "👑", "tipo": "tesouro",
                      "descricao": "Amassada de um jeito que sugere que já caiu — e foi recolocada — mais de uma vez."},
     "novelo_da_rainha": {"vendavel": False, "loja": False, "nome": "Novelo da Rainha", "emoji": "🧶", "tipo": "tesouro",
@@ -228,8 +230,8 @@ ITENS = {
     # tipo próprio, NÃO "material": não equipa, não crafta, não entra em
     # receita nenhuma -- só vira moeda em `rpg vender` (mesma tratativa de
     # preço cheio que "material" já tem, ver a condição de preço em
-    # `vender`). NÃO É tesouro (esse já é o item de andar não-farmável do
-    # Salão da guilda) -- por isso o tipo próprio, pra ninguém confundir os
+    # `vender`). NÃO É tesouro (esse já é o item de andar não-farmável, chave
+    # de sidequest do andar) -- por isso o tipo próprio, pra ninguém confundir os
     # dois nem em código nem em texto. `loja: False`: não tem graça comprar
     # de volta o que a dungeon te deu. Sem função nenhuma de propósito --
     # o sabor é o que faz sentir que saqueou um lugar, não que abriu uma
@@ -273,7 +275,7 @@ ITENS = {
     # ---------------- Orbe de Ascensão (dungeon, andar 9) ----------------
     # Tipo PRÓPRIO ("orbe") -- não é espólio (não vende, `vendavel:
     # False`), não é material (não crafta), não é tesouro (não é o item
-    # de andar do Salão da guilda). É o único item que a dungeon larga
+    # de andar, chave de sidequest). É o único item que a dungeon larga
     # fora do espólio -- não faz NADA até o Step 4 (isso é esperado: o
     # pacote 0.4 sobe junto, o Orbe só ganha função quando a ascensão de
     # verdade for ligada). `loja: False` -- não se compra o portão da
@@ -743,7 +745,7 @@ PASSIVAS = {
 
 # ---------------- dungeon (andar 9 -- ver decisoes.md § Dungeon) ----------------
 # O portão da ascensão: só abre no andar 9, nível >= NIVEL_ASCENSAO_PADRAO.
-# "achado" nunca "tesouro": tesouro já é o item de andar do Salão da Guilda.
+# "achado" nunca "tesouro": tesouro já é o item de andar (chave de sidequest).
 #
 # Só TRÊS tipos -- "armadilha" NÃO é mais um tipo de sala, é uma CAMADA
 # (`"armadilha": True/False`) por cima de combate/evento/achado. Dez
@@ -1065,27 +1067,12 @@ RECOMPENSA_MOEDAS_RAIDE = 800   # modesta de propósito: chefe fixo, sem risco p
 QTD_ACESSORIOS_RAIDE = 2
 COOLDOWN_RAIDE_SEGUNDOS = 2 * 3600   # por guilda (não por jogador)
 
-# ---------------- Salão da Guilda ----------------
-# Tier é derivado da quantidade TOTAL de tesouros depositados, não distintos
-# -- decisão central do desenho (ver decisoes.md § Salão da Guilda). Um único
-# jogador que passa do andar 10 entrega os dez tesouros e destrancaria tudo
-# sozinho se a contagem fosse por distintos; por total, largura de gente que
-# passou de andar pesa mais que a profundidade de um herói solo. Calibrado
-# pra servidor de 5-10 pessoas ao longo de uma temporada: 6 = três membros
-# além do andar 2, 18 = três no andar 6 (ou seis no 3), 36 = seis no andar 6
-# (ou quatro no 9). O cooldown de raide nunca desce de 1h (tier 3) -- ver
-# balanceamento.md, a raide já paga 800 moedas + 2 acessórios por disparo e
-# reduzir o intervalo aumenta a torneira de acessório por dia.
-SALAO_TIERS = (
-    {"tier": 0, "nome": "Salão Vazio", "min_tesouros": 0, "andar_home_max": 3, "cooldown_raide": 2 * 3600},
-    {"tier": 1, "nome": "Salão Erguido", "min_tesouros": 6, "andar_home_max": 5, "cooldown_raide": 2 * 3600},
-    {"tier": 2, "nome": "Salão Guarnecido", "min_tesouros": 18, "andar_home_max": 8, "cooldown_raide": 90 * 60},
-    {"tier": 3, "nome": "Salão Coroado", "min_tesouros": 36, "andar_home_max": 10, "cooldown_raide": 3600},
-)
-
+# ---------------- tier da guilda ----------------
 # Tier da guilda pela MÉDIA do andar_max dos membros (teto 10 por membro --
 # acima do Selo não conta mais, senão um veterano no 15 carrega a média).
-# Substitui o Salão: sobe só quando o grupo sobe, sem depósito. Os limiares
+# Substituiu o Salão: sobe só quando o grupo sobe, sem depósito. O cooldown
+# de raide nunca desce de 1h (tier 3) -- a raide já paga 800 moedas + 2
+# acessórios por disparo, ver balanceamento.md. Os limiares
 # vêm da calibração antiga com uma guilda de 3: 6 tesouros = três membros
 # com 2 chefes cada (andar_max 3), 18 = três com 6 (andar_max 7), e o tier 3
 # pede todo mundo no 10. Home e cooldown de raide por tier não mudaram --
@@ -1096,6 +1083,15 @@ TIERS_GUILDA = (
     {"tier": 2, "media_min": 7, "andar_home_max": 8, "cooldown_raide": 90 * 60},
     {"tier": 3, "media_min": 10, "andar_home_max": 10, "cooldown_raide": 3600},
 )
+
+
+def andar_do_tesouro(item):
+    """Andar cujo chefe solta esse tesouro, ou None -- derivado de ANDARES,
+    nunca lista escrita à mão."""
+    for n, andar in ANDARES.items():
+        if any(d == item for d, _ in andar.get("boss", {}).get("drops", ())):
+            return n
+    return None
 
 
 def itens_da_loja(andar: int):

@@ -9464,3 +9464,56 @@ O tier do Salão decidia duas coisas, e as duas ficam: andar máximo da home
 - Testado em `tests/test_corte_salao.py`, incluindo o cooldown gravado
   por `raide.iniciar_raide` de verdade (os testes de tier 2 e 3 caem
   revertendo só `raide.py`).
+
+### Commit 3: remover o Salão
+
+Saíram `salao.py`, a tabela `guilda_salao` (fora do `SCHEMA`; a migração 27
+agora devolve e só então faz `DROP TABLE`, na mesma transação), `SALAO_TIERS`,
+`contar_tesouros_salao` e as outras funções de banco do Salão, o comando
+`rpg guilda salao` e o desvio de tesouro em `rpg guilda depositar`.
+
+- **Por que cortar:** o Salão transformava o tesouro em número num balde
+  da guilda, e o depósito era irreversível. Com o tesouro virando chave de
+  sidequest do próprio andar, depositar passava a ser jogar a chave fora.
+  O único acerto do Salão (subir só quando o grupo sobe) foi preservado
+  pelo critério do commit 2.
+- **Tesouro não entra no baú.** Sem o desvio, `rpg guilda depositar
+  <tesouro>` cairia no baú comum, e o baú viraria o jeito de passar a chave
+  de um membro para outro. `rpg trade` já recusa item não vendável, então o
+  tesouro nunca mudou de mão. A recusa mantém isso.
+- **Embed de vitória de chefe:** a projeção de tier virou uma linha fixa,
+  igual com ou sem guilda: "Isso é chave, não troféu (...) alguém no andar
+  N vai pedir por ele." O tesouro é de quem venceu, então o texto não cita
+  guilda. O mesmo tom foi para `rpg comprar`/`rpg vender` e para a recusa
+  do baú (`game_data.andar_do_tesouro`, derivado de `ANDARES`).
+- **`resetar_temporada()` não mudou de comportamento.** Ele nunca apagou
+  `guilda_salao`, só avançava `estado_temporada`. O contador fica (é
+  genérico e barato) e a home continua voltando para 1: com todo mundo no
+  `andar_max` 1, a média cai para o tier 0 sozinha.
+- **O histórico por temporada acaba.** As linhas de temporadas passadas
+  (e as assinaturas) caem com a tabela. Não voltam como item pelo motivo
+  do commit 1.
+- **Lacuna consciente:** nenhuma sidequest consome tesouro ainda. O Homem
+  de Sal (andar 4) é só diálogo. O texto novo promete "alguém no andar N
+  vai pedir por ele" sem nomear mecânica. Se o 0.4 subir sem nenhuma
+  sidequest de tesouro, a promessa fica no ar até ela entrar.
+- Testado em `tests/test_tesouros.py` (natureza do tesouro, que veio de
+  `test_salao_guilda.py`, e a recusa no baú), `tests/test_corte_salao.py`
+  (devolução contra o schema antigo, remoção atômica, banco novo sem a
+  tabela) e `tests/test_combate.py` (embed nos andares 1, 4 e 10, igual
+  com ou sem guilda).
+- **Migração contra cópia do banco:** `aincrad.db` local (cópia de 04/09,
+  temporada 1, Salão vazio) copiado, com 33 depósitos semeados para os 5
+  membros reais (um tesouro por chefe que cada um passou) e mais 1 de
+  temporada passada. `init_db()` duas vezes, aplicando da 21 à 27.
+  Resultado: 33 devolvidos, 0 errados, nenhum inventário mexido fora
+  disso, o de temporada passada não voltou, guildas, membros e jogadores
+  iguais, BONDE com home 9 mantida (tier 0 pelo piso de 2 membros).
+
+## DoD
+
+Suíte verde (1105 → 1098: saiu `test_salao_guilda.py` inteiro, entraram
+`test_corte_salao.py` e `test_tesouros.py`) · `decisoes.md` com o motivo
+do corte e o critério novo de home e raide · Guia no Notion: a seção do
+Salão sai na reescrita do Guia para o 0.4, não agora (o Salão continua no
+ar até o 0.4 subir) · push · **sem deploy**.

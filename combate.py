@@ -19,7 +19,7 @@ import vilarejo
 from andares_altos import ANDAR_ACIMA_DO_SELO, LIMITE_VIAJAR
 from game_data import (
     ITENS, ANDARES, ANDAR_MAXIMO, HABILIDADES, CLASSES, CONDICOES_ELEMENTO,
-    CONDICOES_ARMA_ELEMENTAL, SALAO_TIERS, multiplicador_elemento,
+    CONDICOES_ARMA_ELEMENTAL, multiplicador_elemento,
 )
 from npcs import ANDAR_DESBLOQUEIA_CARROCA
 
@@ -1016,41 +1016,15 @@ def _texto_item_dropado(item):
     return f"{dado.get('emoji', '')} {dado.get('nome', item)}".strip()
 
 
-def _progresso_salao_previsto(total_atual):
-    """(total projetado, tier alvo) supondo o tesouro que acabou de cair
-    depositado no Salão -- é só uma projeção pro texto do embed de vitória,
-    não deposita nada de verdade (isso continua sendo `rpg guilda depositar`,
-    ato manual e irreversível). None se essa projeção já bateria o tier
-    máximo. Lê SALAO_TIERS direto (dado puro de game_data.py) em vez de
-    chamar salao.py -- combate.py não depende de módulo de feature, mesma
-    regra que já vale pra guildas.py não depender de bot.py (ver
-    decisoes.md § nota de arquitetura do Salão)."""
-    projetado = total_atual + 1
-    for tier in SALAO_TIERS:
-        if projetado < tier["min_tesouros"]:
-            return projetado, tier
-    return None
-
-
-def _texto_contexto_tesouro(user_id):
+def _texto_contexto_tesouro(andar_num):
     """Linha extra pro embed de vitória quando o drop dessa rodada inclui um
-    tesouro de chefe. Lê o estado de guilda/Salão via database.py (não via
-    guildas.py) -- mesma nota de arquitetura acima."""
-    guilda = db.guilda_do_membro(user_id)
-    if not guilda:
-        return (
-            "🏛️ Isso é tesouro de guilda — não vende, só serve pro Salão. Vale guardar: "
-            "funda uma (`rpg guilda criar <nome>`) ou entra numa que já te convidou "
-            "(`rpg guilda convites` · `rpg guilda aceitar <nome>`)."
-        )
-    total = db.contar_tesouros_salao(guilda["id"])
-    projecao = _progresso_salao_previsto(total)
-    if not projecao:
-        return f"🏛️ `rpg guilda depositar` pro Salão de **{guilda['nome']}** — já no tier máximo."
-    projetado, alvo = projecao
+    tesouro de chefe -- diz o que ele é agora: chave de sidequest do
+    próprio andar (o Salão da Guilda, destino antigo, foi cortado; ver
+    decisoes.md § Corte do Salão da Guilda). Sem número, sem guilda: o
+    tesouro é de quem venceu."""
     return (
-        f"🏛️ `rpg guilda depositar` pro Salão de **{guilda['nome']}** — **{projetado}/{alvo['min_tesouros']}** "
-        f"pro tier {alvo['tier']} ({alvo['nome']})."
+        "🗝️ Isso é chave, não troféu — não vende, não equipa, não vai pro baú. "
+        f"Guarda: alguém no andar {andar_num} vai pedir por ele."
     )
 
 
@@ -1068,7 +1042,7 @@ async def finalizar_vitoria(luta):
         if itens_dropados:
             linha += " · " + " · ".join(_texto_item_dropado(item) for item in itens_dropados)
         if any(ITENS.get(item, {}).get("tipo") == "tesouro" for item in itens_dropados):
-            linha += f"\n· {_texto_contexto_tesouro(c.jogador['user_id'])}"
+            linha += f"\n· {_texto_contexto_tesouro(luta.andar_num)}"
         if subiu:
             linha += f"\n· subiu para o **nível {nivel}** (+{at.PONTOS_POR_NIVEL * subiu} pontos)"
         linhas.append(linha)
