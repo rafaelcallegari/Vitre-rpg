@@ -579,6 +579,42 @@ DIALOGOS = {
         ],
         "saida": "Ele volta pro chá, servindo uma xícara a mais que ninguém vai beber.",
     },
+    # ---- Renzo (Costa Verde, Step F commit 2) ----
+    # O par exato da porta atrás do trono: a porta diz "continue, pra fora";
+    # Renzo diz "pare". "abertura" é pra quem não está em repouso;
+    # "abertura_repouso" é pra quem já está -- chave própria, fora do
+    # contrato normal de DIALOGOS, porque nenhum outro NPC tem abertura que
+    # varia por estado do jogador (bot.py lê as duas na hora certa, ver
+    # RenzoView). `saida` não veio no cartão (só abertura/opção/abertura de
+    # repouso) -- escrita aqui, curta, no mesmo tom.
+    "renzo": {
+        "abertura": [
+            "Eu também procurei uma coisa, uma vez.",
+            "Não foi a Torre. Foi outra coisa.",
+            "Não importa o quê.",
+            "Importa que eu parei.",
+            "Não desisti. Parei.",
+            "Tem diferença.",
+            "Ainda estou aqui. Inteiro.",
+            "Se você quiser, pode parar também. Por enquanto.",
+        ],
+        "abertura_repouso": [
+            "Você voltou.",
+            "Não precisa se explicar.",
+            "Quer continuar parad{o|a}, ou já descansou o suficiente?",
+        ],
+        "opcoes": [
+            {"label": "Perguntar o que ele procurava",
+             "resposta": [
+                 "Não vou dizer o quê.",
+                 "Vou dizer que não encontrei.",
+                 "E que tudo bem.",
+                 "Tem gente que passa a vida inteira sem admitir isso.",
+                 "Eu preferi admitir cedo.",
+             ]},
+        ],
+        "saida": "Ele acena, devagar. Você pode voltar quando quiser — ele vai estar aqui.",
+    },
 }
 
 # ---- despertar (patch 0.3 -- `rpg comecar`) --------------------------------

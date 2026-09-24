@@ -291,6 +291,24 @@ NPCS = {
              "Então eu preparo forte.",
              "De manhã, como sempre.",
          ]},
+        # Renzo (Step F, commit 2) -- o par exato da porta atrás do trono: a
+        # porta diz "continue, pra fora", ele diz "pare". "renzo": True é o
+        # marcador que bot.falar() usa pra desviar pro fluxo de abertura
+        # dupla (repouso ou não) + o par de botões que liga/desliga --
+        # mesmo espírito de "porta": True (Step B) e "mestre_de" (Step 4),
+        # nenhum NPC "conversa" comum precisa saber que esse marcador existe.
+        {"nome": "Renzo", "titulo": "Que Parou de Procurar · e continua inteiro", "tipo": "conversa", "dialogo": "renzo",
+         "renzo": True,
+         "fala": [
+             "Eu também procurei uma coisa, uma vez.",
+             "Não foi a Torre. Foi outra coisa.",
+             "Não importa o quê.",
+             "Importa que eu parei.",
+             "Não desisti. Parei.",
+             "Tem diferença.",
+             "Ainda estou aqui. Inteiro.",
+             "Se você quiser, pode parar também. Por enquanto.",
+         ]},
     ],
 }
 

@@ -9086,3 +9086,85 @@ ritmo -- e 3 em `test_vilarejo.py` -- Nara com uma opção só e o teste de
 ritmo). Nenhum teste antigo se move -- Ivo (que não mudou neste commit)
 continua verde revertido. Suíte completa: 14 testes novos/atualizados,
 1044 passando + 1 xfail antigo.
+
+### Commit 2 — Renzo e as linhas de reconhecimento
+
+**Renzo é o par exato da porta atrás do trono -- a porta diz "continue,
+pra fora", ele diz "pare".** Fica em Costa Verde, `"renzo": True` em
+`npcs.py` marca o desvio pro fluxo especial em `bot.falar()` (mesmo
+espírito de `"porta": True` do Step B e `mestre_de` do Step 4 -- nenhum NPC
+"conversa" comum precisa saber que esses marcadores existem).
+
+**Duas colunas, duas perguntas diferentes (migração 26) -- `em_repouso`
+liga/desliga a cada clique no par de botões, `ja_parou` só liga, nunca
+desliga.** `repouso.definir(user_id, jogador, ligar)` seta o estado ALVO
+direto -- os dois botões (`BotaoAlternarRepouso`) já sabem qual estado
+cada um produz, então nunca precisa "alternar" relativo ao atual.
+`ja_parou` é registro permanente pro que vier depois -- hoje só é
+gravado, nenhum código o consulta ainda (o próprio cartão foi explícito
+sobre isso).
+
+**Abertura muda por ESTADO do jogador, não por opção clicada -- por isso
+Renzo tem uma chave extra (`abertura_repouso`) fora do contrato normal de
+`dialogos.py`, e nunca passa pelo fluxo genérico de "conversa".** Nenhum
+outro NPC tem abertura que varia por estado, então generalizar o contrato
+de `DIALOGOS` pra suportar isso teria sido complexidade sem uso -- mais
+fácil Renzo ter sua própria chave e seu próprio branch em `bot.falar()`.
+
+**O par de botões (`BotaoAlternarRepouso`) sempre mostra os DOIS -- o que
+já bate com o estado atual vem desabilitado.** Opção de design: em vez de
+um botão único que alterna, dois botões fixos ("Parar, por enquanto" /
+"Voltar a subir") deixam o estado legível de relance sem precisar ler o
+texto -- mesma leitura visual do par Ficar/Sair da porta. A opção
+"Perguntar o que ele procurava" some quando o jogador já está em
+repouso -- a pergunta já foi respondida pela própria abertura de repouso
+("Você voltou. Não precisa se explicar.").
+
+**As linhas de reconhecimento (Nara/Eira/Bento) entram no fluxo GENÉRICO
+de "conversa", não no de Renzo -- `repouso.RECONHECIMENTO` é um dict à
+parte, indexado pela MESMA chave de `dialogos.DIALOGOS`.** `bot.falar()`
+verifica `repouso.RECONHECIMENTO.get(n["dialogo"])` e `repouso.
+em_repouso(j)` juntos -- só quando os dois batem, as linhas de
+reconhecimento entram ANTES da abertura normal (uma quebra de linha
+separando os dois blocos, mesma rima do resto do texto). Usa só
+`em_repouso` -- nunca `ja_parou` -- porque as falas são sobre o momento
+atual ("você parou", presente), não sobre histórico.
+
+**Nenhuma linha de reconhecimento elogia a escolha -- testado
+explicitamente** (`test_nenhuma_linha_de_reconhecimento_elogia_a_escolha`,
+lista de palavras proibidas: "parabéns", "orgulho", "bom trabalho", "que
+bom"). O cartão foi explícito: se virasse parabéns, parar viraria
+recompensa, e o recurso inteiro perderia o sentido.
+
+**Nada travado -- testado, não só documentado.** `test_repouso_nao_
+bloqueia_viajar`/`test_repouso_nao_bloqueia_falar_com_outro_npc` confirmam
+que um jogador em repouso continua viajando e conversando normalmente --
+nenhum comando checa `em_repouso` pra recusar nada.
+
+**Flexão de gênero sai de `pronomes.concordar`, não escrita à mão.** A
+única linha com marcador (`abertura_repouso`, "parad{o|a}") passa pelo
+mesmo `pronomes.concordar()` que toda `abertura`/`resposta` já passava --
+zero código novo pra concordância, só reaproveitamento.
+
+**Texto não especificado pelo cartão, escrito aqui: a linha de `saida` de
+Renzo e os dois labels de botão ("Parar, por enquanto" / "Voltar a
+subir").** O cartão deu abertura (dois estados) e a opção de pergunta, mas
+nunca uma linha de saída nem nomes de botão -- os dois foram escritos no
+mesmo tom, curtos, sem craseá-los como se fossem texto do Rafael.
+
+Validado revertendo em três peças: (1) `bot.py`/`dialogos.py`/`npcs.py`
+(a fiação), mantendo `database.py`/`repouso.py`/os testes -- caem
+exatamente os 13 testes que dependem do desvio pro fluxo de Renzo ou do
+reconhecimento aparecer nos NPCs existentes; (2) `database.py` sozinho
+(a migração) -- vira `sqlite3.OperationalError: no such column` numa
+leva de testes, sinal correto de que a coluna é a base de tudo; (3) o
+módulo inteiro (`repouso.py` posto de lado, por não estar rastreado) --
+`test_repouso.py` nem coleta (`ModuleNotFoundError`). Suíte completa:
+18 testes novos em `test_repouso.py`, 1062 passando + 1 xfail antigo.
+
+## DoD
+
+Suíte verde (1038 → 1062) · `decisoes.md` com o formato de linhas
+(commit 1) e a regra do repouso -- as DUAS colunas separadas
+(`em_repouso` liga/desliga, `ja_parou` só liga) e por que nada é travado
+(commit 2) · push · **sem deploy** -- o 0.4 continua sem subir.

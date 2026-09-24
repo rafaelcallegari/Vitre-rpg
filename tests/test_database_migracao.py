@@ -20,6 +20,8 @@ COLUNAS_ESPERADAS = {
     "mundo",
     "viu_porta_do_trono",
     "cerveja_pendente",
+    "em_repouso",
+    "ja_parou",
 }
 
 

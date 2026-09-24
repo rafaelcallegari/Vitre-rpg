@@ -26,6 +26,7 @@ import paginacao
 import passivas
 import principades
 import pronomes
+import repouso
 import travas
 import vilarejo
 from game_data import (
@@ -1569,6 +1570,57 @@ class ViewConversaMestre(DialogoView):
             self.add_item(botao_sair)
 
 
+class BotaoAlternarRepouso(discord.ui.Button):
+    """O par de botões que liga/desliga o repouso (Step F, Renzo) -- NUNCA
+    uma opção de conversa, o cartão foi explícito. Os dois sempre existem
+    na view; o que já bate com o estado atual vem desabilitado, pra não
+    precisar re-clicar no que já está acontecendo -- mesma leitura visual
+    do par Ficar/Sair da porta atrás do trono. `ligar` é o estado que ESTE
+    botão produz quando clicado -- seta o alvo direto, não alterna
+    relativo ao atual."""
+
+    def __init__(self, ligar, desabilitado):
+        label = "Parar, por enquanto" if ligar else "Voltar a subir"
+        estilo = discord.ButtonStyle.primary if ligar else discord.ButtonStyle.secondary
+        super().__init__(label=label, style=estilo, disabled=desabilitado)
+        self.ligar = ligar
+
+    async def callback(self, interaction):
+        view = self.view
+        j = db.get_jogador(view.autor_id)
+        repouso.definir(view.autor_id, j, self.ligar)
+
+        dado = dialogos.DIALOGOS["renzo"]
+        linhas = dado["abertura_repouso"] if self.ligar else dado["abertura"]
+        texto = pronomes.concordar(dialogos.linhas(linhas), view.pronome)
+        e = interaction.message.embeds[0]
+        e.description = f"*{texto}*"
+
+        nova_view = RenzoView(view.autor_id, view.pronome, self.ligar)
+        nova_view.mensagem = interaction.message
+        await interaction.response.edit_message(embed=e, view=nova_view)
+
+
+class RenzoView(DialogoView):
+    """DialogoView comum + o par de botões que liga/desliga o repouso --
+    mesmo padrão de ViewConversaMestre (reaproveita BotaoOpcaoDialogo/
+    BotaoSairDialogo/interaction_check/on_timeout sem duplicar). A opção
+    "Perguntar o que ele procurava" só existe fora do repouso -- dentro
+    dele a pergunta já foi respondida pela própria abertura, e a única
+    coisa que faz sentido perguntar é se ele quer continuar parado."""
+
+    def __init__(self, autor_id, pronome, em_repouso_agora):
+        dado = dialogos.DIALOGOS["renzo"]
+        opcoes = [] if em_repouso_agora else dado["opcoes"]
+        saida = dado.get("saida") or dialogos.SAIDA_PADRAO
+        super().__init__(autor_id, pronome, opcoes, saida)
+        botao_sair = self.children[-1]
+        self.remove_item(botao_sair)
+        self.add_item(BotaoAlternarRepouso(ligar=True, desabilitado=em_repouso_agora))
+        self.add_item(BotaoAlternarRepouso(ligar=False, desabilitado=not em_repouso_agora))
+        self.add_item(botao_sair)
+
+
 class ViewMestreBase(discord.ui.View):
     """interaction_check/on_timeout comuns às telas do fluxo de ascensão
     (escolha de ramo e confirmação) -- mesma regra de DialogoView, mas
@@ -1764,10 +1816,35 @@ async def falar(ctx, *, quem: str = ""):
             view.mensagem = await ctx.send(embed=e, view=view)
             return
 
+    if n.get("renzo"):
+        # Renzo (Step F, commit 2) -- o par exato da porta atrás do trono:
+        # ela diz "continue, pra fora", ele diz "pare". Abertura muda por
+        # ESTADO do jogador (em_repouso ou não), não por opção clicada --
+        # por isso não passa pelo fluxo genérico de "conversa" logo abaixo,
+        # que só conhece UMA abertura por NPC. Ver RenzoView/
+        # BotaoAlternarRepouso.
+        dado_renzo = dialogos.DIALOGOS["renzo"]
+        esta_em_repouso = repouso.em_repouso(j)
+        linhas_renzo = dado_renzo["abertura_repouso"] if esta_em_repouso else dado_renzo["abertura"]
+        abertura_renzo = pronomes.concordar(dialogos.linhas(linhas_renzo), j["pronome"])
+        e = discord.Embed(description=f"*{abertura_renzo}*", color=cor_lugar)
+        e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
+        view = RenzoView(ctx.author.id, j["pronome"], esta_em_repouso)
+        view.mensagem = await ctx.send(embed=e, view=view)
+        return
+
     if n["tipo"] == "conversa" and n.get("dialogo"):
         dado = dialogos.DIALOGOS[n["dialogo"]]
         opcoes = opcoes_do_dialogo(n["dialogo"], j["user_id"])
-        abertura = pronomes.concordar(dialogos.linhas(dado["abertura"]), j["pronome"])
+        texto_abertura = dialogos.linhas(dado["abertura"])
+        reconhecimento = repouso.RECONHECIMENTO.get(n["dialogo"])
+        if reconhecimento and repouso.em_repouso(j):
+            # linhas de reconhecimento vêm ANTES da abertura normal, só pra
+            # quem está em repouso NAQUELE MOMENTO (Step F) -- nunca
+            # elogiam a escolha, e a abertura de sempre continua vindo
+            # depois, intocada.
+            texto_abertura = dialogos.linhas(reconhecimento) + "\n" + texto_abertura
+        abertura = pronomes.concordar(texto_abertura, j["pronome"])
         e = discord.Embed(description=f"*{abertura}*", color=cor_lugar)
         e.set_author(name=f"{ICONES_NPC['conversa']} {nome}")
         saida = dado.get("saida") or dialogos.SAIDA_PADRAO

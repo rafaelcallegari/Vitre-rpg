@@ -321,6 +321,19 @@ COLUNAS_CERVEJA = {
     "cerveja_pendente": "INTEGER NOT NULL DEFAULT 0",
 }
 
+COLUNAS_REPOUSO = {
+    # migração 26 -- Step F, o NPC que oferece parar (Renzo, Costa Verde).
+    # DUAS informações separadas, não uma: "está em repouso agora"
+    # (`em_repouso`, liga/desliga a cada clique no par de botões) e "já
+    # esteve alguma vez" (`ja_parou`, só liga, nunca desliga -- é registro
+    # permanente pro que vier depois, ainda não consultado por ninguém).
+    # As linhas de reconhecimento (Nara/Eira/Bento) usam só a primeira. 0
+    # pra todo mundo -- ninguém nasce em repouso, nem quem já jogava antes
+    # deste pacote. Ver npcs_repouso.py e decisoes.md § Step F.
+    "em_repouso": "INTEGER NOT NULL DEFAULT 0",
+    "ja_parou": "INTEGER NOT NULL DEFAULT 0",
+}
+
 COLUNAS_INSTANCIA_JOIA = {
     # migração 14 -- coluna nova em `instancias`, não em `jogadores` (por
     # isso não entra nos dicts acima, que a migração aplica só na tabela de
@@ -748,6 +761,17 @@ def init_db():
                     f"ALTER TABLE instancias ADD COLUMN {coluna} {COLUNAS_INSTANCIA_EFEITO[coluna]}"
                 )
             print("Banco migrado: coluna efeito criada em instancias -- nenhum acessório tem efeito ainda.")
+
+        # migração 26: Step F -- Renzo (Costa Verde) oferece parar. Ver
+        # COLUNAS_REPOUSO acima -- 0/0 pra todo mundo, ninguém nasce em
+        # repouso nem já parou antes de Renzo existir.
+        novas_repouso = [c for c in COLUNAS_REPOUSO if c not in colunas]
+        if novas_repouso:
+            for coluna in novas_repouso:
+                conn.execute(
+                    f"ALTER TABLE jogadores ADD COLUMN {coluna} {COLUNAS_REPOUSO[coluna]}"
+                )
+            print("Banco migrado: colunas de repouso criadas -- ninguém em repouso, ninguém já parou.")
 
 
 def _migrar_upgrades_para_instancias(conn):
