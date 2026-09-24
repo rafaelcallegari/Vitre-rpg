@@ -165,6 +165,21 @@ CREATE TABLE IF NOT EXISTS roubos_pendentes (
     instancia_id INTEGER,
     criado_em    REAL NOT NULL
 );
+-- A Praça, commit 2: o mural. Diferente de rpg trade (trocas.py), cujo
+-- estado vive em memória de propósito -- uma oferta precisa SOBREVIVER a
+-- restart, senão o mural não serve pra nada (o cartão foi explícito). A
+-- linha existir É a reserva: o item já saiu do inventário (ou a instância
+-- já foi solta) na hora de publicar, não na hora de aceitar. `qtd` é
+-- sempre 1 quando `instancia_id` não é NULL (instância nunca empilha).
+CREATE TABLE IF NOT EXISTS mural_ofertas (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    autor_id     INTEGER NOT NULL,
+    item         TEXT NOT NULL,
+    qtd          INTEGER NOT NULL DEFAULT 1,
+    instancia_id INTEGER,
+    preco        INTEGER NOT NULL,
+    criado_em    REAL NOT NULL
+);
 """
 
 COLUNAS_ATRIBUTO = {
@@ -1702,6 +1717,122 @@ def remover_roubo(roubo_id):
 def excluir_instancia(instancia_id):
     with conectar() as conn:
         conn.execute("DELETE FROM instancias WHERE id = ?", (instancia_id,))
+
+
+# ---------------- A Praça, commit 2: o mural ----------------
+def contar_ofertas_mural(user_id):
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM mural_ofertas WHERE autor_id = ?", (user_id,)
+        ).fetchone()
+    return row["n"]
+
+
+def ofertas_mural_abertas():
+    with conectar() as conn:
+        rows = conn.execute("SELECT * FROM mural_ofertas ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def oferta_mural(oferta_id):
+    with conectar() as conn:
+        row = conn.execute("SELECT * FROM mural_ofertas WHERE id = ?", (oferta_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def publicar_oferta_mural(user_id, item, qtd, instancia_id, preco):
+    """Publicar É reservar -- tudo numa conexão só, atômico: sai do
+    inventário (ou solta a instância, dono = NULL, mesma técnica do roubo
+    dos ladrões -- ver decisoes.md § Step E) e a linha do mural nasce na
+    MESMA transação. Sem isso, um erro no meio deixaria o item sumido sem
+    anúncio nenhum pra mostrar por ele."""
+    with conectar() as conn:
+        if instancia_id:
+            conn.execute("UPDATE instancias SET dono = NULL WHERE id = ?", (instancia_id,))
+        else:
+            conn.execute(
+                "UPDATE inventario SET qtd = qtd - ? WHERE user_id = ? AND item = ?", (qtd, user_id, item)
+            )
+            conn.execute(
+                "DELETE FROM inventario WHERE user_id = ? AND item = ? AND qtd <= 0", (user_id, item)
+            )
+        cursor = conn.execute(
+            """INSERT INTO mural_ofertas (autor_id, item, qtd, instancia_id, preco, criado_em)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, item, qtd, instancia_id, preco, time.time()),
+        )
+        return cursor.lastrowid
+
+
+def cancelar_oferta_mural(oferta_id, user_id):
+    """(sucesso, motivo). Só o autor cancela; devolve o que estava
+    reservado INTEIRO -- instância volta com melhoria/encantamento/joia/
+    efeito intactos (nunca foram tocados, só o `dono` saiu e volta),
+    pilha comum soma de volta no inventário. Atômico: existência +
+    devolução na mesma conexão, senão um cancelamento e um aceite
+    correndo juntos podiam devolver um item que já tinha ido embora."""
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT * FROM mural_ofertas WHERE id = ? AND autor_id = ?", (oferta_id, user_id)
+        ).fetchone()
+        if not row:
+            return False, "Você não tem uma oferta aberta com esse número."
+        oferta = dict(row)
+        apagado = conn.execute("DELETE FROM mural_ofertas WHERE id = ?", (oferta_id,)).rowcount
+        if not apagado:
+            return False, "Essa oferta já não existe mais."
+        if oferta["instancia_id"]:
+            conn.execute("UPDATE instancias SET dono = ? WHERE id = ?", (user_id, oferta["instancia_id"]))
+        else:
+            conn.execute(
+                """INSERT INTO inventario (user_id, item, qtd) VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, item) DO UPDATE SET qtd = qtd + excluded.qtd""",
+                (user_id, oferta["item"], oferta["qtd"]),
+            )
+    return True, oferta
+
+
+def aceitar_oferta_mural(oferta_id, comprador_id):
+    """(sucesso, motivo_ou_oferta). O `DELETE ... WHERE id = ?` dentro da
+    MESMA conexão que valida saldo é o que resolve "dois aceites ao mesmo
+    tempo" -- `rowcount` de 0 significa que a linha já sumiu (outro
+    aceite ou um cancelamento venceu a corrida primeiro), devolve recusa
+    clara, nunca erro. Ver decisoes.md § A Praça."""
+    with conectar() as conn:
+        row = conn.execute("SELECT * FROM mural_ofertas WHERE id = ?", (oferta_id,)).fetchone()
+        if not row:
+            return False, "Essa oferta não existe mais — alguém já deve ter levado."
+        oferta = dict(row)
+        if oferta["autor_id"] == comprador_id:
+            return False, "Você não pode aceitar a própria oferta -- cancela com `rpg mural cancelar`."
+
+        comprador = conn.execute(
+            "SELECT moedas FROM jogadores WHERE user_id = ?", (comprador_id,)
+        ).fetchone()
+        if not comprador:
+            return False, "Você ainda não tem personagem — `rpg comecar` primeiro."
+        if comprador["moedas"] < oferta["preco"]:
+            return False, f"Faltam **{oferta['preco'] - comprador['moedas']}** moedas — custa {oferta['preco']} 🪙."
+
+        apagado = conn.execute("DELETE FROM mural_ofertas WHERE id = ?", (oferta_id,)).rowcount
+        if not apagado:
+            return False, "Essa oferta não existe mais — alguém já deve ter levado."
+
+        conn.execute(
+            "UPDATE jogadores SET moedas = moedas - ? WHERE user_id = ?", (oferta["preco"], comprador_id)
+        )
+        conn.execute(
+            "UPDATE jogadores SET moedas = moedas + ? WHERE user_id = ?", (oferta["preco"], oferta["autor_id"])
+        )
+        if oferta["instancia_id"]:
+            conn.execute("UPDATE instancias SET dono = ? WHERE id = ?", (comprador_id, oferta["instancia_id"]))
+        else:
+            conn.execute(
+                """INSERT INTO inventario (user_id, item, qtd) VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, item) DO UPDATE SET qtd = qtd + excluded.qtd""",
+                (comprador_id, oferta["item"], oferta["qtd"]),
+            )
+    return True, oferta
 
 
 def instancias_na_mochila(user_id):

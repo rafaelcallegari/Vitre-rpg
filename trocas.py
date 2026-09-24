@@ -8,6 +8,7 @@
 import discord
 
 import database as db
+import mundo
 import travas
 from game_data import ANDARES, ITENS
 
@@ -20,6 +21,20 @@ MAX_ITENS_TROCA = 8
 # user_id de quem tem um pix/troca pendente agora — só um de cada por vez.
 PIX_PENDENTES = set()
 TROCAS_ATIVAS = set()
+
+
+def _estao_juntos(a, b):
+    """"Presencial" não pode ser só `andar` igual -- sem checar `mundo`
+    junto, alguém no Mirante (andar CONGELADO em 15) e alguém realmente
+    lutando no andar 15 da torre "batiam" por coincidência de número,
+    mesmo estando em lugares completamente diferentes. Achado varrendo
+    os comandos pro cartão "A Praça" (o mesmo bug de `rpg andar`/`rpg
+    colher`, ver decisoes.md § A Praça). Dentro da torre, o andar
+    decide; na Praça (commit 2), estar lá junto já basta -- `andar`
+    congelado de cada um pode ser qualquer coisa."""
+    if mundo.na_torre(a) and mundo.na_torre(b):
+        return a["andar"] == b["andar"]
+    return a["mundo"] == b["mundo"] == mundo.PRACA
 
 
 def _extrair_valor(texto):
@@ -157,8 +172,8 @@ def _commitar_troca(troca):
             return False, "um dos dois não tem mais personagem."
         ja, jb = dict(row_a), dict(row_b)
 
-        if ja["andar"] != jb["andar"]:
-            return False, "vocês não estão mais no mesmo andar."
+        if not _estao_juntos(ja, jb):
+            return False, "vocês não estão mais juntos."
 
         oferta_a = troca.ofertas[troca.iniciador_id]
         oferta_b = troca.ofertas[troca.alvo_id]
@@ -492,10 +507,11 @@ def instalar(bot, contexto):
         if not destino:
             await ctx.send(f"{alvo.display_name} ainda não entrou na torre — `rpg comecar` primeiro.")
             return
-        if j["andar"] != destino["andar"]:
+        if not _estao_juntos(j, destino):
             await ctx.send(
                 f"Troca é presencial: você está no andar {j['andar']}, "
-                f"{alvo.display_name} está no andar {destino['andar']}. Precisam estar juntos."
+                f"{alvo.display_name} está no andar {destino['andar']}. Precisam estar juntos "
+                f"(no mesmo andar da torre, ou os dois na Praça)."
             )
             return
         if ctx.author.id in TROCAS_ATIVAS:

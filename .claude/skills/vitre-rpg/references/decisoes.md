@@ -9254,3 +9254,94 @@ dentro da torre) e os 2 que testam recusa a partir de OUTRO lugar
 revertidos, porque não dependem da Praça existir pra já estarem certos.
 Suíte completa: 15 testes novos em `test_praca.py`, 1079 passando + 1
 xfail antigo.
+
+### Commit 2 — o mural
+
+**Tabela nova (`mural_ofertas`), não estado em memória -- ao contrário de
+`rpg trade` (trocas.py), que perde a troca de propósito se o bot cair no
+meio.** O mural existe exatamente pra funcionar SEM os dois online juntos
+-- se uma oferta não sobrevivesse a restart, o mural inteiro perderia o
+sentido (o cartão foi explícito). `CREATE TABLE IF NOT EXISTS`, mesmo
+padrão de `roubos_pendentes`/`dungeon_run` -- sem migração, tabela nova
+não precisa.
+
+**Publicar É reservar -- a linha da tabela É a reserva, nenhum campo
+"reservado" separado.** O item sai do inventário (`UPDATE inventario SET
+qtd = qtd - ?`) ou a instância solta o `dono` (`UPDATE instancias SET
+dono = NULL`) NA MESMA transação que cria a linha do mural
+(`db.publicar_oferta_mural`, uma conexão só) -- sem isso, um erro no meio
+deixaria o item sumido sem anúncio nenhum pra mostrar por ele. Mesma
+técnica do roubo dos ladrões (Step E): `dono = NULL` -- nunca apaga a
+linha de `instancias`, melhoria/encantamento/joia/efeito atravessam
+intactos porque nunca foram tocados, só o dono saiu e volta.
+
+**Aceitar é uma Única transação -- select, checagem de saldo/autoria,
+DELETE, e só ENTÃO move moedas/item, tudo numa conexão só
+(`db.aceitar_oferta_mural`).** `dois aceites simultâneos` não precisou de
+lock novo nem de coluna de status: o `_lock` global de `database.conectar()`
+já serializa QUALQUER acesso ao banco (RLock segurado
+durante o `with` inteiro), e como sqlite3 é síncrono (sem `await` no
+meio da função), o asyncio nunca troca de tarefa no meio de uma
+transação -- então o `DELETE FROM mural_ofertas WHERE id = ?` dentro da
+MESMA conexão que valida saldo já é atomicamente seguro por construção.
+`cursor.rowcount == 0` depois do DELETE é o sinal de "alguém já levou" --
+devolve recusa clara (`"Essa oferta não existe mais"`), nunca erro.
+Testado chamando `db.aceitar_oferta_mural` duas vezes seguidas pro MESMO
+id sem `await` no meio
+(`test_dois_aceites_simultaneos_so_um_leva_o_outro_recebe_recusa_clara`)
+-- é exatamente a corrida que dois cliques ao mesmo tempo produziriam.
+
+**`rpg mural` é um `@bot.command` só, dispatch manual pela primeira
+palavra -- mesmo padrão de `rpg guilda` (guildas.py), não `@bot.group`
+do discord.py (nunca usado neste projeto, confirmado antes de escrever
+o módulo).** Consistência com o resto da base venceu a conveniência do
+recurso nativo.
+
+**Cada oferta é UM item por um preço em moedas -- não virou um mural de
+troca-por-item.** O cartão não especificou a forma exata da oferta; dado
+que `rpg trade` já cobre negociação bilateral complexa (item+moedas dos
+dois lados, ao vivo), o mural não precisava reinventar isso -- ele
+resolve o problema específico de "vender pra quem não está online agora",
+que é exatamente o que um preço fixo em moedas já resolve, mais simples
+de implementar e de usar.
+
+**Item com instância: mesma prioridade de `bot.vender` -- cópia comum
+primeiro, só cai pra "qual instância" (#1, #2...) quando não há cópia
+comum sobrando.** Não inventou uma convenção nova pro mural: reaproveitou
+a MESMA regra que `rpg vender` já usa quando o jogador tem cargas
+empilhadas E instâncias da mesma chave ao mesmo tempo.
+
+**Limite de 5 anúncios por jogador (`MAX_OFERTAS_POR_JOGADOR`) -- checado
+ANTES de resolver o item**, pra não reservar nada e depois recusar por
+limite (ordem importa: limite primeiro, resolução de item depois).
+
+**`rpg trade` ganhou um segundo caso de "presencial" -- achado
+implementando este commit, não pedido pelo cartão, mas necessário pro
+teste "rpg trade entre dois na Praça funciona" passar de verdade.** A
+checagem antiga comparava só `j["andar"] == destino["andar"]`, sem checar
+`mundo` -- dois jogadores na Praça quase nunca vão bater em `andar`
+(cada um congelado no seu próprio andar de origem), então trade
+simplesmente não funcionava lá. Pior: o mesmo buraco também deixava
+`rpg trade` "funcionar" por coincidência entre alguém no Mirante (andar
+congelado em 15) e alguém genuinamente lutando no andar 15 da torre --
+o mesmo tipo de bug que `rpg andar`/`rpg colher`/a Guia já tinham (ver
+Commit 1). `_estao_juntos(a, b)` resolve os dois: dentro da torre exige
+mesmo andar (como sempre), na Praça exige os dois com `mundo == PRACA`
+(não compara andar nenhum) -- em qualquer outro lugar (Mirante/
+vilarejo/cidades), nunca "batem" por coincidência. Corrigido nos DOIS
+pontos que liam `andar` cru: a abertura da troca E a revalidação final
+em `_commitar_troca` (o cartão pediu "não descubra depois" -- o segundo
+ponto seria fácil de esquecer).
+
+Validado revertendo em três peças: (1) módulo inteiro (`mural.py` posto
+de lado por não estar rastreado) -- `test_mural.py` nem coleta
+(`ModuleNotFoundError`); (2) `database.py` sozinho (as cinco funções de
+`mural_ofertas`), mantendo `mural.py`/`bot.py`/os testes -- caem
+exatamente os 15 testes que tocam o banco do mural (`AttributeError`),
+os 4 que só testam a trava da Praça ou o `rpg trade` continuam verdes;
+(3) `trocas.py` sozinho -- cai exatamente
+`test_trade_funciona_entre_dois_na_praca_com_andares_diferentes`, os
+outros 18 continuam verdes (inclusive o de regressão dentro da torre,
+prova de que o comportamento antigo não mudou nem um pouco). Suíte
+completa: 19 testes novos em `test_mural.py`, 1098 passando + 1 xfail
+antigo.

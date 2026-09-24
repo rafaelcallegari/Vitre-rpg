@@ -2925,6 +2925,11 @@ import estrada
 
 estrada.instalar(bot, globals())
 
+# mural — oferta assíncrona na Praça (A Praça, commit 2)
+import mural
+
+mural.instalar(bot, globals())
+
 # agenda — aviso automático da carroça do Bramm
 import agenda
 
